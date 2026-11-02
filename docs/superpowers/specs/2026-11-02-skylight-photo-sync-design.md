@@ -1,7 +1,7 @@
 # Skylight Photo Sync — Design
 
 **Date:** 2026-11-02
-**Status:** Draft for approval
+**Status:** Draft for approval (builder-check applied 2026-11-02)
 **Owner:** Matt (MattFromRVA)
 
 ## 1. Intent
@@ -56,6 +56,10 @@ Full notes with sources: [`docs/research-notes.md`](../../research-notes.md).
 - Windows or Linux support. It will likely work, but the Mac is the target and only
   launchd scheduling is provided.
 - Uploading *to* Amazon Photos.
+- Reading other family members' Amazon accounts or the Family Vault. **(call)** v1 reads
+  exactly one Amazon account: the one whose cookies are pasted. Photos other people add
+  to a *shared album* owned by that account are included; photos that only exist in
+  another member's account are not. Family Vault support is a follow-up issue.
 - A GUI. This is a CLI plus a scheduled job.
 - Automating Amazon login (no password handling, no headless browser). Cookies are
   pasted by the user.
@@ -90,12 +94,16 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 - **(Matt)** `source.mode = "album" | "all"`, toggled in config.
   - `album`: only items in the named Amazon Photos album (`source.album_name`).
   - `all`: every photo (and optionally video) in the account.
-- **(Matt)** `source.lookback_days` (e.g. 30, 60, 90) bounds what is considered. Default
-  **30**. `0` means no date bound (album mode only; refused in `all` mode).
+- **(Matt)** `source.lookback_days` (e.g. 30, 60, 90) bounds what is considered.
+  `0` means no date bound and is allowed in album mode only; it is refused in `all` mode.
+- **(call)** Defaults differ by mode: album mode defaults to `lookback_days = 0` (the whole
+  album, flood-guarded by `max_items_per_run`) so that an old photo dropped into the album
+  today still gets sent; `all` mode defaults to `lookback_days = 30`. Setting the key
+  explicitly overrides either default.
 - **(call)** The lookback filters on the item's *capture date* (Amazon `contentDate`,
-  falling back to `createdDate`). In album mode an old photo added to the album today would
-  therefore be skipped if it is older than the window. Builder should verify whether
-  Amazon exposes an "added to album" timestamp; if it does, prefer that in album mode.
+  falling back to `createdDate`). Amazon album children are believed to carry only the
+  photo's own dates, not an "added to album" time, which is why album mode defaults to
+  no bound. If the builder finds an added-to-album timestamp, prefer it in album mode.
 - **(call)** `source.include_videos = false` by default. When true, videos ≤ 22 MB are
   sent as-is; larger ones are logged and skipped.
 - **(call)** Per-run cap `limits.max_items_per_run = 25`. Items beyond the cap wait for
@@ -123,9 +131,13 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 
 ### 6.5 Email batching
 
-- **(call)** Up to `email.max_attachments = 20` per message and
-  `email.max_total_bytes = 22_000_000` raw attachment bytes (leaves base64 headroom under
-  Skylight's 25 MB). Subject: `Skylight Photo Sync — N photos (YYYY-MM-DD)`. Body: one
+- **(call)** Up to `email.max_attachments = 12` per message and
+  `email.max_total_bytes = 17_000_000` raw attachment bytes. Base64 adds ~37%, so 17 MB
+  raw is ~23.5 MB on the wire, under Skylight's 25 MB and Gmail's practical ceiling. There
+  is no bounce or delivery feedback from Skylight, so this is a safety limit, not a tuning
+  knob: items are marked sent when SMTP accepts the message, and an email Skylight drops
+  is lost silently. `skylight-sync test-email --size-probe` can send a one-time series of
+  growing test emails so the user can find the real ceiling by watching the frame. Subject: `Skylight Photo Sync — N photos (YYYY-MM-DD)`. Body: one
   line listing the source mode and album. Filenames: `YYYY-MM-DD_HHMMSS_<shortid>.jpg`.
 - Items are sent oldest-first so the frame's order is roughly chronological.
 - `email.to` may list several addresses (e.g. a Calendar and a Frame). State is tracked
@@ -168,7 +180,7 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 [source]
 mode = "album"            # "album" | "all"
 album_name = "Skylight"
-lookback_days = 30        # 0 = no bound (album mode only)
+lookback_days = 0         # album default 0 (whole album); all-mode default 30; 0 refused in all mode
 include_videos = false
 
 [limits]
@@ -181,8 +193,8 @@ jpeg_quality = 88
 [email]
 to = ["yourhousehold@ourskylight.com"]
 from = "you@gmail.com"
-max_attachments = 20
-max_total_bytes = 22000000
+max_attachments = 12
+max_total_bytes = 17000000
 
 [smtp]
 host = "smtp.gmail.com"
@@ -213,7 +225,7 @@ password = "app-password-here"
 skylight-sync login            # paste Amazon cookies; clears needs_login
 skylight-sync run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N]
 skylight-sync status
-skylight-sync test-email       # sends one small test image to email.to
+skylight-sync test-email [--size-probe]   # one small test image; probe sends growing sizes
 skylight-sync install-launchd  # writes and loads the LaunchAgent plist
 skylight-sync uninstall-launchd
 skylight-sync reset --yes
@@ -242,7 +254,22 @@ skylight-sync reset --yes
 8. Weeks later cookies expire → one alert email + Mac notification → `skylight-sync login`
    → back to normal.
 
-## 8. Left to the builder
+## 8. Build sequencing constraint
+
+The Amazon client can only be verified against a live, logged-in Amazon session, which
+only Matt can provide, and the reference library is two years stale. Therefore:
+
+- Everything other than the Amazon client is built and tested first against
+  `LocalFolderSource`, so the pipeline, state, email, CLI and launchd pieces are provably
+  working before Amazon is touched.
+- The Amazon client ships with a `skylight-sync record-fixtures` command that calls each
+  endpoint once, redacts ids and personal fields, and writes JSON fixtures under
+  `tests/fixtures/amazon/`. Matt runs it once after `login`; the recorded fixtures then
+  drive the offline tests.
+- The Amazon client issue is the last in the v1 milestone and is marked as needing Matt's
+  participation for verification.
+
+## 9. Left to the builder
 
 - Exact Amazon endpoint shapes and which date field best represents "added to album".
 - Whether to use `requests` or `httpx`; either is fine.
@@ -250,7 +277,7 @@ skylight-sync reset --yes
 - Whether `install-launchd` uses `StartInterval` or `StartCalendarInterval`.
 - Keychain storage for secrets (optional follow-up; file with 0600 is acceptable for v1).
 
-## 9. Risks
+## 10. Risks
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
