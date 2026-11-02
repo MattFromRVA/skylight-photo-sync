@@ -37,8 +37,10 @@ Details and sources: [docs/research-notes.md](docs/research-notes.md).
 
 Design and planning. See the
 [design spec](docs/superpowers/specs/2026-11-02-skylight-photo-sync-design.md) and the
-[implementation plan](docs/superpowers/plans/). Work is tracked in
-[GitHub issues](https://github.com/MattFromRVA/skylight-photo-sync/issues).
+[implementation plan](docs/superpowers/plans/2026-11-02-skylight-photo-sync-v1.md). Work is tracked in
+[GitHub issues](https://github.com/MattFromRVA/skylight-photo-sync/issues): issues #1–#13 are
+the v1 tasks (one per agent session, issue number = plan task number); #14–#17 are follow-ups.
+Agents: read [AGENTS.md](AGENTS.md) first.
 
 ## Quick start (once implemented)
 
