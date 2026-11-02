@@ -136,7 +136,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 3: Models, PhotoSource protocol, LocalFolderSource
+### Task 3: Models, PhotoSource protocol and LocalFolderSource
 
 **Files:**
 - Create: `src/skylight_sync/models.py`, `src/skylight_sync/sources/__init__.py`, `src/skylight_sync/sources/local.py`, `tests/test_local_source.py`, `tests/fixtures/images/*`
@@ -203,7 +203,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 6: Batching
+### Task 6: Email batching
 
 **Files:**
 - Create: `src/skylight_sync/batching.py`, `tests/test_batching.py`
@@ -218,7 +218,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 7: Mailer
+### Task 7: SMTP mailer
 
 **Files:**
 - Create: `src/skylight_sync/mailer.py`, `tests/test_mailer.py`
@@ -235,7 +235,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 8: Alerts
+### Task 8: Rate-limited alerts
 
 **Files:**
 - Create: `src/skylight_sync/alerts.py`, `tests/test_alerts.py`
@@ -251,7 +251,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 9: Pipeline
+### Task 9: Sync pipeline
 
 **Files:**
 - Create: `src/skylight_sync/pipeline.py`, `tests/test_pipeline.py`
@@ -271,7 +271,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 10: CLI commands (except Amazon-specific)
+### Task 10: CLI commands: run, status, test-email, reset, login
 
 **Files:**
 - Modify: `src/skylight_sync/cli.py`; Create: `tests/test_cli.py`
@@ -291,7 +291,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 11: launchd install/uninstall
+### Task 11: launchd install and uninstall
 
 **Files:**
 - Create: `src/skylight_sync/launchd.py`, `tests/test_launchd.py`; Modify: `cli.py`
@@ -324,7 +324,7 @@ def test_paths_honor_env(monkeypatch, tmp_path): ...
 
 ---
 
-### Task 13: Documentation and first-run guide
+### Task 13: Setup, cookies and troubleshooting docs
 
 **Files:**
 - Modify: `README.md`; Create: `docs/setup.md`, `docs/cookies.md`
