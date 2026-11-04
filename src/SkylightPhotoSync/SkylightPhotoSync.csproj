@@ -3,7 +3,6 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>SkylightPhotoSync</RootNamespace>
-    <AssemblyName>skylight-sync</AssemblyName>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>skylight-sync</ToolCommandName>
     <PackageId>SkylightPhotoSync</PackageId>

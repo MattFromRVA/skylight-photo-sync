@@ -4,15 +4,12 @@ namespace SkylightPhotoSync.Tests.TestSupport;
 
 /// <summary>
 /// An <see cref="IProcessRunner"/> that records every call and returns scripted results
-/// in the order they were enqueued. Runs out of script → returns <see cref="Default"/>.
+/// in the order they were enqueued. Runs out of script → throws <see cref="InvalidOperationException"/>.
 /// </summary>
 public sealed class FakeProcessRunner : IProcessRunner
 {
     private readonly Queue<ProcessResult> _scripted = new();
     private readonly List<ProcessCall> _calls = [];
-
-    /// <summary>Result returned when no scripted result is queued. Defaults to exit 0 with empty output.</summary>
-    public ProcessResult Default { get; set; } = new(0, string.Empty, string.Empty);
 
     public IReadOnlyList<ProcessCall> Calls => _calls;
 
@@ -29,7 +26,12 @@ public sealed class FakeProcessRunner : IProcessRunner
     {
         ct.ThrowIfCancellationRequested();
         _calls.Add(new ProcessCall(fileName, [.. args]));
-        var result = _scripted.Count > 0 ? _scripted.Dequeue() : Default;
+        if (!_scripted.TryDequeue(out var result))
+        {
+            throw new InvalidOperationException(
+                $"No scripted result queued for '{fileName} {string.Join(' ', args)}'.");
+        }
+
         return Task.FromResult(result);
     }
 }
