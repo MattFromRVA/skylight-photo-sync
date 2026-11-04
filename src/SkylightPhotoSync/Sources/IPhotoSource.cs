@@ -14,7 +14,11 @@ public interface IPhotoSource
     Task<IReadOnlyList<Item>> ListCandidatesAsync(
         Window window, SourceMode mode, string? albumName, CancellationToken ct);
 
-    /// <summary>Downloads <paramref name="item"/> into <paramref name="destDir"/> and returns the file path.</summary>
+    /// <summary>
+    /// Downloads <paramref name="item"/> into <paramref name="destDir"/> and returns the file path.
+    /// The returned file name is unique within <paramref name="destDir"/> per item, because the
+    /// pipeline downloads every item of a run into one temp dir and renames attachments itself.
+    /// </summary>
     /// <exception cref="AuthExpiredException">The source's credentials no longer work.</exception>
     Task<string> DownloadAsync(Item item, string destDir, CancellationToken ct);
 }

@@ -24,6 +24,8 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
             [".mov"] = (ItemKind.Video, "video/quicktime"),
         };
 
+    private const int _exifHeaderBytes = 256 * 1024;
+
     private readonly string _root = Path.GetFullPath(root);
 
     public async Task<IReadOnlyList<Item>> ListCandidatesAsync(
@@ -39,20 +41,21 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
                 continue;
             }
 
-            var bytes = await File.ReadAllBytesAsync(path, ct);
-            var capturedAt = ReadCapturedAt(path, media.Kind, bytes);
+            await using var stream = File.OpenRead(path);
+            var capturedAt = await ReadCapturedAtAsync(path, media.Kind, stream, ct);
             if (!window.Contains(capturedAt))
             {
                 continue;
             }
 
+            stream.Position = 0;
             items.Add(new Item(
                 Id: Path.GetRelativePath(_root, path).Replace(Path.DirectorySeparatorChar, '/'),
                 Name: Path.GetFileName(path),
                 Kind: media.Kind,
                 CapturedAt: capturedAt,
-                SizeBytes: bytes.LongLength,
-                Md5: Convert.ToHexStringLower(MD5.HashData(bytes)),
+                SizeBytes: stream.Length,
+                Md5: Convert.ToHexStringLower(await MD5.HashDataAsync(stream, ct)),
                 Mime: media.Mime));
         }
 
@@ -63,7 +66,7 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
     {
         var source = Path.Combine(_root, item.Id);
         Directory.CreateDirectory(destDir);
-        var dest = Path.Combine(destDir, item.Name);
+        var dest = Path.Combine(destDir, item.Id.Replace('/', '_'));
         await using var input = File.OpenRead(source);
         await using var output = File.Create(dest);
         await input.CopyToAsync(output, ct);
@@ -89,14 +92,21 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
     }
 
     /// <summary>
-    /// EXIF <c>DateTimeOriginal</c> for JPEGs that carry one, else the file's last-write time.
+    /// EXIF <c>DateTimeOriginal</c> for JPEGs that carry one in their first
+    /// <see cref="_exifHeaderBytes"/>, else the file's last-write time.
     /// EXIF dates have no zone, so they are read as wall-clock time on this machine.
     /// </summary>
-    private static DateTimeOffset ReadCapturedAt(string path, ItemKind kind, ReadOnlySpan<byte> bytes)
+    private static async Task<DateTimeOffset> ReadCapturedAtAsync(
+        string path, ItemKind kind, FileStream stream, CancellationToken ct)
     {
-        if (kind == ItemKind.Photo && JpegExifReader.ReadDateTimeOriginal(bytes) is { } exifDate)
+        if (kind == ItemKind.Photo)
         {
-            return new DateTimeOffset(DateTime.SpecifyKind(exifDate, DateTimeKind.Local));
+            var header = new byte[_exifHeaderBytes];
+            var read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
+            if (JpegExifReader.ReadDateTimeOriginal(header.AsSpan(0, read)) is { } exifDate)
+            {
+                return new DateTimeOffset(DateTime.SpecifyKind(exifDate, DateTimeKind.Local));
+            }
         }
 
         return new DateTimeOffset(File.GetLastWriteTimeUtc(path));

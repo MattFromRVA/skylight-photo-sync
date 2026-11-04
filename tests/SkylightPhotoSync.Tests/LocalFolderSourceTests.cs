@@ -164,4 +164,26 @@ public class LocalFolderSourceTests
         Assert.Equal(await File.ReadAllBytesAsync(original), await File.ReadAllBytesAsync(downloaded));
         Assert.True(File.Exists(original));
     }
+
+    [Fact]
+    public async Task Download_keeps_same_named_files_from_different_folders_apart()
+    {
+        using var root = new TempDir();
+        using var dest = new TempDir();
+        var first = root.AddFixture("tiny.jpg", "a/IMG_0001.jpg", _y2019);
+        var second = root.AddFixture("tiny.png", "b/IMG_0001.jpg", _y2021);
+        var source = new LocalFolderSource(root.Path);
+        var items = await source
+            .ListCandidatesAsync(_unbounded, SourceMode.All, albumName: null, CancellationToken.None);
+
+        var downloaded = new List<string>();
+        foreach (var item in items)
+        {
+            downloaded.Add(await source.DownloadAsync(item, dest.Path, CancellationToken.None));
+        }
+
+        Assert.Equal(2, downloaded.Distinct().Count());
+        Assert.Equal(await File.ReadAllBytesAsync(first), await File.ReadAllBytesAsync(downloaded[0]));
+        Assert.Equal(await File.ReadAllBytesAsync(second), await File.ReadAllBytesAsync(downloaded[1]));
+    }
 }
