@@ -16,4 +16,8 @@
     <PackageReference Include="System.CommandLine" Version="2.0.14" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SkylightPhotoSync.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -144,12 +144,12 @@ public class AppTests
   - `public sealed record Batch(string Id, IReadOnlyList<Item> Items, IReadOnlyList<string> Files, long TotalBytes);`
   - `public interface IPhotoSource { Task<IReadOnlyList<Item>> ListCandidatesAsync(Window window, SourceMode mode, string? albumName, CancellationToken ct); Task<string> DownloadAsync(Item item, string destDir, CancellationToken ct); }` — results oldest-first.
   - `public sealed class AuthExpiredException : Exception` (in `Sources`, so Task 9 can catch it before Task 12 exists).
-  - `public sealed class LocalFolderSource(string root) : IPhotoSource` — `All` = every image/video under root; `Album` = files under `root/<albumName>`; `CapturedAt` from EXIF `DateTimeOriginal` (ImageSharp) else last-write time; `Md5` of bytes.
+  - `public sealed class LocalFolderSource(string root) : IPhotoSource` — `All` = every image/video under root; `Album` = files under `root/<albumName>`; `CapturedAt` from EXIF `DateTimeOriginal` (built-in `JpegExifReader`; ImageSharp was dropped here because 3.1.x carries published vulnerabilities and 3.2+/4.x need a Six Labors license key, see Task 5) else last-write time; `Md5` of bytes.
 
-- [ ] **Step 1: Add fixture images** via `scripts/make-fixtures.sh` (ImageSharp-free: uses `sips` on a Mac to make `tiny.jpg` 64×48, `tiny.png`, `tiny.gif`, and `tiny_rot6.heic` from a JPEG that carries EXIF orientation 6; verify with `sips -g all`). Commit the generated files and a ≤10 KB static `tiny.mp4`.
-- [ ] **Step 2: Write failing tests**: `FromLookback_zero_is_unbounded`, `All_mode_lists_oldest_first`, `Album_mode_only_subfolder`, `Window_filters_by_captured_at`, `Download_copies_file`.
-- [ ] **Step 3: fail. Step 4: implement. Step 5: green.**
-- [ ] **Step 6: Commit** `feat: item model, IPhotoSource and LocalFolderSource`.
+- [x] **Step 1: Add fixture images** via `scripts/make-fixtures.sh` (ImageSharp-free: uses `sips` on a Mac to make `tiny.jpg` 64×48, `tiny.png`, `tiny.gif`, and `tiny_rot6.heic` from a JPEG that carries EXIF orientation 6; verify with `sips -g all`). Commit the generated files and a ≤10 KB static `tiny.mp4`.
+- [x] **Step 2: Write failing tests**: `FromLookback_zero_is_unbounded`, `All_mode_lists_oldest_first`, `Album_mode_only_subfolder`, `Window_filters_by_captured_at`, `Download_copies_file`.
+- [x] **Step 3: fail. Step 4: implement. Step 5: green.**
+- [x] **Step 6: Commit** `feat: item model, IPhotoSource and LocalFolderSource`.
 
 ---
 
