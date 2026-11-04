@@ -224,6 +224,21 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void WriteSecrets_tightens_existing_loose_file()
+    {
+        using var home = new TestHome();
+        var path = Path.Combine(home.Dir, "secrets.toml");
+        File.WriteAllText(path, "");
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+        var secrets = new Secrets("sid-placeholder", "ubid-placeholder", "at-placeholder", "smtp-placeholder");
+
+        ConfigLoader.WriteSecrets(path, secrets);
+
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+        Assert.Equal(secrets, ConfigLoader.LoadSecrets(path));
+    }
+
+    [Fact]
     public void WriteSecrets_omits_null_values()
     {
         using var home = new TestHome();

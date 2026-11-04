@@ -73,7 +73,7 @@ public static class ConfigLoader
             if ((mode & _groupOrOtherBits) != 0)
             {
                 throw new ConfigException(
-                    $"{path} is readable by other users; it must be mode 0600. Fix with: chmod 600 \"{path}\"");
+                    $"{path} is accessible by other users; it must be mode 0600. Fix with: chmod 600 \"{path}\"");
             }
         }
 
@@ -116,8 +116,8 @@ public static class ConfigLoader
             Directory.CreateDirectory(directory);
         }
 
-        // Create the file already locked down so its contents are never world-readable,
-        // then enforce the mode again in case the file existed with looser permissions.
+        // Create the file already locked down, and tighten an existing looser file before any
+        // secret is written, so the contents are never readable by other users.
         var options = new FileStreamOptions
         {
             Mode = FileMode.Create,
@@ -132,6 +132,11 @@ public static class ConfigLoader
         using (var stream = new FileStream(path, options))
         using (var writer = new StreamWriter(stream))
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, _secretsMode);
+            }
+
             writer.Write(text);
         }
 
