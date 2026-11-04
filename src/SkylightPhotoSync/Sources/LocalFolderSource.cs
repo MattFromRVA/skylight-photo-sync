@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Models;
 
@@ -42,7 +43,7 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
             }
 
             await using var stream = File.OpenRead(path);
-            var capturedAt = await ReadCapturedAtAsync(path, media.Kind, stream, ct);
+            var capturedAt = await ReadCapturedAtAsync(path, media.Mime, stream, ct);
             if (!window.Contains(capturedAt))
             {
                 continue;
@@ -66,7 +67,8 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
     {
         var source = Path.Combine(_root, item.Id);
         Directory.CreateDirectory(destDir);
-        var dest = Path.Combine(destDir, item.Id.Replace('/', '_'));
+        var idHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(item.Id)))[..8];
+        var dest = Path.Combine(destDir, $"{idHash}_{item.Name}");
         await using var input = File.OpenRead(source);
         await using var output = File.Create(dest);
         await input.CopyToAsync(output, ct);
@@ -97,9 +99,9 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
     /// EXIF dates have no zone, so they are read as wall-clock time on this machine.
     /// </summary>
     private static async Task<DateTimeOffset> ReadCapturedAtAsync(
-        string path, ItemKind kind, FileStream stream, CancellationToken ct)
+        string path, string mime, FileStream stream, CancellationToken ct)
     {
-        if (kind == ItemKind.Photo)
+        if (mime == "image/jpeg")
         {
             var header = new byte[_exifHeaderBytes];
             var read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);

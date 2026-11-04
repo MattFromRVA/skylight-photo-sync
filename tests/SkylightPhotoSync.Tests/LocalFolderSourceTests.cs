@@ -160,7 +160,8 @@ public class LocalFolderSourceTests
 
         var downloaded = await source.DownloadAsync(item, destDir, CancellationToken.None);
 
-        Assert.Equal(Path.Combine(destDir, "photo.jpg"), downloaded);
+        Assert.Equal(destDir, Path.GetDirectoryName(downloaded));
+        Assert.EndsWith("_photo.jpg", Path.GetFileName(downloaded), StringComparison.Ordinal);
         Assert.Equal(await File.ReadAllBytesAsync(original), await File.ReadAllBytesAsync(downloaded));
         Assert.True(File.Exists(original));
     }
@@ -185,5 +186,27 @@ public class LocalFolderSourceTests
         Assert.Equal(2, downloaded.Distinct().Count());
         Assert.Equal(await File.ReadAllBytesAsync(first), await File.ReadAllBytesAsync(downloaded[0]));
         Assert.Equal(await File.ReadAllBytesAsync(second), await File.ReadAllBytesAsync(downloaded[1]));
+    }
+
+    [Fact]
+    public async Task Download_keeps_root_file_apart_from_subfolder_file_with_flattened_name()
+    {
+        using var root = new TempDir();
+        using var dest = new TempDir();
+        var rootLevel = root.AddFixture("tiny.jpg", "a_IMG_0001.jpg", _y2019);
+        var nested = root.AddFixture("tiny.png", "a/IMG_0001.jpg", _y2021);
+        var source = new LocalFolderSource(root.Path);
+        var items = await source
+            .ListCandidatesAsync(_unbounded, SourceMode.All, albumName: null, CancellationToken.None);
+
+        var downloaded = new List<string>();
+        foreach (var item in items)
+        {
+            downloaded.Add(await source.DownloadAsync(item, dest.Path, CancellationToken.None));
+        }
+
+        Assert.Equal(2, downloaded.Distinct().Count());
+        Assert.Equal(await File.ReadAllBytesAsync(rootLevel), await File.ReadAllBytesAsync(downloaded[0]));
+        Assert.Equal(await File.ReadAllBytesAsync(nested), await File.ReadAllBytesAsync(downloaded[1]));
     }
 }

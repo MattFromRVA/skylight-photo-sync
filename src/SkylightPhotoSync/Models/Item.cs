@@ -4,7 +4,7 @@ namespace SkylightPhotoSync.Models;
 /// One candidate photo or video as reported by an <see cref="Sources.IPhotoSource"/>.
 /// </summary>
 /// <param name="Id">Source-specific stable identifier (Amazon node id, or a relative path).</param>
-/// <param name="Name">File name, used for the download and the attachment.</param>
+/// <param name="Name">Original file name, used for the attachment.</param>
 /// <param name="Kind">Photo or video.</param>
 /// <param name="CapturedAt">Capture date; items are processed oldest-first by this value.</param>
 /// <param name="SizeBytes">Size of the original file.</param>
