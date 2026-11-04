@@ -87,7 +87,7 @@ tests/SkylightPhotoSync.Tests/
   - `public interface IProcessRunner { Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> args, CancellationToken ct = default); }` and `public sealed record ProcessResult(int ExitCode, string StdOut, string StdErr);` with `ProcessRunner` using `System.Diagnostics.Process`.
   - Tests: `MacOnlyFactAttribute : FactAttribute` (sets `Skip` when not macOS); `TestHome : IDisposable` (creates a temp dir, sets `SKYLIGHT_SYNC_HOME`, exposes `Dir`); `FakeProcessRunner : IProcessRunner` recording calls and returning scripted results.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```csharp
 public class AppTests
@@ -103,11 +103,11 @@ public class AppTests
 }
 ```
 
-- [ ] **Step 2: `dotnet test` → fails to compile (App missing).**
-- [ ] **Step 3: Create the solution, props, both projects and `App.cs`** using System.CommandLine with a root command whose `--version` option is handled explicitly so output goes to the supplied `TextWriter`. Add `IProcessRunner`/`ProcessRunner` and the three test-support types.
-- [ ] **Step 4: `dotnet build -warnaserror && dotnet format --verify-no-changes && dotnet test` → green.**
-- [ ] **Step 5: Create `.github/workflows/ci.yml`**: on push and pull_request; `ubuntu-latest`; `actions/setup-dotnet@v4` with `dotnet-version: 10.0.x`; run the three commands above.
-- [ ] **Step 6: Commit** `chore: scaffold .NET solution, CLI entry point and CI`.
+- [x] **Step 2: `dotnet test` → fails to compile (App missing).**
+- [x] **Step 3: Create the solution, props, both projects and `App.cs`** using System.CommandLine with a root command whose `--version` option is handled explicitly so output goes to the supplied `TextWriter`. Add `IProcessRunner`/`ProcessRunner` and the three test-support types.
+- [x] **Step 4: `dotnet build -warnaserror && dotnet format --verify-no-changes && dotnet test` → green.**
+- [x] **Step 5: Create `.github/workflows/ci.yml`**: on push and pull_request; `ubuntu-latest`; `actions/setup-dotnet@v4` with `dotnet-version: 10.0.x`; run the three commands above.
+- [x] **Step 6: Commit** `chore: scaffold .NET solution, CLI entry point and CI`.
 
 ---
 

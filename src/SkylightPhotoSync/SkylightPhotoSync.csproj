@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SkylightPhotoSync</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>skylight-sync</ToolCommandName>
+    <PackageId>SkylightPhotoSync</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Emails new Amazon Photos to a Skylight Calendar on a Mac schedule.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MattFromRVA/skylight-photo-sync</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.14" />
+  </ItemGroup>
+
+</Project>
