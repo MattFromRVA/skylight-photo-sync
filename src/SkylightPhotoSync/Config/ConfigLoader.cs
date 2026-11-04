@@ -38,6 +38,10 @@ public static class ConfigLoader
         var alerts = Table(root, "alerts");
         var schedule = Table(root, "schedule");
 
+        // Spec 6.7: alerts go to the SMTP username unless [alerts] email says otherwise.
+        var smtpUsername = RequireString(smtp, "smtp", "username");
+        var alertEmail = GetString(alerts, "alerts", "email");
+
         return new AppConfig(
             Source: source,
             Limits: new LimitsConfig(
@@ -53,9 +57,9 @@ public static class ConfigLoader
             Smtp: new SmtpConfig(
                 Host: RequireString(smtp, "smtp", "host"),
                 Port: GetInt(smtp, "smtp", "port") ?? 587,
-                Username: RequireString(smtp, "smtp", "username")),
+                Username: smtpUsername),
             Alerts: new AlertsConfig(
-                Email: RequireString(alerts, "alerts", "email")),
+                Email: string.IsNullOrWhiteSpace(alertEmail) ? smtpUsername : alertEmail),
             Schedule: new ScheduleConfig(
                 IntervalMinutes: GetInt(schedule, "schedule", "interval_minutes") ?? 60));
     }

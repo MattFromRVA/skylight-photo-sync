@@ -158,6 +158,54 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void Alerts_email_defaults_to_smtp_username_when_section_is_omitted()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, """
+            [source]
+            mode = "album"
+            album_name = "Skylight"
+
+            [email]
+            to = ["household@ourskylight.com"]
+            from = "me@example.com"
+
+            [smtp]
+            host = "smtp.example.com"
+            username = "smtp-user@example.com"
+            """, appendRest: false);
+
+        var config = ConfigLoader.LoadConfig(path);
+
+        Assert.Equal("smtp-user@example.com", config.Alerts.Email);
+    }
+
+    [Fact]
+    public void Alerts_email_defaults_to_smtp_username_when_key_is_omitted()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, """
+            [source]
+            mode = "album"
+            album_name = "Skylight"
+
+            [email]
+            to = ["household@ourskylight.com"]
+            from = "me@example.com"
+
+            [smtp]
+            host = "smtp.example.com"
+            username = "smtp-user@example.com"
+
+            [alerts]
+            """, appendRest: false);
+
+        var config = ConfigLoader.LoadConfig(path);
+
+        Assert.Equal("smtp-user@example.com", config.Alerts.Email);
+    }
+
+    [Fact]
     public void Missing_email_recipients_throw()
     {
         using var home = new TestHome();
