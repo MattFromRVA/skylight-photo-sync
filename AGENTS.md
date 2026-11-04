@@ -9,7 +9,14 @@ Read first, in this order:
 
 ## Rules
 
+- Always start from the latest `main` (the default branch; there is no `master`). Before working a
+  ticket, `git fetch origin` and branch from `origin/main`; before opening or updating a PR, bring
+  the branch up to date with `origin/main` again (merge or rebase) so CI and review see current code.
 - One issue per branch per PR. Branch name `task-<n>-<slug>`. PR title starts with `Task <n>:`.
+- Run every change through the no-mistakes pipeline before it reaches `main`: commit on the task
+  branch, then `no-mistakes axi run --intent "<what the ticket asks for>"` and drive it until it
+  reports `checks-passed`. Fix findings through the pipeline (`no-mistakes axi respond`), not by
+  hand while a run is active. A fresh clone needs `no-mistakes init` once first.
 - Test-first: write the failing test from the plan, see it fail, implement, see it pass.
 - Before opening a PR: `dotnet build -warnaserror && dotnet format --verify-no-changes && dotnet test`.
 - No network in tests. No secrets anywhere in the repo. `secrets.toml`, `*.db`, `*.log` are ignored.
