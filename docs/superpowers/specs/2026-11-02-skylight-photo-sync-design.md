@@ -1,7 +1,7 @@
 # Skylight Photo Sync — Design
 
 **Date:** 2026-11-02
-**Status:** Draft for approval (builder-check applied 2026-11-02)
+**Status:** Draft for approval (builder-check applied 2026-11-02; switched to C#/.NET 2026-11-04)
 **Owner:** Matt (MattFromRVA)
 
 ## 1. Intent
@@ -81,8 +81,13 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 ### 6.1 Platform and runtime
 
 - **(Matt)** Runs on Matt's Mac. The README says so prominently.
-- **(call)** Python 3.12+, managed with `uv`. Reason: the only documented Amazon Photos
-  client code is Python; Pillow + pillow-heif handle HEIC; Python is already on the Mac.
+- **(Matt)** C# on .NET 10 (LTS), packaged as a .NET global tool (`dotnet tool install`)
+  with command name `skylight-sync`. Reason: Matt's other projects are .NET and he will
+  maintain this one. The Python reference client is used only as endpoint documentation.
+- **(call)** Libraries: System.CommandLine (CLI), MailKit (SMTP), Microsoft.Data.Sqlite
+  (state), Tomlyn (TOML config), SixLabors.ImageSharp (orientation, EXIF strip, resize,
+  JPEG encode), Serilog with a rolling file sink (logs), xUnit + the `SmtpServer` NuGet
+  package (in-process SMTP stub for tests).
 - **(call)** Scheduling via a launchd LaunchAgent (`~/Library/LaunchAgents/`), installed
   by `skylight-sync install-launchd`, default interval 60 minutes.
 - **(call)** Delivery via SMTP to the Skylight household address. Default example is
@@ -126,6 +131,11 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 - **(call)** Convert HEIC/PNG to JPEG. Apply EXIF orientation, then strip all EXIF
   (removes GPS). Resize so the long edge ≤ `image.max_long_edge` (default 2048; the 15"
   Skylight Calendar panel is 1920×1080). JPEG quality `image.jpeg_quality` (default 88).
+- **(call)** HEIC decoding uses macOS itself: the built-in `sips` tool converts HEIC to an
+  intermediate JPEG (EXIF preserved), then ImageSharp loads it, auto-orients, strips
+  metadata, resizes and re-encodes. .NET imaging libraries cannot decode HEIC on their
+  own, and this fits the Mac-only decision without a large native dependency. The HEIC
+  step sits behind an `IHeicConverter` interface so tests can fake it on Linux CI.
 - GIFs are passed through unchanged.
 - Processing happens in a temp directory that is deleted after each run.
 
@@ -234,16 +244,21 @@ skylight-sync reset --yes
 ### 6.10 Repository and quality
 
 - MIT license. Public repo `MattFromRVA/skylight-photo-sync`.
-- `uv`-managed project, `ruff` for lint/format, `pytest` for tests, `mypy` in strict-ish
-  mode. GitHub Actions runs lint + tests on push and PR (no network, no secrets).
-- Tests use recorded JSON fixtures for the Amazon endpoints and a local SMTP stub
-  (`aiosmtpd` or `smtpd`-style) so the whole pipeline runs offline.
+- .NET 10 solution: `src/SkylightPhotoSync` (console app, packed as a global tool) and
+  `tests/SkylightPhotoSync.Tests` (xUnit). `TreatWarningsAsErrors`, nullable enabled,
+  `dotnet format --verify-no-changes` in CI. GitHub Actions runs build, format check and
+  tests on push and PR (no network, no secrets). Tests that need macOS tools (`sips`,
+  `osascript`, `launchctl`) are skipped on Linux via a `MacOnlyFact` attribute; the
+  code paths that call them are behind interfaces and tested with fakes everywhere.
+- Tests use recorded JSON fixtures for the Amazon endpoints and an in-process SMTP stub
+  so the whole pipeline runs offline.
 - Work is tracked as GitHub issues sized for a single agent session each, labelled by
   area, with a milestone for v1.
 
 ## 7. First-run experience (acceptance walkthrough)
 
-1. `uv tool install skylight-photo-sync` (or `uv run` from a clone).
+1. `dotnet tool install --global SkylightPhotoSync` (or pack from a clone and install with
+   `--add-source`).
 2. `skylight-sync login` → paste cookies → "Amazon Photos: connected as <name>, 12,345 items".
 3. Edit `config.toml`: album name, Skylight address, SMTP.
 4. `skylight-sync test-email` → one photo arrives; Matt approves the sender in the Skylight
@@ -272,10 +287,12 @@ only Matt can provide, and the reference library is two years stale. Therefore:
 ## 9. Left to the builder
 
 - Exact Amazon endpoint shapes and which date field best represents "added to album".
-- Whether to use `requests` or `httpx`; either is fine.
+- Whether to use raw `HttpClient` + `System.Text.Json` or a small typed client wrapper.
 - Fixture recording approach and redaction of real node ids.
 - Whether `install-launchd` uses `StartInterval` or `StartCalendarInterval`.
 - Keychain storage for secrets (optional follow-up; file with 0600 is acceptable for v1).
+- Whether to create the rotated-HEIC test fixture with `sips` on a Mac or commit a static
+  file; either is fine as long as it has EXIF orientation 6.
 
 ## 10. Risks
 

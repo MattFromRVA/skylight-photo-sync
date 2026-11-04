@@ -22,6 +22,11 @@ Every hour (configurable) it:
 4. Remembers what it sent so nothing is sent twice.
 5. Tells you, once and clearly, if Amazon's login cookies expire and need refreshing.
 
+## Built with
+
+C# on .NET 10, packaged as a `dotnet` global tool. System.CommandLine, MailKit,
+Microsoft.Data.Sqlite, Tomlyn, ImageSharp, and macOS's own `sips` for HEIC decoding.
+
 ## Why email, and why cookies?
 
 - **Skylight** has no public API. Emailing photos to the household address is the
@@ -45,7 +50,7 @@ Agents: read [AGENTS.md](AGENTS.md) first.
 ## Quick start (once implemented)
 
 ```bash
-uv tool install skylight-photo-sync
+dotnet tool install --global SkylightPhotoSync
 skylight-sync login          # paste Amazon cookies
 # edit ~/.config/skylight-photo-sync/config.toml
 skylight-sync test-email     # approve the sender in Skylight when prompted
@@ -73,7 +78,7 @@ permissions and are never committed.
 ## Requirements
 
 - macOS
-- Python 3.12+ and [`uv`](https://docs.astral.sh/uv/)
+- .NET 10 SDK (the tool is written in C#)
 - An Amazon Photos account
 - A Skylight Calendar with the Plus plan (for the photo screensaver) or a Skylight Frame
 - An SMTP account to send from (Gmail with an app password works)
