@@ -17,3 +17,13 @@ config.local.toml
 
 # macOS
 .DS_Store
+
+# .NET build output and IDE state
+bin/
+obj/
+*.user
+.vs/
+.idea/
+
+# Agent worktrees
+.claude/worktrees/
