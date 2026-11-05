@@ -40,8 +40,8 @@ Details and sources: [docs/research-notes.md](docs/research-notes.md).
 
 ## Status
 
-Early implementation: the solution scaffold and CI are in place; sync commands are not yet
-built. See the
+Early implementation: the solution scaffold, CI, and configuration loading (`config.toml`,
+`secrets.toml`, file locations) are in place; sync commands are not yet built. See the
 [design spec](docs/superpowers/specs/2026-11-02-skylight-photo-sync-design.md) and the
 [implementation plan](docs/superpowers/plans/2026-11-02-skylight-photo-sync-v1.md). Work is tracked in
 [GitHub issues](https://github.com/MattFromRVA/skylight-photo-sync/issues): issues #1–#13 are
