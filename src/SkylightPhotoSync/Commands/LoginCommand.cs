@@ -14,6 +14,9 @@ public static partial class LoginCommand
 {
     public const string SavedMessage = "Saved. Run 'skylight-sync run --dry-run' to verify.";
 
+    public const string PastePrompt =
+        "Paste the 'Copy as cURL' command (or session-id, ubid-main and at-main on three lines), then press Ctrl-D.";
+
     private const string _sessionIdKey = "session-id";
     private static readonly string[] _ubidKeys = ["ubid-main", "ubid_main"];
     private static readonly string[] _atKeys = ["at-main", "at_main"];
@@ -28,6 +31,11 @@ public static partial class LoginCommand
         {
             var stdout = parseResult.InvocationConfiguration.Output;
             var stderr = parseResult.InvocationConfiguration.Error;
+
+            if (!Console.IsInputRedirected)
+            {
+                stderr.WriteLine(PastePrompt);
+            }
 
             var input = await Console.In.ReadToEndAsync(ct);
             if (!TryParse(input, out var cookies, out var problem))

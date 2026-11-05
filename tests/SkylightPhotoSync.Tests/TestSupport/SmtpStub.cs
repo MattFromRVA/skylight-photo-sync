@@ -21,11 +21,12 @@ public sealed class SmtpStub : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _run;
 
-    private SmtpStub(int port)
+    private SmtpStub(int port, int maxMessageSize)
     {
         Port = port;
         var options = new SmtpServerOptionsBuilder()
             .ServerName("localhost")
+            .MaxMessageSize(maxMessageSize)
             .Endpoint(e => e.Endpoint(new IPEndPoint(IPAddress.Loopback, port)).IsSecure(false))
             .Build();
         var services = new ServiceProvider();
@@ -40,10 +41,13 @@ public sealed class SmtpStub : IAsyncDisposable
     /// <summary>Messages accepted so far, in arrival order.</summary>
     public List<MimeMessage> Received { get; } = [];
 
-    /// <summary>Starts a stub and returns once it accepts connections.</summary>
-    public static async Task<SmtpStub> StartAsync()
+    /// <summary>
+    /// Starts a stub and returns once it accepts connections. Messages larger than
+    /// <paramref name="maxMessageSize"/> bytes (0: no limit) are rejected.
+    /// </summary>
+    public static async Task<SmtpStub> StartAsync(int maxMessageSize = 0)
     {
-        var stub = new SmtpStub(FreePort());
+        var stub = new SmtpStub(FreePort(), maxMessageSize);
         await stub.WaitUntilReadyAsync();
         return stub;
     }

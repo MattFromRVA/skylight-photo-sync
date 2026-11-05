@@ -120,14 +120,12 @@ public static class TestEmailCommand
                 var mailer = CommandSupport.CreateMailer(cfg.Smtp, CommandSupport.LoadSecretsIfPresent(paths));
                 if (sizeProbe)
                 {
-                    await SendProbesAsync(cfg, mailer, log, stdout, ct);
+                    var accepted = await SendProbesAsync(cfg, mailer, log, stdout, stderr, ct);
                     stdout.WriteLine(ProbeHint);
-                }
-                else
-                {
-                    await SendTestImageAsync(cfg, mailer, log, stdout, ct);
+                    return accepted > 0 ? 0 : 1;
                 }
 
+                await SendTestImageAsync(cfg, mailer, log, stdout, ct);
                 return 0;
             }
             catch (Exception ex) when (ex is ConfigException or SendFailedException)
@@ -139,6 +137,12 @@ public static class TestEmailCommand
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 stderr.WriteLine("test-email cancelled.");
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex, "test-email failed");
+                stderr.WriteLine($"test-email failed: {ex.GetType().Name}: {ex.Message}");
                 return 1;
             }
         }
@@ -163,8 +167,14 @@ public static class TestEmailCommand
         }
     }
 
-    private static async Task SendProbesAsync(AppConfig cfg, IMailer mailer, Logger log, TextWriter stdout, CancellationToken ct)
+    /// <summary>
+    /// Sends every probe size to every recipient. An SMTP rejection (expected for the larger sizes on
+    /// relays with a 25 MB limit) is reported and the series continues. Returns how many sends were accepted.
+    /// </summary>
+    private static async Task<int> SendProbesAsync(
+        AppConfig cfg, IMailer mailer, Logger log, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
+        var accepted = 0;
         foreach (var megabytes in ProbeSizesMb)
         {
             ct.ThrowIfCancellationRequested();
@@ -178,11 +188,24 @@ public static class TestEmailCommand
                     $"Size probe: one {megabytes} MB JPEG ({jpeg.Length:N0} bytes).",
                     $"skylight-sync-probe-{megabytes}mb.jpg",
                     jpeg);
-                await mailer.SendAsync(message, ct);
+                try
+                {
+                    await mailer.SendAsync(message, ct);
+                }
+                catch (SendFailedException ex)
+                {
+                    log.Warning("size probe {Megabytes} MB to {Recipient} rejected by SMTP: {Message}", megabytes, recipient, ex.Message);
+                    stderr.WriteLine($"{megabytes} MB probe to {recipient} rejected by SMTP: {ex.Message}");
+                    continue;
+                }
+
+                accepted++;
                 log.Information("size probe {Megabytes} MB sent to {Recipient} ({Bytes} bytes)", megabytes, recipient, jpeg.Length);
                 stdout.WriteLine($"Sent {megabytes} MB probe ({jpeg.Length:N0} bytes) to {recipient}");
             }
         }
+
+        return accepted;
     }
 
     private static MimeMessage Build(string from, string to, string subject, string text, string fileName, byte[] jpeg)

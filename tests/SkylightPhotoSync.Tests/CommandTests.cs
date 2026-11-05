@@ -239,6 +239,41 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task TestEmail_size_probe_continues_past_rejected_sizes()
+    {
+        await using var stub = await SmtpStub.StartAsync(maxMessageSize: 12_000_000);
+        WriteConfig(smtpPort: stub.Port);
+
+        var (code, out_, err) = await Run("test-email", "--size-probe");
+
+        Assert.Equal(0, code);
+        var sent = Assert.Single(stub.Received);
+        Assert.Equal("skylight-sync-probe-5mb.jpg", Assert.IsType<MimePart>(Assert.Single(sent.Attachments)).FileName);
+        Assert.Contains("Sent 5 MB probe", out_);
+        foreach (var megabytes in new[] { 10, 15, 20, 24 })
+        {
+            Assert.Contains($"{megabytes} MB probe to {_frame} rejected by SMTP", err);
+        }
+
+        Assert.Contains(TestEmailCommand.ProbeHint, out_);
+    }
+
+    [Fact]
+    public async Task TestEmail_reports_unwrapped_smtp_errors()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        WriteConfig(smtpPort: stub.Port);
+        ConfigLoader.WriteSecrets(Path.Combine(_home.Dir, "secrets.toml"), new Secrets(null, null, null, "app-password"));
+
+        var (code, _, err) = await Run("test-email");
+
+        Assert.Equal(1, code);
+        Assert.Contains("test-email failed: NotSupportedException", err);
+        Assert.Empty(stub.Received);
+        Assert.Contains("test-email failed", File.ReadAllText(Path.Combine(_home.Dir, "sync.log")));
+    }
+
+    [Fact]
     public void Size_probe_jpeg_is_close_to_its_target()
     {
         const int target = 300_000;
