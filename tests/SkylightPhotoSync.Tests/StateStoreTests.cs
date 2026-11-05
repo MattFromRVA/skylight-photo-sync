@@ -170,6 +170,20 @@ public sealed class StateStoreTests : IDisposable
         Assert.Equal("ProcessingFailed", Scalar("SELECT reason FROM skipped_items WHERE item_id = 'a'"));
     }
 
+    [Theory]
+    [InlineData(SkipReason.Oversize, true)]
+    [InlineData(SkipReason.UnsupportedType, true)]
+    [InlineData(SkipReason.VideoDisabled, false)]
+    [InlineData(SkipReason.DownloadFailed, false)]
+    [InlineData(SkipReason.ProcessingFailed, false)]
+    public void IsSkipped_is_true_only_for_permanent_reasons(SkipReason reason, bool expected)
+    {
+        _store.MarkSkipped("a", reason, "detail");
+
+        Assert.Equal(expected, _store.IsSkipped("a"));
+        Assert.Equal(reason.ToString(), Scalar("SELECT reason FROM skipped_items WHERE item_id = 'a'"));
+    }
+
     [Fact]
     public void StartRun_returns_increasing_ids()
     {
@@ -344,7 +358,7 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
-    public void ResetSent_clears_sent_items_and_returns_the_count()
+    public void ResetSent_clears_sent_and_skipped_items_and_returns_sent_count()
     {
         _store.MarkSent([MakeItem("a", "m1"), MakeItem("b", "m2")], "frame@example.com", "batch-1", _sentAt);
         _store.MarkSent([MakeItem("a", "m1")], "calendar@example.com", "batch-1", _sentAt);
@@ -355,7 +369,8 @@ public sealed class StateStoreTests : IDisposable
         Assert.Equal(3, removed);
         Assert.False(_store.IsSent("a", "frame@example.com"));
         Assert.False(_store.IsMd5Sent("m1", "frame@example.com"));
-        Assert.True(_store.IsSkipped("c"));
+        Assert.False(_store.IsSkipped("c"));
+        Assert.Equal(0L, Scalar("SELECT COUNT(*) FROM skipped_items"));
         Assert.Equal(0, _store.ResetSent());
     }
 
@@ -364,7 +379,8 @@ public sealed class StateStoreTests : IDisposable
     {
         _store.MarkSent([MakeItem("a")], "frame@example.com", "batch-1", _sentAt);
         _store.Dispose();
-        SqliteConnection.ClearAllPools();
+
+        File.Open(_dbPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose();
 
         File.Delete(_dbPath);
 

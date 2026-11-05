@@ -14,6 +14,8 @@ public sealed class StateStore : IDisposable
 {
     private const string _timestampFormat = "O";
 
+    private static readonly HashSet<SkipReason> _permanentSkipReasons = [SkipReason.Oversize, SkipReason.UnsupportedType];
+
     private readonly SqliteConnection _connection;
 
     public StateStore(string dbPath)
@@ -29,6 +31,7 @@ public sealed class StateStore : IDisposable
         {
             DataSource = dbPath,
             Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false,
         }.ToString());
         _connection.Open();
         Execute("PRAGMA journal_mode=WAL");
@@ -88,8 +91,14 @@ public sealed class StateStore : IDisposable
             ("$detail", detail),
             ("$skippedAt", Format(DateTimeOffset.UtcNow)));
 
+    /// <summary>
+    /// True only when the item's recorded skip reason is permanent: <see cref="SkipReason.Oversize"/> or
+    /// <see cref="SkipReason.UnsupportedType"/>, which are properties of the file. Other reasons stay recorded
+    /// for diagnostics but return false so the item is retried on the next run.
+    /// </summary>
     public bool IsSkipped(string itemId) =>
-        Scalar("SELECT 1 FROM skipped_items WHERE item_id = $itemId LIMIT 1", ("$itemId", itemId)) is not null;
+        Scalar("SELECT reason FROM skipped_items WHERE item_id = $itemId", ("$itemId", itemId)) is string reason
+        && _permanentSkipReasons.Contains(Enum.Parse<SkipReason>(reason));
 
     public long StartRun(SourceMode mode) =>
         (long)Scalar(
@@ -187,8 +196,22 @@ public sealed class StateStore : IDisposable
             Error: reader.IsDBNull(7) ? null : reader.GetString(7));
     }
 
-    /// <summary>Forgets every sent item for every recipient. Returns the number of rows removed.</summary>
-    public int ResetSent() => Execute("DELETE FROM sent_items");
+    /// <summary>
+    /// Starts over: forgets every sent item for every recipient and every skipped item.
+    /// Returns the number of sent-item rows removed.
+    /// </summary>
+    public int ResetSent()
+    {
+        using var transaction = _connection.BeginTransaction();
+        using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM skipped_items";
+        command.ExecuteNonQuery();
+        command.CommandText = "DELETE FROM sent_items";
+        var removed = command.ExecuteNonQuery();
+        transaction.Commit();
+        return removed;
+    }
 
     public void Dispose() => _connection.Dispose();
 
