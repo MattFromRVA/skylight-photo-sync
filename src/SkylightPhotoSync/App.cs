@@ -1,4 +1,5 @@
 using System.CommandLine;
+using SkylightPhotoSync.Commands;
 
 namespace SkylightPhotoSync;
 
@@ -40,6 +41,8 @@ public static class App
             Arity = ArgumentArity.Zero,
         };
         root.Options.Add(versionOption);
+        root.Subcommands.Add(InstallLaunchdCommand.Create());
+        root.Subcommands.Add(UninstallLaunchdCommand.Create());
 
         root.SetAction(parseResult =>
         {
