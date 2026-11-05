@@ -224,8 +224,8 @@ public class AppTests
   - `public sealed class SmtpMailer(SmtpConfig cfg, string password, bool useStartTls = true) : IMailer` using MailKit `SmtpClient`; any `SmtpCommandException`/`SmtpProtocolException`/socket error → `SendFailedException`.
   - `SmtpStub : IAsyncDisposable` wraps the `SmtpServer` package on `127.0.0.1` with an ephemeral port, no auth, no TLS, exposes `Received: List<MimeMessage>` and `Port`.
 
-- [ ] **Step 1: Write failing tests**: `Subject_and_body`, `Attachments_present_with_mime`, `Send_delivers_to_stub`, `Send_failure_throws_SendFailed` (connect to a closed port).
-- [ ] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: build MIME batches and send over SMTP`.
+- [x] **Step 1: Write failing tests**: `Subject_and_body`, `Attachments_present_with_mime`, `Send_delivers_to_stub`, `Send_failure_throws_SendFailed` (connect to a closed port).
+- [x] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: build MIME batches and send over SMTP`.
 
 ---
 
