@@ -193,9 +193,9 @@ public class AppTests
     - photos: HEIC → via `heic` to JPEG first (macOS `sips`, behind `IHeicConverter`); then decode with SkiaSharp (`SKCodec.Create`, read `codec.EncodedOrigin`, decode to `SKBitmap`), apply that origin to get upright pixels, resize if long edge > `MaxLongEdge` (never upscale), and re-encode with `SKImage.Encode(SKEncodedImageFormat.Jpeg, cfg.JpegQuality)`. Re-encoding drops all EXIF, XMP and GPS, so no explicit stripping step is needed (the tests assert it). Output name `yyyy-MM-dd_HHmmss_<Id[..8]>.jpg` from `item.CapturedAt`.
     - GIF: copy unchanged, same naming, `.gif`. Video: copy if `SizeBytes <= videoCapBytes` else throw `OversizeException`. Other → `UnsupportedMediaException`.
 
-- [ ] **Step 1: Write failing tests**: `Heic_rot6_becomes_upright_jpeg_without_exif` (`[MacOnlyFact]`, real `SipsHeicConverter`; assert width/height swapped relative to source and that the output JPEG has no APP1 Exif/XMP segment), `Heic_path_uses_converter` (fake `IHeicConverter` returning a JPEG, runs everywhere), `Png_to_jpeg`, `Large_image_resized_to_max_long_edge` (generate 4000×3000 in-test → 2048), `Small_image_not_upscaled`, `Gif_passthrough`, `Video_over_cap_throws_oversize`, `Output_filename_pattern`, `Sips_converter_invokes_expected_arguments` (FakeProcessRunner).
-- [ ] **Step 2: fail. Step 3: implement. Step 4: green.**
-- [ ] **Step 5: Commit** `feat: normalize photos to upright, EXIF-free, resized JPEG`.
+- [x] **Step 1: Write failing tests**: `Heic_rot6_becomes_upright_jpeg_without_exif` (`[MacOnlyFact]`, real `SipsHeicConverter`; assert width/height swapped relative to source and that the output JPEG has no APP1 Exif/XMP segment), `Heic_path_uses_converter` (fake `IHeicConverter` returning a JPEG, runs everywhere), `Png_to_jpeg`, `Large_image_resized_to_max_long_edge` (generate 4000×3000 in-test → 2048), `Small_image_not_upscaled`, `Gif_passthrough`, `Video_over_cap_throws_oversize`, `Output_filename_pattern`, `Sips_converter_invokes_expected_arguments` (FakeProcessRunner).
+- [x] **Step 2: fail. Step 3: implement. Step 4: green.**
+- [x] **Step 5: Commit** `feat: normalize photos to upright, EXIF-free, resized JPEG`.
 
 ---
 
