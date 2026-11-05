@@ -291,11 +291,11 @@ public class AppTests
 - Create: `Launchd/LaunchdInstaller.cs`, `Commands/InstallLaunchdCommand.cs`, `Commands/UninstallLaunchdCommand.cs`, `tests/.../LaunchdInstallerTests.cs`; Modify: `App.cs`
 
 **Interfaces:**
-- Produces `public sealed class LaunchdInstaller(IProcessRunner runner, string plistDir)` with `public const string Label = "com.mattfromrva.skylight-photo-sync"`; `static string RenderPlist(string programPath, int intervalMinutes, string logFile)` (`ProgramArguments=[program,"run"]`, `StartInterval=intervalMinutes*60`, `RunAtLoad=true`, `StandardOutPath`/`StandardErrorPath`=logFile); `Task<string> InstallAsync(AppConfig cfg, string programPath, CancellationToken ct)` (writes plist, `launchctl bootstrap gui/<uid> <plist>`, falling back to `launchctl load`); `Task UninstallAsync(CancellationToken ct)`; `bool IsInstalled()`; `Task<DateTimeOffset?> NextRunAsync(CancellationToken ct)` (best-effort from `launchctl print`, null if unavailable). `programPath` defaults to `Environment.ProcessPath`. Default `plistDir` = `~/Library/LaunchAgents`.
+- Produces `public sealed class LaunchdInstaller(IProcessRunner runner, string plistDir, uint? uid = null)` (the optional `uid` names the `gui/<uid>` domain; it defaults to `getuid()` and tests inject it) with `public const string Label = "com.mattfromrva.skylight-photo-sync"`; `static string RenderPlist(string programPath, int intervalMinutes, string logFile)` (`ProgramArguments=[program,"run"]`, `StartInterval=intervalMinutes*60`, `RunAtLoad=true`, `StandardOutPath`/`StandardErrorPath`=logFile); `Task<string> InstallAsync(AppConfig cfg, string programPath, CancellationToken ct)` (writes plist, `launchctl bootstrap gui/<uid> <plist>`, falling back to `launchctl load`); `Task UninstallAsync(CancellationToken ct)`; `bool IsInstalled()`; `Task<DateTimeOffset?> NextRunAsync(CancellationToken ct)` (best-effort from `launchctl print`, null if unavailable). `programPath` defaults to `Environment.ProcessPath`. Default `plistDir` = `~/Library/LaunchAgents`.
 - CLI: `install-launchd`, `uninstall-launchd`.
 
-- [ ] **Step 1: Write failing tests** with `FakeProcessRunner` and a temp `plistDir`: `RenderPlist_contains_interval_and_label`, `Install_writes_plist_and_calls_launchctl`, `Uninstall_removes_plist`.
-- [ ] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: launchd agent install and uninstall`.
+- [x] **Step 1: Write failing tests** with `FakeProcessRunner` and a temp `plistDir`: `RenderPlist_contains_interval_and_label`, `Install_writes_plist_and_calls_launchctl`, `Uninstall_removes_plist`.
+- [x] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: launchd agent install and uninstall`.
 
 ---
 
