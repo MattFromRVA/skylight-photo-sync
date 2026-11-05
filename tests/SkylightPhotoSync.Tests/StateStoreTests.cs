@@ -32,7 +32,7 @@ public sealed class StateStoreTests : IDisposable
 
     private SqliteConnection OpenRaw()
     {
-        var conn = new SqliteConnection($"Data Source={_dbPath}");
+        var conn = new SqliteConnection($"Data Source={_dbPath};Pooling=False");
         conn.Open();
         return conn;
     }
@@ -378,12 +378,12 @@ public sealed class StateStoreTests : IDisposable
     public void Dispose_releases_the_database_file()
     {
         _store.MarkSent([MakeItem("a")], "frame@example.com", "batch-1", _sentAt);
+        Assert.True(File.Exists(_dbPath + "-wal"));
+
         _store.Dispose();
 
-        File.Open(_dbPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose();
-
-        File.Delete(_dbPath);
-
-        Assert.False(File.Exists(_dbPath));
+        Assert.False(File.Exists(_dbPath + "-wal"));
+        Assert.False(File.Exists(_dbPath + "-shm"));
+        Assert.True(File.Exists(_dbPath));
     }
 }
