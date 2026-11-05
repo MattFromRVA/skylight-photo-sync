@@ -173,6 +173,29 @@ public class ImageNormalizerTests
         Assert.Equal(Path.Combine(dest.Path, "2021-12-31_235907_AbCdEfGh.jpg"), output);
     }
 
+    [Fact]
+    public async Task Same_second_items_get_distinct_names()
+    {
+        using var work = new TempDir();
+        using var dest = new TempDir();
+        var red = Path.Combine(work.Path, "red.jpg");
+        var blue = Path.Combine(work.Path, "blue.jpg");
+        WriteJpeg(red, 32, 16, leftColor: SKColors.Red);
+        WriteJpeg(blue, 32, 16, leftColor: SKColors.Blue);
+        var normalizer = new ImageNormalizer(new FakeHeicConverter(), _cfg);
+        var first = Photo("red.jpg", "image/jpeg") with { Id = "Skylight/red.jpg" };
+        var second = Photo("blue.jpg", "image/jpeg") with { Id = "Skylight/blue.jpg" };
+
+        var firstOutput = await normalizer.NormalizeAsync(red, dest.Path, first, CancellationToken.None);
+        var secondOutput = await normalizer.NormalizeAsync(blue, dest.Path, second, CancellationToken.None);
+
+        Assert.Equal(Path.Combine(dest.Path, "2020-01-02_030405_Skylight.jpg"), firstOutput);
+        Assert.Equal(Path.Combine(dest.Path, "2020-01-02_030405_Skylight-2.jpg"), secondOutput);
+        Assert.True(File.Exists(firstOutput));
+        Assert.True(File.Exists(secondOutput));
+        Assert.NotEqual(File.ReadAllBytes(firstOutput), File.ReadAllBytes(secondOutput));
+    }
+
     private static Item Photo(string name, string mime) =>
         new(Id: "abcdefghijkl", Name: name, Kind: ItemKind.Photo, CapturedAt: _captured,
             SizeBytes: 0, Md5: null, Mime: mime);   // size only matters for videos

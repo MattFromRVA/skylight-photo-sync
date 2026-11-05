@@ -16,7 +16,8 @@ public sealed class ImageNormalizer(IHeicConverter heic, ImageConfig cfg, long v
     /// <summary>
     /// Writes the normalized file to <paramref name="destDir"/> as
     /// <c>yyyy-MM-dd_HHmmss_&lt;first 8 chars of Id&gt;.&lt;ext&gt;</c> (from <see cref="Item.CapturedAt"/>)
-    /// and returns its path. Throws <see cref="OversizeException"/> for a video over the cap and
+    /// and returns its path. If that name is already taken in <paramref name="destDir"/>, a numeric suffix
+    /// (<c>-2</c>, <c>-3</c>, ...) is added before the extension, so an existing file is never overwritten. Throws <see cref="OversizeException"/> for a video over the cap and
     /// <see cref="UnsupportedMediaException"/> for anything that is not JPEG, PNG, HEIC/HEIF, GIF or video.
     /// </summary>
     public async Task<string> NormalizeAsync(string src, string destDir, Item item, CancellationToken ct)
@@ -32,22 +33,22 @@ public sealed class ImageNormalizer(IHeicConverter heic, ImageConfig cfg, long v
                     $"Video '{item.Name}' is {item.SizeBytes:N0} bytes, over the {videoCapBytes:N0} byte cap.");
             }
 
-            return await CopyAsync(src, Path.Combine(destDir, stem + Path.GetExtension(src).ToLowerInvariant()), ct);
+            return await CopyAsync(src, FreePath(destDir, stem, Path.GetExtension(src).ToLowerInvariant()), ct);
         }
 
         switch (item.Mime.ToLowerInvariant())
         {
             case "image/gif":
-                return await CopyAsync(src, Path.Combine(destDir, stem + ".gif"), ct);
+                return await CopyAsync(src, FreePath(destDir, stem, ".gif"), ct);
 
             case "image/jpeg":
             case "image/png":
-                return WriteUprightJpeg(src, Path.Combine(destDir, stem + ".jpg"), ct);
+                return WriteUprightJpeg(src, FreePath(destDir, stem, ".jpg"), ct);
 
             case "image/heic":
             case "image/heif":
                 var intermediate = await heic.ToJpegAsync(src, destDir, ct);
-                var output = Path.Combine(destDir, stem + ".jpg");
+                var output = FreePath(destDir, stem, ".jpg", intermediate);
                 try
                 {
                     return WriteUprightJpeg(intermediate, output, ct);
@@ -148,10 +149,26 @@ public sealed class ImageNormalizer(IHeicConverter heic, ImageConfig cfg, long v
         return $"{item.CapturedAt:yyyy-MM-dd_HHmmss}_{safe}";
     }
 
+    /// <summary>
+    /// <c>&lt;stem&gt;&lt;ext&gt;</c> in <paramref name="destDir"/>, or the first free <c>&lt;stem&gt;-N&lt;ext&gt;</c>
+    /// (N = 2, 3, ...) when that is taken. <paramref name="reusable"/> is a path that may be written over,
+    /// so the HEIC intermediate does not collide with itself.
+    /// </summary>
+    private static string FreePath(string destDir, string stem, string ext, string? reusable = null)
+    {
+        var path = Path.Combine(destDir, stem + ext);
+        for (var n = 2; File.Exists(path) && !string.Equals(path, reusable, StringComparison.Ordinal); n++)
+        {
+            path = Path.Combine(destDir, $"{stem}-{n}{ext}");
+        }
+
+        return path;
+    }
+
     private static async Task<string> CopyAsync(string src, string dest, CancellationToken ct)
     {
         await using var input = File.OpenRead(src);
-        await using var output = File.Create(dest);
+        await using var output = new FileStream(dest, FileMode.CreateNew, FileAccess.Write);
         await input.CopyToAsync(output, ct);
         return dest;
     }
