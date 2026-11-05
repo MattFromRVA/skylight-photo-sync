@@ -60,12 +60,21 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
     /// <summary>
     /// Writes the plist and loads it (<c>launchctl bootstrap</c>, falling back to the legacy
     /// <c>launchctl load</c>). An already-installed agent is booted out first so a changed
-    /// interval takes effect. Returns the plist path.
+    /// interval takes effect. An out-of-range interval is rejected before anything is touched, and
+    /// when loading fails the plist is deleted so nothing is left behind. Returns the plist path.
     /// </summary>
     public async Task<string> InstallAsync(AppConfig cfg, string programPath, CancellationToken ct)
     {
+        var minutes = cfg.Schedule.IntervalMinutes;
+        if (minutes <= 0 || minutes > int.MaxValue / 60)
+        {
+            throw new LaunchdException(
+                $"[schedule] interval_minutes must be between 1 and {int.MaxValue / 60}, got {minutes}");
+        }
+
         var path = PlistPath;
         var logFile = AppPaths.Resolve().LogFile;
+        var plist = RenderPlist(programPath, minutes, logFile);
         Directory.CreateDirectory(plistDir);
         Directory.CreateDirectory(Path.GetDirectoryName(logFile)!);
 
@@ -75,7 +84,7 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
             await runner.RunAsync(_launchctl, ["bootout", ServiceTarget], ct);
         }
 
-        await File.WriteAllTextAsync(path, RenderPlist(programPath, cfg.Schedule.IntervalMinutes, logFile), ct);
+        await File.WriteAllTextAsync(path, plist, ct);
 
         var bootstrap = await runner.RunAsync(_launchctl, ["bootstrap", DomainTarget, path], ct);
         if (bootstrap.ExitCode != 0)
@@ -83,6 +92,7 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
             var load = await runner.RunAsync(_launchctl, ["load", path], ct);
             if (load.ExitCode != 0)
             {
+                File.Delete(path);
                 throw new LaunchdException($"launchctl could not load {path}: {Describe(bootstrap, load)}");
             }
         }
@@ -92,7 +102,8 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
 
     /// <summary>
     /// Unloads the agent (<c>launchctl bootout</c>, falling back to <c>launchctl unload</c>) and
-    /// deletes the plist. Does nothing when the plist is not present.
+    /// deletes the plist. Does nothing when the plist is not present. When both unload commands
+    /// fail the plist is still deleted, so a retry is not stuck, and the launchctl error is thrown.
     /// </summary>
     public async Task UninstallAsync(CancellationToken ct)
     {
@@ -108,6 +119,7 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
             var unload = await runner.RunAsync(_launchctl, ["unload", path], ct);
             if (unload.ExitCode != 0)
             {
+                File.Delete(path);
                 throw new LaunchdException($"launchctl could not unload {Label}: {Describe(bootout, unload)}");
             }
         }

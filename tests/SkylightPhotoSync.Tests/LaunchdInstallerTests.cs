@@ -91,6 +91,44 @@ public class LaunchdInstallerTests
     }
 
     [Fact]
+    public async Task Install_removes_plist_when_launchctl_fails()
+    {
+        using var dir = new TempDir();
+        using var home = new TestHome();
+        var runner = new FakeProcessRunner()
+            .Enqueue(5, stdErr: "Bootstrap failed: 5: Input/output error\n")
+            .Enqueue(1, stdErr: "Load failed: 5: Input/output error\n");
+        var installer = new LaunchdInstaller(runner, dir.Path, _uid);
+
+        await Assert.ThrowsAsync<LaunchdException>(() =>
+            installer.InstallAsync(Config(60), _program, CancellationToken.None));
+
+        Assert.False(File.Exists(installer.PlistPath));
+        Assert.False(installer.IsInstalled());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(40_000_000)]
+    public async Task Install_rejects_out_of_range_interval(int minutes)
+    {
+        using var dir = new TempDir();
+        using var home = new TestHome();
+        var runner = new FakeProcessRunner().Enqueue(0);
+        var installer = new LaunchdInstaller(runner, dir.Path, _uid);
+        var path = await installer.InstallAsync(Config(60), _program, CancellationToken.None);
+        var before = await File.ReadAllTextAsync(path);
+
+        var ex = await Assert.ThrowsAsync<LaunchdException>(() =>
+            installer.InstallAsync(Config(minutes), _program, CancellationToken.None));
+
+        Assert.Contains("[schedule] interval_minutes", ex.Message);
+        Assert.Single(runner.Calls);
+        Assert.Equal(before, await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
     public async Task Reinstall_boots_out_the_existing_agent_first()
     {
         using var dir = new TempDir();
@@ -144,7 +182,7 @@ public class LaunchdInstallerTests
     }
 
     [Fact]
-    public async Task Uninstall_keeps_plist_and_throws_when_both_fail()
+    public async Task Uninstall_removes_plist_and_throws_when_both_fail()
     {
         using var dir = new TempDir();
         using var home = new TestHome();
@@ -157,7 +195,8 @@ public class LaunchdInstallerTests
         var ex = await Assert.ThrowsAsync<LaunchdException>(() => installer.UninstallAsync(CancellationToken.None));
 
         Assert.Contains("Could not find specified service", ex.Message);
-        Assert.True(File.Exists(path));
+        Assert.False(File.Exists(path));
+        Assert.False(installer.IsInstalled());
     }
 
     [Fact]
