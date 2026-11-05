@@ -162,18 +162,18 @@ public class AppTests
 - Produces `public sealed class StateStore(string dbPath) : IDisposable` with:
   - `bool IsSent(string itemId, string recipient)`; `bool IsMd5Sent(string md5, string recipient)`
   - `void MarkSent(IReadOnlyList<Item> items, string recipient, string batchId, DateTimeOffset sentAt)`
-  - `void MarkSkipped(string itemId, SkipReason reason, string detail)`; `bool IsSkipped(string itemId)`
+  - `void MarkSkipped(string itemId, SkipReason reason, string detail)`; `bool IsSkipped(string itemId)` (true only for the permanent reasons `Oversize` and `UnsupportedType`; other reasons stay recorded but the item is retried)
   - `long StartRun(SourceMode mode)`; `void FinishRun(long runId, int found, int sent, int skipped, string? error)`
-  - `int ConsecutiveFailures()` (trailing runs with non-null error)
+  - `int ConsecutiveFailures()` (trailing finished runs with non-null error; unfinished runs are ignored)
   - `void SetNeedsLogin(bool flag, DateTimeOffset? at)`; `bool NeedsLogin()`
   - `DateTimeOffset? LastAlertAt(string kind)`; `void RecordAlert(string kind, DateTimeOffset at)`
-  - `RunRecord? LastRun()`; `int ResetSent()`
+  - `RunRecord? LastRun()`; `int ResetSent()` (clears sent and skipped items; returns the sent rows removed)
   - `public sealed record RunRecord(long Id, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt, SourceMode Mode, int Found, int Sent, int Skipped, string? Error);`
   - Schema created on open; `PRAGMA journal_mode=WAL`; timestamps stored as ISO-8601 UTC text.
 
-- [ ] **Step 1: Write failing tests** for each method plus `MarkSent_is_per_recipient` and `ConsecutiveFailures_resets_on_success`.
-- [ ] **Step 2: fail. Step 3: implement with Microsoft.Data.Sqlite, parameterized SQL. Step 4: green.**
-- [ ] **Step 5: Commit** `feat: sqlite state store for sent items, runs, auth and alerts`.
+- [x] **Step 1: Write failing tests** for each method plus `MarkSent_is_per_recipient` and `ConsecutiveFailures_resets_on_success`.
+- [x] **Step 2: fail. Step 3: implement with Microsoft.Data.Sqlite, parameterized SQL. Step 4: green.**
+- [x] **Step 5: Commit** `feat: sqlite state store for sent items, runs, auth and alerts`.
 
 ---
 
