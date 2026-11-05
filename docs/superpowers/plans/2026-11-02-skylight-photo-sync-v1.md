@@ -242,8 +242,8 @@ public class AppTests
   - `public static class AlertTexts { public const string AuthExpiredBody = ...; }` — re-login steps (run `skylight-sync login`, where to copy cookies).
   - `public sealed class Alerter(StateStore store, IMailer? mailer, string alertTo, string from, INotifier notifier, Func<DateTimeOffset> now) { Task<bool> AlertAsync(AlertKind kind, string title, string body, CancellationToken ct); }` — returns `false` and does nothing if `store.LastAlertAt(kind.ToString())` is within 24 h; otherwise notifies, emails if `mailer != null && kind != SmtpDown`, records, returns `true`.
 
-- [ ] **Step 1: Write failing tests** with a fake `INotifier` and `SmtpStub`: `First_alert_sends_email_and_notification`, `Second_alert_within_24h_is_suppressed`, `Alert_after_24h_sends_again`, `SmtpDown_kind_skips_email`.
-- [ ] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: rate-limited alerts by email and macOS notification`.
+- [x] **Step 1: Write failing tests** with a fake `INotifier` and `SmtpStub`: `First_alert_sends_email_and_notification`, `Second_alert_within_24h_is_suppressed`, `Alert_after_24h_sends_again`, `SmtpDown_kind_skips_email`.
+- [x] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: rate-limited alerts by email and macOS notification`.
 
 ---
 
