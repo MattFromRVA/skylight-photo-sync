@@ -207,8 +207,8 @@ public class AppTests
 **Interfaces:**
 - Produces `public sealed record PackResult(IReadOnlyList<Batch> Batches, IReadOnlyList<(Item Item, SkipReason Reason)> Skipped);` and `public static class BatchPacker { PackResult Pack(IReadOnlyList<(Item Item, string File)> prepared, int maxAttachments, long maxTotalBytes); }`. Input oldest-first; order preserved; a file alone larger than `maxTotalBytes` → `Skipped` with `SkipReason.Oversize`. `Batch.Id` = `Guid.NewGuid().ToString("N")[..12]`.
 
-- [ ] **Step 1: Write failing tests**: `Splits_on_attachment_count` (13 items, max 12 → 2), `Splits_on_total_bytes`, `Oversize_single_item_is_skipped_not_blocking`, `Preserves_order`.
-- [ ] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: pack prepared items into size-bounded email batches`.
+- [x] **Step 1: Write failing tests**: `Splits_on_attachment_count` (13 items, max 12 → 2), `Splits_on_total_bytes`, `Oversize_single_item_is_skipped_not_blocking`, `Preserves_order`.
+- [x] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: pack prepared items into size-bounded email batches`.
 
 ---
 
