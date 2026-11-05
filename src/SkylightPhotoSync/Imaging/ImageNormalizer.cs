@@ -19,6 +19,8 @@ public sealed class ImageNormalizer(IHeicConverter heic, ImageConfig cfg, long v
     /// and returns its path. If that name is already taken in <paramref name="destDir"/>, a numeric suffix
     /// (<c>-2</c>, <c>-3</c>, ...) is added before the extension, so an existing file is never overwritten. Throws <see cref="OversizeException"/> for a video over the cap and
     /// <see cref="UnsupportedMediaException"/> for anything that is not JPEG, PNG, HEIC/HEIF, GIF or video.
+    /// <paramref name="destDir"/> is the attachments directory: HEIC conversion writes a short-lived
+    /// <c>&lt;source name&gt;.jpg</c> there, so keep downloads in a separate directory.
     /// </summary>
     public async Task<string> NormalizeAsync(string src, string destDir, Item item, CancellationToken ct)
     {
@@ -84,7 +86,10 @@ public sealed class ImageNormalizer(IHeicConverter heic, ImageConfig cfg, long v
         var outputWidth = Math.Max(1, (int)Math.Round(uprightWidth * scale));
         var outputHeight = Math.Max(1, (int)Math.Round(uprightHeight * scale));
 
-        var info = new SKImageInfo(outputWidth, outputHeight, SKColorType.Bgra8888, SKAlphaType.Opaque);
+        // The output is tagged sRGB so Skia converts wide-gamut sources (iPhones shoot Display P3) while
+        // drawing; without this the P3 numbers would be written out untagged and look washed out.
+        using var srgb = SKColorSpace.CreateSrgb();
+        var info = new SKImageInfo(outputWidth, outputHeight, SKColorType.Bgra8888, SKAlphaType.Opaque, srgb);
         using var surface = SKSurface.Create(info)
             ?? throw new InvalidOperationException($"Cannot allocate a {outputWidth}x{outputHeight} surface.");
         var canvas = surface.Canvas;

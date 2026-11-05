@@ -67,6 +67,62 @@ public class ImageNormalizerTests
         AssertRoughly(SKColors.Blue, bitmap.GetPixel(8, 24));
     }
 
+    // Where the stored top-left/top-right/bottom-left/bottom-right quadrants land on screen for each
+    // EXIF orientation value (1 = as stored; 2-8 = mirrored, rotated or transposed, per the EXIF spec).
+    [Theory]
+    [InlineData(1, "R", "G", "B", "Y", false)]
+    [InlineData(2, "G", "R", "Y", "B", false)]
+    [InlineData(3, "Y", "B", "G", "R", false)]
+    [InlineData(4, "B", "Y", "R", "G", false)]
+    [InlineData(5, "R", "B", "G", "Y", true)]
+    [InlineData(6, "B", "R", "Y", "G", true)]
+    [InlineData(7, "Y", "G", "B", "R", true)]
+    [InlineData(8, "G", "Y", "R", "B", true)]
+    public async Task Every_exif_orientation_comes_out_upright(
+        int orientation, string topLeft, string topRight, string bottomLeft, string bottomRight, bool swapsSides)
+    {
+        using var work = new TempDir();
+        var src = Path.Combine(work.Path, $"rot{orientation}.jpg");
+        WriteQuadrantJpeg(src, 32, 16, orientation);
+        var normalizer = new ImageNormalizer(new FakeHeicConverter(), _cfg);
+
+        var output = await normalizer.NormalizeAsync(src, work.Path, Photo("x.jpg", "image/jpeg"), CancellationToken.None);
+
+        Assert.Equal(swapsSides ? (16, 32) : (32, 16), ReadPixelSize(output));
+        AssertQuadrants(output, topLeft, topRight, bottomLeft, bottomRight);
+    }
+
+    [Fact]
+    public async Task Rotated_large_image_is_both_upright_and_resized()
+    {
+        using var work = new TempDir();
+        var src = Path.Combine(work.Path, "big-rot6.jpg");
+        WriteQuadrantJpeg(src, 4000, 3000, exifOrientation: 6);
+        var normalizer = new ImageNormalizer(new FakeHeicConverter(), _cfg);
+
+        var output = await normalizer.NormalizeAsync(src, work.Path, Photo("x.jpg", "image/jpeg"), CancellationToken.None);
+
+        Assert.Equal((1536, 2048), ReadPixelSize(output));
+        AssertQuadrants(output, "B", "R", "Y", "G");   // same mapping as orientation 6 above
+    }
+
+    [Fact]
+    public async Task Display_p3_photo_is_converted_to_srgb()
+    {
+        using var work = new TempDir();
+        var src = Path.Combine(work.Path, "p3.jpg");
+        WriteDisplayP3Jpeg(src, 32, 16, SKColors.Red);
+        var normalizer = new ImageNormalizer(new FakeHeicConverter(), _cfg);
+
+        var output = await normalizer.NormalizeAsync(src, work.Path, Photo("x.jpg", "image/jpeg"), CancellationToken.None);
+
+        // sRGB red is stored in Display P3 as roughly (233, 52, 35). Writing those numbers out
+        // untagged would show as a muted brick red; the output must carry real sRGB values.
+        using var bitmap = SKBitmap.Decode(output);
+        var pixel = bitmap.GetPixel(16, 8);
+        Assert.True(pixel.Red > 240 && pixel.Green < 20 && pixel.Blue < 20, $"expected sRGB red, got {pixel}");
+    }
+
     [Fact]
     public async Task Png_to_jpeg()
     {
@@ -264,6 +320,86 @@ public class ImageNormalizerTests
         }
 
         file.Write(jpeg, 2, jpeg.Length - 2);
+    }
+
+
+    /// <summary>Red top-left, green top-right, blue bottom-left, yellow bottom-right, with an EXIF orientation tag.</summary>
+    private static void WriteQuadrantJpeg(string path, int width, int height, int exifOrientation)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            using var paint = new SKPaint();
+            var halfW = width / 2f;
+            var halfH = height / 2f;
+            foreach (var (color, x, y) in new[]
+            {
+                (SKColors.Red, 0f, 0f), (SKColors.Green, halfW, 0f), (SKColors.Blue, 0f, halfH), (SKColors.Yellow, halfW, halfH),
+            })
+            {
+                paint.Color = color;
+                canvas.DrawRect(x, y, halfW, halfH, paint);
+            }
+        }
+
+        WriteJpegWithOrientation(path, bitmap, exifOrientation);
+    }
+
+    private static void WriteJpegWithOrientation(string path, SKBitmap bitmap, int exifOrientation)
+    {
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Jpeg, 100);
+        var jpeg = data.ToArray();
+        using var file = File.Create(path);
+        file.Write(jpeg, 0, 2);   // SOI
+        if (exifOrientation != 1)
+        {
+            file.Write(ExifApp1WithOrientation(exifOrientation));
+        }
+
+        file.Write(jpeg, 2, jpeg.Length - 2);
+    }
+
+    /// <summary>A JPEG tagged with the Display P3 profile (what iPhones shoot), filled with <paramref name="srgbColor"/>.</summary>
+    private static void WriteDisplayP3Jpeg(string path, int width, int height, SKColor srgbColor)
+    {
+        using var p3 = SKColorSpace.CreateRgb(SKColorSpaceTransferFn.Srgb, SKColorSpaceXyz.DisplayP3);
+        var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Opaque, p3);
+        using var surface = SKSurface.Create(info);
+        Assert.NotNull(surface);
+        surface.Canvas.Clear(srgbColor);   // SKColor is sRGB; Skia converts it into the P3 surface
+        using var image = surface.Snapshot();
+        using var data = image.Encode(SKEncodedImageFormat.Jpeg, 100);
+        Assert.NotNull(data);
+        using (var file = File.Create(path))
+        {
+            data.SaveTo(file);
+        }
+
+        using var codec = SKCodec.Create(path);
+        Assert.NotNull(codec);
+        Assert.False(codec.Info.ColorSpace?.IsSrgb ?? true, "test fixture is not tagged Display P3");
+    }
+
+    /// <summary>Samples the centre of each quadrant and checks its colour letter (R, G, B or Y).</summary>
+    private static void AssertQuadrants(string path, string topLeft, string topRight, string bottomLeft, string bottomRight)
+    {
+        using var bitmap = SKBitmap.Decode(path);
+        var qx = bitmap.Width / 4;
+        var qy = bitmap.Height / 4;
+        AssertRoughly(Named(topLeft), bitmap.GetPixel(qx, qy));
+        AssertRoughly(Named(topRight), bitmap.GetPixel(3 * qx, qy));
+        AssertRoughly(Named(bottomLeft), bitmap.GetPixel(qx, 3 * qy));
+        AssertRoughly(Named(bottomRight), bitmap.GetPixel(3 * qx, 3 * qy));
+
+        static SKColor Named(string letter) => letter switch
+        {
+            "R" => SKColors.Red,
+            "G" => SKColors.Green,
+            "B" => SKColors.Blue,
+            "Y" => SKColors.Yellow,
+            _ => throw new ArgumentOutOfRangeException(nameof(letter), letter, "expected R, G, B or Y"),
+        };
     }
 
     /// <summary>A minimal little-endian APP1 Exif segment whose only IFD0 entry is Orientation (0x0112).</summary>
