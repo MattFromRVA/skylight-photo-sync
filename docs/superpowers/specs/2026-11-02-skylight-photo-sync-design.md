@@ -133,7 +133,8 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
   Skylight Calendar panel is 1920×1080). JPEG quality `image.jpeg_quality` (default 88).
 - **(call)** HEIC decoding uses macOS itself: the built-in `sips` tool converts HEIC to an
   intermediate JPEG (EXIF preserved), then SkiaSharp loads it, applies the EXIF
-  orientation (`SKCodec.EncodedOrigin`), resizes and re-encodes, which drops all metadata.
+  orientation (`SKCodec.EncodedOrigin`), converts to sRGB (iPhones shoot Display P3), resizes
+  and re-encodes, which drops all EXIF/XMP/GPS metadata (only an sRGB ICC profile remains).
   .NET imaging libraries cannot decode HEIC on their own, and using `sips` fits the
   Mac-only decision without pulling in a HEIC codec (libheif) dependency. The HEIC step
   sits behind an `IHeicConverter` interface so tests can fake it on Linux CI.
