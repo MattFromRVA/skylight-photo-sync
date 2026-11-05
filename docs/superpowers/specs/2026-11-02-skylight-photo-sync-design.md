@@ -118,13 +118,15 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 
 - **(call)** SQLite database at
   `~/Library/Application Support/skylight-photo-sync/state.db`. Tables: `sent_items`
-  (amazon_node_id, md5, sent_at, recipient, batch_id), `runs` (started_at, finished_at,
-  mode, found, sent, skipped, error), `auth_state` (needs_login flag, last_401_at).
+  (item_id, md5, sent_at, recipient, batch_id; `item_id` is the source's id, i.e. the Amazon
+  node id for Amazon), `skipped_items` (item_id, reason, detail, skipped_at), `runs`
+  (started_at, finished_at, mode, found, sent, skipped, error), `auth_state` (needs_login
+  flag, last_401_at), `alerts` (kind, last_at).
 - Dedupe key is the Amazon node id, with md5 as a second check so the same image added
   twice (e.g. re-uploaded) is not resent.
 - An item is marked sent only after the SMTP server accepts the message.
 - Switching `mode` or `lookback_days` does not reset state; already-sent items stay sent.
-- `skylight-sync reset --yes` clears sent state deliberately.
+- `skylight-sync reset --yes` clears sent and skipped state deliberately.
 
 ### 6.4 Image processing
 
