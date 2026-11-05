@@ -85,6 +85,27 @@ public sealed class SyncPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Duplicate_bytes_in_one_run_are_sent_once()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        _root.AddFixture("tiny.png", $"{_album}/a-reupload.png", DaysAgo(1));   // same md5 as a.png
+        var pipeline = Pipeline(_baseConfig, Source(), Mailer(stub));
+
+        var first = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        var second = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((2, 2), (first.Found, first.Sent));
+        var message = Assert.Single(stub.Received);
+        Assert.Equal(2, AttachmentNames(message).Count);
+        Assert.True(_store.IsSent($"{_album}/a.png", _frame));
+        Assert.False(_store.IsSent($"{_album}/a-reupload.png", _frame));
+        Assert.Equal((0, 0), (second.Sent, second.Batches));
+        Assert.Single(stub.Received);
+    }
+
+    [Fact]
     public async Task Respects_max_items_per_run_oldest_first()
     {
         await using var stub = await SmtpStub.StartAsync();

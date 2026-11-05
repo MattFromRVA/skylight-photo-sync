@@ -95,10 +95,13 @@ public sealed class SyncPipeline(
         var window = Window.FromLookback(cfg.Source.LookbackDays, now());
         var candidates = await source.ListCandidatesAsync(window, cfg.Source.Mode, cfg.Source.AlbumName, ct);
 
+        // Byte-identical copies new in this run collapse to the oldest; later runs drop the rest via IsMd5Sent.
+        var seenMd5 = new HashSet<string>(StringComparer.Ordinal);
         var fresh = candidates
             .Where(item => !store.IsSkipped(item.Id) && !cfg.Email.To.All(recipient => AlreadySent(item, recipient)))
             .OrderBy(item => item.CapturedAt)
             .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .Where(item => item.Md5 is null || seenMd5.Add(item.Md5))
             .ToList();
         counts.Found = fresh.Count;
 
