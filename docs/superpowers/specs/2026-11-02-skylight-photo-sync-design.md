@@ -134,13 +134,9 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 - **(call)** HEIC decoding uses macOS itself: the built-in `sips` tool converts HEIC to an
   intermediate JPEG (EXIF preserved), then SkiaSharp loads it, applies the EXIF
   orientation (`SKCodec.EncodedOrigin`), resizes and re-encodes, which drops all metadata.
-  .NET imaging libraries cannot decode HEIC on their own, and this fits the Mac-only
-  decision without a large native dependency. The HEIC step sits behind an
-  `IHeicConverter` interface so tests can fake it on Linux CI.
-- **(Matt)** SixLabors.ImageSharp is not used: 3.1.x fails the NuGet vulnerability audit
-  and 3.2+/4.x require a paid-or-registered license key, which breaks `-warnaserror`
-  builds. SkiaSharp is MIT-licensed and builds clean; Linux CI adds
-  `SkiaSharp.NativeAssets.Linux`.
+  .NET imaging libraries cannot decode HEIC on their own, and using `sips` fits the
+  Mac-only decision without pulling in a HEIC codec (libheif) dependency. The HEIC step
+  sits behind an `IHeicConverter` interface so tests can fake it on Linux CI.
 - GIFs are passed through unchanged.
 - Processing happens in a temp directory that is deleted after each run.
 
