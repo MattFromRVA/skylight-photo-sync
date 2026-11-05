@@ -111,6 +111,20 @@ public sealed class AlerterTests : IDisposable
     }
 
     [Fact]
+    public async Task Bad_alert_address_still_notifies_and_records()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        var alerter = new Alerter(_store, Mailer(stub), alertTo: "matt@@example.com", from: "sync@example.com", _notifier, () => _now);
+
+        var sent = await alerter.AlertAsync(AlertKind.AuthExpired, "Amazon login expired", "body", CancellationToken.None);
+
+        Assert.True(sent);
+        Assert.Single(_notifier.Calls);
+        Assert.Empty(stub.Received);
+        Assert.Equal(_t0, _store.LastAlertAt("AuthExpired"));
+    }
+
+    [Fact]
     public async Task Kinds_are_rate_limited_independently()
     {
         var alerter = Alerter(mailer: null);

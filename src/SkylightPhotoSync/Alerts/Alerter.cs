@@ -51,14 +51,14 @@ public sealed class Alerter(
 
     private async Task TryEmailAsync(string title, string body, CancellationToken ct)
     {
-        var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(from));
-        message.To.Add(MailboxAddress.Parse(alertTo));
-        message.Subject = SubjectPrefix + title;
-        message.Body = new TextPart("plain") { Text = body };
-
         try
         {
+            var message = new MimeMessage();
+            message.From.Add(MailboxAddress.Parse(from));
+            message.To.Add(MailboxAddress.Parse(alertTo));
+            message.Subject = SubjectPrefix + title;
+            message.Body = new TextPart("plain") { Text = body };
+
             await mailer!.SendAsync(message, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
