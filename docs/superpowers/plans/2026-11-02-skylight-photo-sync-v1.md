@@ -171,9 +171,9 @@ public class AppTests
   - `public sealed record RunRecord(long Id, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt, SourceMode Mode, int Found, int Sent, int Skipped, string? Error);`
   - Schema created on open; `PRAGMA journal_mode=WAL`; timestamps stored as ISO-8601 UTC text.
 
-- [ ] **Step 1: Write failing tests** for each method plus `MarkSent_is_per_recipient` and `ConsecutiveFailures_resets_on_success`.
-- [ ] **Step 2: fail. Step 3: implement with Microsoft.Data.Sqlite, parameterized SQL. Step 4: green.**
-- [ ] **Step 5: Commit** `feat: sqlite state store for sent items, runs, auth and alerts`.
+- [x] **Step 1: Write failing tests** for each method plus `MarkSent_is_per_recipient` and `ConsecutiveFailures_resets_on_success`.
+- [x] **Step 2: fail. Step 3: implement with Microsoft.Data.Sqlite, parameterized SQL. Step 4: green.**
+- [x] **Step 5: Commit** `feat: sqlite state store for sent items, runs, auth and alerts`.
 
 ---
 
