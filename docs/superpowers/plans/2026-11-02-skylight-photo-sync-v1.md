@@ -125,9 +125,9 @@ public class AppTests
   - `public static class ConfigLoader { AppConfig LoadConfig(string path); Secrets LoadSecrets(string path); void WriteSecrets(string path, Secrets s); }` and `public sealed class ConfigException : Exception`.
   - `WriteSecrets` sets mode `0600` via `File.SetUnixFileMode`; `LoadSecrets` throws `ConfigException` mentioning `0600` if group/other bits are set.
 
-- [ ] **Step 1: Write failing tests**: `Album_mode_defaults_lookback_to_zero`, `All_mode_defaults_lookback_to_thirty`, `All_mode_rejects_lookback_zero`, `Album_mode_requires_album_name`, `Secrets_file_must_be_0600`, `WriteSecrets_sets_0600`, `Accepts_dash_and_underscore_cookie_keys` (`at-main` / `at_main` → `AmazonAt`), `Paths_honor_env`.
-- [ ] **Step 2: fail. Step 3: implement with Tomlyn (`Toml.ToModel`), mode-dependent default applied only when the key is absent. Step 4: green.**
-- [ ] **Step 5: Commit** `feat: config and secrets loading with mode-aware defaults`.
+- [x] **Step 1: Write failing tests**: `Album_mode_defaults_lookback_to_zero`, `All_mode_defaults_lookback_to_thirty`, `All_mode_rejects_lookback_zero`, `Album_mode_requires_album_name`, `Secrets_file_must_be_0600`, `WriteSecrets_sets_0600`, `Accepts_dash_and_underscore_cookie_keys` (`at-main` / `at_main` → `AmazonAt`), `Paths_honor_env`.
+- [x] **Step 2: fail. Step 3: implement with Tomlyn (`TomlSerializer.Deserialize<TomlTable>`; Tomlyn 2.x replaced the old `Toml.ToModel`), mode-dependent default applied only when the key is absent. Step 4: green.**
+- [x] **Step 5: Commit** `feat: config and secrets loading with mode-aware defaults`.
 
 ---
 
