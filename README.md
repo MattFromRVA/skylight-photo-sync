@@ -25,7 +25,7 @@ Every hour (configurable) it:
 ## Built with
 
 C# on .NET 10, packaged as a `dotnet` global tool. System.CommandLine, MailKit,
-Microsoft.Data.Sqlite, Tomlyn, ImageSharp, and macOS's own `sips` for HEIC decoding.
+Microsoft.Data.Sqlite, Tomlyn, SkiaSharp, and macOS's own `sips` for HEIC decoding.
 
 ## Why email, and why cookies?
 
