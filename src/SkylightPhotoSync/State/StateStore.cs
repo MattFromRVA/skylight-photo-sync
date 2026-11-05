@@ -171,6 +171,10 @@ public sealed class StateStore : IDisposable
             ("$kind", kind),
             ("$at", Format(at)));
 
+    /// <summary>Number of (item, recipient) deliveries recorded as sent, over all runs.</summary>
+    public int TotalSent() =>
+        (int)(long)Scalar("SELECT COUNT(*) FROM sent_items")!;
+
     public RunRecord? LastRun()
     {
         using var command = _connection.CreateCommand();
