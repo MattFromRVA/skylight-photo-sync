@@ -32,12 +32,20 @@ public static partial class LoginCommand
             var stdout = parseResult.InvocationConfiguration.Output;
             var stderr = parseResult.InvocationConfiguration.Error;
 
-            if (!Console.IsInputRedirected)
+            string input;
+            if (Console.IsInputRedirected)
+            {
+                input = await Console.In.ReadToEndAsync(ct);
+            }
+            else
             {
                 stderr.WriteLine(PastePrompt);
-            }
 
-            var input = await Console.In.ReadToEndAsync(ct);
+                // On a terminal, Console.In's line editor needs Ctrl-D twice to end input; the raw
+                // stdin stream ends on the first Ctrl-D, as PastePrompt says.
+                using var raw = new StreamReader(Console.OpenStandardInput());
+                input = await raw.ReadToEndAsync(ct);
+            }
             if (!TryParse(input, out var cookies, out var problem))
             {
                 stderr.WriteLine($"login failed: {problem}");
