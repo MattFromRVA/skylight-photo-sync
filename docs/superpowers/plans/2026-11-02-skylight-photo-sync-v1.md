@@ -6,7 +6,7 @@
 
 **Architecture:** An `IPhotoSource` yields candidate `Item`s; the pipeline filters them through a SQLite sent-state, downloads and normalizes them to JPEG, packs them into size-bounded batches, and hands each batch to an SMTP mailer. Amazon is one `IPhotoSource` implementation built last and verified against live fixtures; `LocalFolderSource` lets everything else be built and tested offline first. Mac-only tools (`sips`, `osascript`, `launchctl`) are called through `IProcessRunner` so tests can fake them.
 
-**Tech Stack:** C# / .NET 10, System.CommandLine, MailKit, Microsoft.Data.Sqlite, Tomlyn, SixLabors.ImageSharp, Serilog (rolling file), xUnit, `SmtpServer` NuGet (test SMTP stub), GitHub Actions.
+**Tech Stack:** C# / .NET 10, System.CommandLine, MailKit, Microsoft.Data.Sqlite, Tomlyn, SkiaSharp 4.154.0 (+ `SkiaSharp.NativeAssets.Linux` for CI), Serilog (rolling file), xUnit, `SmtpServer` NuGet (test SMTP stub), GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-11-02-skylight-photo-sync-design.md`
 
@@ -182,16 +182,18 @@ public class AppTests
 **Files:**
 - Create: `Imaging/IHeicConverter.cs`, `Imaging/SipsHeicConverter.cs`, `Imaging/ImageNormalizer.cs`, `Imaging/OversizeException.cs`, `Imaging/UnsupportedMediaException.cs`, `tests/.../ImageNormalizerTests.cs`, `SipsHeicConverterTests.cs`
 
+**Imaging library:** SkiaSharp 4.154.0 (MIT) plus the `SkiaSharp.NativeAssets.Linux` package so Ubuntu CI has the native library; `sips` is used only for HEIC → JPEG. SixLabors.ImageSharp is deliberately excluded: 3.1.x fails the NuGet vulnerability audit (NU1902/NU1903, fatal under `-warnaserror`), and 3.2+/4.x require a Six Labors license key (their `SixLabors_ValidateLicense` target fails Debug `-warnaserror` and Release builds without one). Do not re-add it.
+
 **Interfaces:**
 - Consumes `IProcessRunner`, `Item`, `ImageConfig`.
 - Produces:
   - `public interface IHeicConverter { Task<string> ToJpegAsync(string heicPath, string destDir, CancellationToken ct); }`
   - `public sealed class SipsHeicConverter(IProcessRunner runner) : IHeicConverter` — runs `sips -s format jpeg -s formatOptions 100 <in> --out <dest>/<name>.jpg`; non-zero exit → `UnsupportedMediaException`.
   - `public sealed class ImageNormalizer(IHeicConverter heic, ImageConfig cfg, long videoCapBytes = 22_000_000) { Task<string> NormalizeAsync(string src, string destDir, Item item, CancellationToken ct); }`
-    - photos: HEIC → via `heic` to JPEG first; then ImageSharp `Image.LoadAsync`, `image.Mutate(x => x.AutoOrient())`, resize if long edge > `MaxLongEdge` (never upscale), clear `image.Metadata.ExifProfile/IptcProfile/XmpProfile`, save JPEG with `JpegEncoder { Quality = cfg.JpegQuality }`. Output name `yyyy-MM-dd_HHmmss_<Id[..8]>.jpg` from `item.CapturedAt`.
+    - photos: HEIC → via `heic` to JPEG first (macOS `sips`, behind `IHeicConverter`); then decode with SkiaSharp (`SKCodec.Create`, read `codec.EncodedOrigin`, decode to `SKBitmap`), apply that origin to get upright pixels, resize if long edge > `MaxLongEdge` (never upscale), and re-encode with `SKImage.Encode(SKEncodedImageFormat.Jpeg, cfg.JpegQuality)`. Re-encoding drops all EXIF, XMP and GPS, so no explicit stripping step is needed (the tests assert it). Output name `yyyy-MM-dd_HHmmss_<Id[..8]>.jpg` from `item.CapturedAt`.
     - GIF: copy unchanged, same naming, `.gif`. Video: copy if `SizeBytes <= videoCapBytes` else throw `OversizeException`. Other → `UnsupportedMediaException`.
 
-- [ ] **Step 1: Write failing tests**: `Heic_rot6_becomes_upright_jpeg_without_exif` (`[MacOnlyFact]`, real `SipsHeicConverter`; assert width/height swapped relative to source and `ExifProfile is null`), `Heic_path_uses_converter` (fake `IHeicConverter` returning a JPEG, runs everywhere), `Png_to_jpeg`, `Large_image_resized_to_max_long_edge` (generate 4000×3000 in-test → 2048), `Small_image_not_upscaled`, `Gif_passthrough`, `Video_over_cap_throws_oversize`, `Output_filename_pattern`, `Sips_converter_invokes_expected_arguments` (FakeProcessRunner).
+- [ ] **Step 1: Write failing tests**: `Heic_rot6_becomes_upright_jpeg_without_exif` (`[MacOnlyFact]`, real `SipsHeicConverter`; assert width/height swapped relative to source and that the output JPEG has no APP1 Exif/XMP segment), `Heic_path_uses_converter` (fake `IHeicConverter` returning a JPEG, runs everywhere), `Png_to_jpeg`, `Large_image_resized_to_max_long_edge` (generate 4000×3000 in-test → 2048), `Small_image_not_upscaled`, `Gif_passthrough`, `Video_over_cap_throws_oversize`, `Output_filename_pattern`, `Sips_converter_invokes_expected_arguments` (FakeProcessRunner).
 - [ ] **Step 2: fail. Step 3: implement. Step 4: green.**
 - [ ] **Step 5: Commit** `feat: normalize photos to upright, EXIF-free, resized JPEG`.
 

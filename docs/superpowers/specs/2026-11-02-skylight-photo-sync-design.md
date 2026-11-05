@@ -85,8 +85,8 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
   with command name `skylight-sync`. Reason: Matt's other projects are .NET and he will
   maintain this one. The Python reference client is used only as endpoint documentation.
 - **(call)** Libraries: System.CommandLine (CLI), MailKit (SMTP), Microsoft.Data.Sqlite
-  (state), Tomlyn (TOML config), SixLabors.ImageSharp (orientation, EXIF strip, resize,
-  JPEG encode), Serilog with a rolling file sink (logs), xUnit + the `SmtpServer` NuGet
+  (state), Tomlyn (TOML config), SkiaSharp (orientation, resize, JPEG encode; re-encoding
+  drops EXIF/GPS), Serilog with a rolling file sink (logs), xUnit + the `SmtpServer` NuGet
   package (in-process SMTP stub for tests).
 - **(call)** Scheduling via a launchd LaunchAgent (`~/Library/LaunchAgents/`), installed
   by `skylight-sync install-launchd`, default interval 60 minutes.
@@ -132,10 +132,11 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
   (removes GPS). Resize so the long edge ≤ `image.max_long_edge` (default 2048; the 15"
   Skylight Calendar panel is 1920×1080). JPEG quality `image.jpeg_quality` (default 88).
 - **(call)** HEIC decoding uses macOS itself: the built-in `sips` tool converts HEIC to an
-  intermediate JPEG (EXIF preserved), then ImageSharp loads it, auto-orients, strips
-  metadata, resizes and re-encodes. .NET imaging libraries cannot decode HEIC on their
-  own, and this fits the Mac-only decision without a large native dependency. The HEIC
-  step sits behind an `IHeicConverter` interface so tests can fake it on Linux CI.
+  intermediate JPEG (EXIF preserved), then SkiaSharp loads it, applies the EXIF
+  orientation (`SKCodec.EncodedOrigin`), resizes and re-encodes, which drops all metadata.
+  .NET imaging libraries cannot decode HEIC on their own, and using `sips` fits the
+  Mac-only decision without pulling in a HEIC codec (libheif) dependency. The HEIC step
+  sits behind an `IHeicConverter` interface so tests can fake it on Linux CI.
 - GIFs are passed through unchanged.
 - Processing happens in a temp directory that is deleted after each run.
 
