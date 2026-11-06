@@ -41,8 +41,13 @@ public static class App
             Arity = ArgumentArity.Zero,
         };
         root.Options.Add(versionOption);
+        root.Subcommands.Add(LoginCommand.Create());
+        root.Subcommands.Add(RunCommand.Create());
+        root.Subcommands.Add(StatusCommand.Create());
+        root.Subcommands.Add(TestEmailCommand.Create());
         root.Subcommands.Add(InstallLaunchdCommand.Create());
         root.Subcommands.Add(UninstallLaunchdCommand.Create());
+        root.Subcommands.Add(ResetCommand.Create());
 
         root.SetAction(parseResult =>
         {

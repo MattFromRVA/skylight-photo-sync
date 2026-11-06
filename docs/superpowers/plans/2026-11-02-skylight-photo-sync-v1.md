@@ -268,20 +268,20 @@ public class AppTests
 ### Task 10: CLI commands: run, status, test-email, reset, login
 
 **Files:**
-- Modify: `App.cs`; Create: `Commands/RunCommand.cs`, `StatusCommand.cs`, `TestEmailCommand.cs`, `ResetCommand.cs`, `LoginCommand.cs`, `Logging.cs`, `tests/.../CommandTests.cs`
+- Modify: `App.cs`, `State/StateStore.cs` (adds `int TotalSent()` for `status`); Create: `Commands/RunCommand.cs`, `StatusCommand.cs`, `TestEmailCommand.cs`, `ResetCommand.cs`, `LoginCommand.cs`, `CommandSupport.cs` (secrets-if-present and mailer construction shared by `run` and `test-email`), `Logging.cs`, `tests/.../CommandTests.cs`
 
 **Interfaces:**
 - Consumes Tasks 2–9.
 - Produces commands on the System.CommandLine root (all invoked through `App.RunAsync`):
   - `run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N] [--source local:PATH]` — CLI flags override config; `--source local:PATH` selects `LocalFolderSource`; without `--source` the default is Amazon (Task 12); until then exit 2 with `Amazon source not yet available`. Exit codes: 0 ok, 1 error, 3 `needs_login`, 4 lock held.
   - `status` — last run time/result, totals sent, `needs_login` state, next launchd run if installed (Task 11 `LaunchdInstaller.NextRun`; print `not installed` otherwise).
-  - `test-email [--size-probe]` — sends one generated 800×600 JPEG to each `email.to`; with `--size-probe` sends 5 emails of ~5/10/15/20/24 MB generated-noise JPEGs with size-tagged subjects and prints `Check which arrived on the frame`.
+  - `test-email [--size-probe]` — sends one generated 800×600 JPEG to each `email.to`; with `--size-probe` sends 5 emails of ~5/10/15/20/24 MB generated-noise JPEGs with size-tagged subjects and prints `Check which arrived on the frame`. An SMTP rejection of one probe is reported and the series continues (base64 pushes the larger probes past Gmail's 25 MB limit); exit 1 only if no probe was accepted.
   - `reset --yes` — `store.ResetSent()`; refuses without `--yes`.
   - `login` — reads stdin: either a pasted cURL command (parse the `Cookie:` header for `session-id`, `ubid-main|ubid_main`, `at-main|at_main`) or three lines of values; `WriteSecrets`; `SetNeedsLogin(false, null)`; prints `Saved. Run 'skylight-sync run --dry-run' to verify.` (live check added in Task 12).
-  - `Logging.Configure(AppPaths paths)`: Serilog to `paths.LogFile` with `fileSizeLimitBytes: 5_000_000, rollOnFileSizeLimit: true, retainedFileCountLimit: 5` plus stderr at Information.
+  - `Logging.Configure(AppPaths paths)`: Serilog to `paths.LogFile` with `fileSizeLimitBytes: 5_000_000, rollOnFileSizeLimit: true, retainedFileCountLimit: 5` plus stderr at Information. The stderr sink is only added when stderr is a terminal: under launchd stderr is already appended to the same log file (Task 11 plist), so both sinks would record every line twice.
 
-- [ ] **Step 1: Write failing tests** via `App.RunAsync` with `TestHome`, a config file and stdin redirect: `Run_local_source_dry_run_exit_0`, `Run_exit_3_when_needs_login`, `Reset_requires_yes`, `Login_parses_curl_paste`, `Login_accepts_three_values`, `Status_prints_last_run`, `TestEmail_sends_one_message`.
-- [ ] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: run, status, test-email, reset and login commands`.
+- [x] **Step 1: Write failing tests** via `App.RunAsync` with `TestHome`, a config file and stdin redirect: `Run_local_source_dry_run_exit_0`, `Run_exit_3_when_needs_login`, `Reset_requires_yes`, `Login_parses_curl_paste`, `Login_accepts_three_values`, `Status_prints_last_run`, `TestEmail_sends_one_message`.
+- [x] **Step 2–4: fail → implement → green. Step 5: Commit** `feat: run, status, test-email, reset and login commands`.
 
 ---
 
