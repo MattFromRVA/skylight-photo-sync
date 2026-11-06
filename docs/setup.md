@@ -255,8 +255,15 @@ Useful variations, all of which exist as real flags (`skylight-sync run --help`)
 ```bash
 skylight-sync run --dry-run --limit 3                 # look at only three
 skylight-sync run --dry-run --mode all --lookback-days 7
-skylight-sync run --dry-run --source local:$HOME/Pictures/test   # a folder instead of Amazon
+skylight-sync run --dry-run --source "local:$HOME/Pictures/test" --mode all --lookback-days 3650
 ```
+
+`--source local:PATH` reads a folder on this Mac instead of Amazon Photos, which lets you exercise
+the whole pipeline before `login` works. Write the path out in full or with `$HOME`; the tool does
+not expand `~`. In `all` mode it reads every photo under that folder (within the lookback window,
+by file capture date, so use a large one). In `album` mode it reads `PATH/<album_name>/` instead,
+so with the config above `--source "local:$HOME/Pictures/test"` alone expects your photos in
+`$HOME/Pictures/test/Skylight/`.
 
 ## 8. Send one real photo
 
