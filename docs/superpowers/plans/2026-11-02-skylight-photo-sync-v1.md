@@ -321,7 +321,7 @@ public class AppTests
 ### Task 13: Setup, cookies and troubleshooting docs
 
 **Files:**
-- Modify: `README.md`; Create: `docs/setup.md`, `docs/cookies.md`
+- Modify: `README.md`; Create: `docs/setup.md`, `docs/cookies.md`, `docs/troubleshooting.md`
 
 **Deliverable:** README Quick start matches the real CLI (including `dotnet tool install`, or pack-and-install from a clone with `--add-source`); `docs/setup.md` walks spec §7 end to end including Skylight sender approval and the Plus plan note; `docs/cookies.md` explains copying the three cookies (Safari and Chrome dev tools → Network → any `amazon.com` request → Copy as cURL) and that `skylight-sync login` accepts the paste; a Troubleshooting section covers `needs_login`, 429s, photos not appearing (check approval, check 25 MB), Gmail app passwords. Keep the "Runs on a Mac" callout.
 
