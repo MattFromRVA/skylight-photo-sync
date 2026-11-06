@@ -27,7 +27,7 @@ public sealed class AmazonPhotosSourceTests
     private static readonly string[] _albumIds =
         ["node_0096", "node_0098", "node_0099", "node_0100", "node_0102", "node_0103", "node_0104", "node_0105", "node_0106"];
 
-    private readonly ScriptedHandler _handler = new ScriptedHandler().WithAmazonDefaults();
+    private readonly ScriptedHandler _handler = new ScriptedHandler().WithAmazonDefaults().WithDeviceAuthDefaults();
     private readonly List<TimeSpan> _delays = [];
 
     private AmazonPhotosSource Source() =>
@@ -356,6 +356,146 @@ public sealed class AmazonPhotosSourceTests
             ],
             seen.Select(r => r.Kind).ToArray());
         Assert.Contains("\"metadataUrl\"", seen[0].Body);
+    }
+
+    private const string _refresh = "Atnr|PLACEHOLDER_REFRESH_TOKEN_NOT_REAL";
+    private const string _serial = "ABCDEFGHIJ0123456789KLMNOPQRST0123456789";
+    private static readonly Secrets _deviceSecrets = new(null, null, null, null, AmazonRefreshToken: _refresh, AmazonDeviceSerial: _serial);
+
+    /// <summary>The session-id and at-main of the placeholder exchange response.</summary>
+    private const string _exchangedSessionId = "133-0000000-4444444";
+    private const string _exchangedAt = "placeholder-at-main-from-exchange";
+
+    private AmazonPhotosSource DeviceSource() =>
+        new(_deviceSecrets, _handler, "com", (pause, _) =>
+        {
+            _delays.Add(pause);
+            return Task.CompletedTask;
+        });
+
+    [Fact]
+    public async Task Source_refreshes_cookies_before_first_request()
+    {
+        var source = DeviceSource();
+
+        var (_, count) = await source.WhoAmIAsync(CancellationToken.None);
+
+        Assert.Equal(52015L, count);
+        var exchange = _handler.Requests[0];
+        Assert.Equal("/ap/exchangetoken/cookies", exchange.RequestUri!.AbsolutePath);
+        Assert.Null(_handler.CookieHeaders[0]);
+        Assert.Single(_handler.RequestsTo("/ap/exchangetoken/cookies"));
+        Assert.Empty(_handler.RequestsTo("/auth/register"));
+
+        // Every cookie Amazon minted goes to amazon.com and to the resolved metadata host.
+        var account = Assert.Single(_handler.RequestsTo("/drive/v1/account/endpoint"));
+        var cookieHeader = _handler.CookieHeaders[_handler.Requests.IndexOf(account)]!;
+        foreach (var expected in new[]
+        {
+            $"session-id={_exchangedSessionId}", "ubid-main=130-0000000-5555555", $"at-main={_exchangedAt}",
+            "sess-at-main=placeholder-sess-at-main-from-exchange", "x-main=placeholder-x-main-from-exchange",
+            "session-token=placeholder-session-token-from-exchange",
+        })
+        {
+            Assert.Contains(expected, cookieHeader);
+        }
+
+        Assert.Equal(_exchangedSessionId, Assert.Single(account.Headers.GetValues("x-amzn-sessionid")));
+        var usage = Assert.Single(_handler.RequestsTo("/drive/v1/account/usage"));
+        Assert.Equal("cdws.us-east-1.amazonaws.com", usage.RequestUri!.Host);
+        Assert.Contains($"at-main={_exchangedAt}", _handler.CookieHeaders[_handler.Requests.IndexOf(usage)]);
+        Assert.Contains("x-main=placeholder-x-main-from-exchange", _handler.CookieHeaders[_handler.Requests.IndexOf(usage)]);
+    }
+
+    [Fact]
+    public async Task Source_exchanges_once_per_instance()
+    {
+        var source = DeviceSource();
+
+        await source.WhoAmIAsync(CancellationToken.None);
+        await source.ListCandidatesAsync(new Window(null), SourceMode.Album, _album, CancellationToken.None);
+
+        Assert.Single(_handler.RequestsTo("/ap/exchangetoken/cookies"));
+    }
+
+    [Fact]
+    public async Task Source_retries_once_after_401_with_fresh_cookies()
+    {
+        var exchanges = 0;
+        _handler.On("/ap/exchangetoken/cookies", _ => ++exchanges == 1
+            ? ScriptedHandler.AuthJson("placeholder_exchange_cookies.json")
+            : ScriptedHandler.JsonBody("""{"response":{"tokens":{"cookies":{".amazon.com":[{"Name":"session-id","Value":"133-0000000-6666666"},{"Name":"ubid-main","Value":"130-0000000-7777777"},{"Name":"at-main","Value":"placeholder-at-main-second"}]}}}}"""));
+        var usageCalls = 0;
+        _handler.On("/drive/v1/account/usage", _ => ++usageCalls == 1 ? ScriptedHandler.Status(HttpStatusCode.Unauthorized) : ScriptedHandler.Json("usage.json"));
+
+        var (_, count) = await DeviceSource().WhoAmIAsync(CancellationToken.None);
+
+        Assert.Equal(52015L, count);
+        Assert.Equal(2, exchanges);
+        Assert.Equal(2, usageCalls);
+        var retried = _handler.RequestsTo("/drive/v1/account/usage").Last();
+        Assert.Equal("133-0000000-6666666", Assert.Single(retried.Headers.GetValues("x-amzn-sessionid")));
+        var cookieHeader = _handler.CookieHeaders[_handler.Requests.IndexOf(retried)]!;
+        Assert.Contains("at-main=placeholder-at-main-second", cookieHeader);
+        Assert.DoesNotContain(_exchangedAt, cookieHeader);
+        Assert.Empty(_delays);
+    }
+
+    [Fact]
+    public async Task Source_retries_once_after_401_then_throws()
+    {
+        _handler.On("/drive/v1/account/endpoint", _ => ScriptedHandler.Status(HttpStatusCode.Unauthorized));
+        var source = DeviceSource();
+
+        await Assert.ThrowsAsync<AuthExpiredException>(() => source.WhoAmIAsync(CancellationToken.None));
+
+        Assert.Equal(
+            ["/ap/exchangetoken/cookies", "/drive/v1/account/endpoint", "/ap/exchangetoken/cookies", "/drive/v1/account/endpoint"],
+            _handler.Requests.Select(r => r.RequestUri!.AbsolutePath).ToArray());
+
+        // One re-exchange per run: a later 401 on the same instance is final.
+        await Assert.ThrowsAsync<AuthExpiredException>(() => source.WhoAmIAsync(CancellationToken.None));
+        Assert.Equal(5, _handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Source_with_failed_exchange_throws_AuthExpired_before_touching_drive()
+    {
+        _handler.On("/ap/exchangetoken/cookies", _ => ScriptedHandler.Status(HttpStatusCode.Forbidden));
+
+        var ex = await Assert.ThrowsAsync<AuthExpiredException>(() => DeviceSource().WhoAmIAsync(CancellationToken.None));
+
+        Assert.DoesNotContain(_refresh, ex.Message);
+        Assert.Single(_handler.Requests);
+    }
+
+    [Fact]
+    public async Task Source_without_refresh_token_uses_cookies_unchanged()
+    {
+        await Source().WhoAmIAsync(CancellationToken.None);
+
+        Assert.Empty(_handler.RequestsTo("/ap/exchangetoken/cookies"));
+        var account = Assert.Single(_handler.RequestsTo("/drive/v1/account/endpoint"));
+        Assert.Equal($"session-id={_sessionId}; ubid-main={_ubid}; at-main={_at}", _handler.CookieHeaders[_handler.Requests.IndexOf(account)]);
+        Assert.Equal(_sessionId, Assert.Single(account.Headers.GetValues("x-amzn-sessionid")));
+    }
+
+    [Fact]
+    public async Task Cookie_mode_401_is_final_without_an_exchange()
+    {
+        _handler.On("/drive/v1/account/endpoint", _ => ScriptedHandler.Status(HttpStatusCode.Unauthorized));
+
+        await Assert.ThrowsAsync<AuthExpiredException>(() => Source().WhoAmIAsync(CancellationToken.None));
+
+        Assert.Single(_handler.Requests);
+    }
+
+    [Fact]
+    public void Refresh_token_alone_is_enough_to_construct()
+    {
+        using var source = new AmazonPhotosSource(new Secrets(null, null, null, null, AmazonRefreshToken: _refresh), _handler);
+
+        Assert.Empty(_handler.Requests);
     }
 
     [Fact]

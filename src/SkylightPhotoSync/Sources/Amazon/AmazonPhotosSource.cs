@@ -8,10 +8,14 @@ using SkylightPhotoSync.Models;
 namespace SkylightPhotoSync.Sources.Amazon;
 
 /// <summary>
-/// <see cref="IPhotoSource"/> over the private Amazon Photos web endpoints, authenticated with the
-/// browser cookies saved by <c>skylight-sync login</c> (spec §6.6). Requests are sequential with a
-/// 0.5 s pause between pages; HTTP 401/403 raise <see cref="AuthExpiredException"/> at once, 429
-/// waits 60 s and retries up to three times. Cookie values never appear in exceptions or output.
+/// <see cref="IPhotoSource"/> over the private Amazon Photos web endpoints (spec §6.6). With a
+/// device login (<see cref="Secrets.AmazonRefreshToken"/>, issue #30) it mints fresh website
+/// cookies through <see cref="AmazonDeviceAuth.ExchangeCookiesAsync"/> before its first request and
+/// once more on the first 401/403 of the run, retrying that request once; otherwise it uses the
+/// three pasted browser cookies as saved by <c>skylight-sync login --cookies</c>. Requests are
+/// sequential with a 0.5 s pause between pages; a final 401/403 raises
+/// <see cref="AuthExpiredException"/>, 429 waits 60 s and retries up to three times. Cookie and
+/// token values never appear in exceptions or output.
 /// </summary>
 public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
 {
@@ -34,12 +38,16 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
     };
 
     private readonly string _tld;
-    private readonly string _sessionId;
-    private readonly string _ubid;
-    private readonly string _at;
     private readonly CookieContainer _cookies = new();
     private readonly HttpClient _http;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+    private readonly List<(string Name, string Value)> _cookieSet = [];
+    private readonly List<string> _cookieDomains = [];
+    private readonly string? _refreshToken;
+    private readonly AmazonDeviceAuth? _deviceAuth;
+    private string _sessionId = "";
+    private bool _cookiesMinted;
+    private bool _reExchanged;
     private (string MetadataUrl, string ContentUrl)? _endpoints;
 
     public AmazonPhotosSource(
@@ -50,32 +58,52 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
     {
         ArgumentNullException.ThrowIfNull(secrets);
         ArgumentException.ThrowIfNullOrWhiteSpace(tld);
-        if (string.IsNullOrWhiteSpace(secrets.AmazonSessionId)
-            || string.IsNullOrWhiteSpace(secrets.AmazonUbid)
-            || string.IsNullOrWhiteSpace(secrets.AmazonAt))
-        {
-            throw new ArgumentException("No Amazon cookies are saved; run `skylight-sync login` first.", nameof(secrets));
-        }
 
         _tld = tld;
-        _sessionId = secrets.AmazonSessionId;
-        _ubid = secrets.AmazonUbid;
-        _at = secrets.AmazonAt;
         _delay = delay ?? Task.Delay;
 
         // Cookies are attached by hand from the container (so an injected handler sees them too);
         // the real handler must therefore not keep its own jar.
-        _http = new HttpClient(
-            handler ?? new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All },
-            disposeHandler: handler is null)
+        var ownHandler = handler ?? new SocketsHttpHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.All };
+        _http = new HttpClient(ownHandler, disposeHandler: handler is null)
         {
             Timeout = TimeSpan.FromMinutes(5),
         };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _http.DefaultRequestHeaders.Add("x-amzn-sessionid", _sessionId);
 
-        AddCookies($".amazon.{tld}");
+        _cookieDomains.Add($".amazon.{tld}");
+        if (!string.IsNullOrWhiteSpace(secrets.AmazonRefreshToken))
+        {
+            // Device login: the cookies are minted lazily, on the first request.
+            _refreshToken = secrets.AmazonRefreshToken;
+            try
+            {
+                _deviceAuth = new AmazonDeviceAuth(ownHandler, tld);
+            }
+            catch (ArgumentException)
+            {
+                _http.Dispose();
+                throw;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(secrets.AmazonSessionId)
+            && !string.IsNullOrWhiteSpace(secrets.AmazonUbid)
+            && !string.IsNullOrWhiteSpace(secrets.AmazonAt))
+        {
+            _sessionId = secrets.AmazonSessionId;
+            _cookieSet.Add(("session-id", secrets.AmazonSessionId));
+            _cookieSet.Add(("ubid-main", secrets.AmazonUbid));
+            _cookieSet.Add(("at-main", secrets.AmazonAt));
+            _cookiesMinted = true;
+            AddCookies(_cookieDomains[0]);
+        }
+        else
+        {
+            _http.Dispose();
+            throw new ArgumentException(
+                "Not logged in to Amazon Photos (no device login or cookies saved); run `skylight-sync login` first.", nameof(secrets));
+        }
     }
 
     /// <summary>
@@ -190,7 +218,11 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
         return dest;
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        _deviceAuth?.Dispose();
+        _http.Dispose();
+    }
 
     private async Task<(string MetadataUrl, string ContentUrl)> ResolveAsync(CancellationToken ct)
     {
@@ -208,11 +240,13 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
                 "The Amazon account endpoint returned no metadataUrl/contentUrl; the endpoint shape may have changed.");
         }
 
-        // The resolved hosts are not under amazon.<tld>; they need the same cookies.
+        // The resolved hosts are not under amazon.<tld>; they need the same cookies, now and after
+        // every re-mint.
         foreach (var host in new[] { new Uri(metadataUrl).Host, new Uri(contentUrl).Host })
         {
-            if (!host.EndsWith($".amazon.{_tld}", StringComparison.OrdinalIgnoreCase))
+            if (!host.EndsWith($".amazon.{_tld}", StringComparison.OrdinalIgnoreCase) && !_cookieDomains.Contains(host))
             {
+                _cookieDomains.Add(host);
                 AddCookies(host);
             }
         }
@@ -394,15 +428,24 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
     }
 
     /// <summary>
-    /// GET with the cookies for the request's host. 401/403 → <see cref="AuthExpiredException"/>;
-    /// 429 → <see cref="RateLimitPause"/> then retry up to <see cref="MaxRateLimitRetries"/> times;
-    /// any other non-success → <see cref="HttpRequestException"/> naming status and URL only.
+    /// GET with the cookies for the request's host and the <c>x-amzn-sessionid</c> header. With a
+    /// device login the cookies are minted first (once per instance) and re-minted once on the
+    /// first 401/403, retrying the request; a 401/403 after that, or any 401/403 with pasted
+    /// cookies, → <see cref="AuthExpiredException"/>; 429 → <see cref="RateLimitPause"/> then retry
+    /// up to <see cref="MaxRateLimitRetries"/> times; any other non-success →
+    /// <see cref="HttpRequestException"/> naming status and URL only.
     /// </summary>
     private async Task<HttpResponseMessage> SendAsync(Uri uri, HttpCompletionOption completion, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)
         {
+            if (!_cookiesMinted)
+            {
+                await MintCookiesAsync(ct);
+            }
+
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.TryAddWithoutValidation("x-amzn-sessionid", _sessionId);
             var cookieHeader = _cookies.GetCookieHeader(uri);
             if (cookieHeader.Length > 0)
             {
@@ -419,10 +462,16 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
             response.Dispose();
             switch (status)
             {
+                case HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden when _deviceAuth is not null && !_reExchanged:
+                    // The minted cookies can rotate mid-run; one fresh set per run, then give up.
+                    _reExchanged = true;
+                    await MintCookiesAsync(ct);
+                    continue;
                 case HttpStatusCode.Unauthorized:
                 case HttpStatusCode.Forbidden:
-                    throw new AuthExpiredException(
-                        $"Amazon Photos rejected the saved cookies (HTTP {(int)status} for {uri}); run `skylight-sync login`.");
+                    throw new AuthExpiredException(_deviceAuth is null
+                        ? $"Amazon Photos rejected the saved cookies (HTTP {(int)status} for {uri}); run `skylight-sync login`."
+                        : $"Amazon Photos rejected the device login's cookies (HTTP {(int)status} for {uri}) even after refreshing them; run `skylight-sync login`.");
                 case HttpStatusCode.TooManyRequests when attempt < MaxRateLimitRetries:
                     await _delay(RateLimitPause, ct);
                     continue;
@@ -435,9 +484,34 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
         }
     }
 
+    /// <summary>
+    /// Trades the refresh token for a fresh cookie set and installs it for every known domain,
+    /// replacing the previous values. <see cref="AuthExpiredException"/> when the device was
+    /// removed or the token revoked.
+    /// </summary>
+    private async Task MintCookiesAsync(CancellationToken ct)
+    {
+        var minted = await _deviceAuth!.ExchangeCookiesAsync(_refreshToken!, ct);
+        var sessionId = minted.FirstOrDefault(c => c.Name.Equals("session-id", StringComparison.OrdinalIgnoreCase))?.Value;
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new InvalidOperationException(
+                "The Amazon cookie exchange returned no session-id cookie; the endpoint shape may have changed.");
+        }
+
+        _cookieSet.Clear();
+        _cookieSet.AddRange(minted.Select(c => (c.Name, c.Value)));
+        _sessionId = sessionId;
+        _cookiesMinted = true;
+        foreach (var domain in _cookieDomains)
+        {
+            AddCookies(domain);
+        }
+    }
+
     private void AddCookies(string domain)
     {
-        foreach (var (name, value) in new[] { ("session-id", _sessionId), ("ubid-main", _ubid), ("at-main", _at) })
+        foreach (var (name, value) in _cookieSet)
         {
             try
             {
@@ -445,7 +519,7 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
             }
             catch (CookieException ex)
             {
-                throw new ArgumentException($"The saved {name} cookie has characters a cookie value cannot carry; run `skylight-sync login` again.", ex);
+                throw new ArgumentException($"The {name} cookie has characters a cookie value cannot carry; run `skylight-sync login` again.", ex);
             }
         }
     }

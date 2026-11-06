@@ -6,7 +6,7 @@ using SkylightPhotoSync.Sources;
 namespace SkylightPhotoSync.Commands;
 
 /// <summary>
-/// <c>record-fixtures [--out DIR]</c>: records redacted Amazon Photos responses for the saved cookies
+/// <c>record-fixtures [--out DIR]</c>: records redacted Amazon Photos responses for the saved login
 /// and the configured <c>[source] album_name</c> into <c>DIR</c> (Task 12 Step 2).
 /// </summary>
 public static class RecordFixturesCommand
@@ -22,7 +22,7 @@ public static class RecordFixturesCommand
 
         var command = new Command(
             "record-fixtures",
-            "Record redacted Amazon Photos API responses as test fixtures, using the saved cookies and the configured album.");
+            "Record redacted Amazon Photos API responses as test fixtures, using the saved login and the configured album.");
         command.Options.Add(outDir);
 
         command.SetAction((parseResult, ct) => ExecuteAsync(
@@ -47,9 +47,9 @@ public static class RecordFixturesCommand
             }
 
             var secrets = CommandSupport.LoadSecretsIfPresent(paths);
-            if (!CommandSupport.HasAmazonCookies(secrets))
+            if (!CommandSupport.HasAmazonAuth(secrets))
             {
-                stderr.WriteLine("record-fixtures failed: no Amazon cookies saved; run 'skylight-sync login' first.");
+                stderr.WriteLine($"record-fixtures failed: {CommandSupport.NotLoggedInMessage}");
                 return 1;
             }
 

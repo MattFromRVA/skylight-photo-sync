@@ -28,6 +28,9 @@ public sealed class ScriptedHandler : HttpMessageHandler
 
     public List<string?> CookieHeaders { get; } = [];
 
+    /// <summary>Each request's body as text (null for requests without one), read at send time.</summary>
+    public List<string?> Bodies { get; } = [];
+
     public ScriptedHandler On(Func<HttpRequestMessage, bool> match, Func<HttpRequestMessage, HttpResponseMessage> respond)
     {
         _routes.Add((match, respond));
@@ -61,7 +64,27 @@ public sealed class ScriptedHandler : HttpMessageHandler
         .On("/drive/v1/search", _ => Json("search.json"))
         .On("/content", _ => Bytes(File.ReadAllBytes(Fixtures.Image("tiny.jpg")), "image/jpeg"));
 
+    /// <summary>
+    /// The device-login endpoints answered from the hand-written placeholders under
+    /// <c>Fixtures/AmazonAuth</c> (shapes documented in issue #30; not recorded): registration,
+    /// cookie exchange, access-token refresh and deregistration.
+    /// </summary>
+    public ScriptedHandler WithDeviceAuthDefaults() =>
+        On("/auth/register", _ => AuthJson("placeholder_auth_register.json"))
+        .On("/ap/exchangetoken/cookies", _ => AuthJson("placeholder_exchange_cookies.json"))
+        .On("/auth/token", _ => AuthJson("placeholder_auth_token.json"))
+        .On("/auth/deregister", _ => AuthJson("placeholder_auth_deregister.json"));
+
     public static string Query(HttpRequestMessage request) => Uri.UnescapeDataString(request.RequestUri!.Query);
+
+    /// <summary>The body of the request in <see cref="Requests"/> at <paramref name="index"/>.</summary>
+    public string? BodyOf(HttpRequestMessage request) => Bodies[Requests.IndexOf(request)];
+
+    public static HttpResponseMessage AuthJson(string fixtureName, HttpStatusCode status = HttpStatusCode.OK) =>
+        new(status)
+        {
+            Content = new StringContent(File.ReadAllText(Fixtures.AmazonAuth(fixtureName)), System.Text.Encoding.UTF8, "application/json"),
+        };
 
     public static HttpResponseMessage Json(string fixtureName) =>
         new(HttpStatusCode.OK)
@@ -83,15 +106,16 @@ public sealed class ScriptedHandler : HttpMessageHandler
         return response;
     }
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Requests.Add(request);
         CookieHeaders.Add(request.Headers.TryGetValues("Cookie", out var values) ? string.Join("; ", values) : null);
+        Bodies.Add(request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken));
         for (var i = _routes.Count - 1; i >= 0; i--)
         {
             if (_routes[i].Match(request))
             {
-                return Task.FromResult(_routes[i].Respond(request));
+                return _routes[i].Respond(request);
             }
         }
 

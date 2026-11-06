@@ -121,7 +121,7 @@ public class AppTests
   - `public sealed record AppPaths(string ConfigFile, string SecretsFile, string StateDb, string LockFile, string LogFile) { public static AppPaths Resolve(); }`
   - `public enum SourceMode { Album, All }`
   - `public sealed record SourceConfig(SourceMode Mode, string? AlbumName, int LookbackDays, bool IncludeVideos);` plus `LimitsConfig(int MaxItemsPerRun)`, `ImageConfig(int MaxLongEdge, int JpegQuality)`, `EmailConfig(IReadOnlyList<string> To, string From, int MaxAttachments, long MaxTotalBytes)`, `SmtpConfig(string Host, int Port, string Username)`, `AlertsConfig(string Email)`, `ScheduleConfig(int IntervalMinutes)`, and `AppConfig(SourceConfig Source, LimitsConfig Limits, ImageConfig Image, EmailConfig Email, SmtpConfig Smtp, AlertsConfig Alerts, ScheduleConfig Schedule)` — TOML keys exactly as spec §6.8.
-  - `public sealed record Secrets(string? AmazonSessionId, string? AmazonUbid, string? AmazonAt, string? SmtpPassword);`
+  - `public sealed record Secrets(string? AmazonSessionId, string? AmazonUbid, string? AmazonAt, string? SmtpPassword, string? AmazonRefreshToken = null, string? AmazonDeviceSerial = null);` (the two optional members were added by issue #30 for the device login; the cookie members remain the fallback)
   - `public static class ConfigLoader { AppConfig LoadConfig(string path); Secrets LoadSecrets(string path); void WriteSecrets(string path, Secrets s); }` and `public sealed class ConfigException : Exception`.
   - `WriteSecrets` sets mode `0600` via `File.SetUnixFileMode`; `LoadSecrets` throws `ConfigException` mentioning `0600` if group/other bits are set.
 
@@ -327,6 +327,23 @@ public class AppTests
 
 - [x] **Step 1: Write docs. Step 2: Verify every documented command exists via `skylight-sync --help`. Step 3: Commit** `docs: setup, cookies and troubleshooting guides`.
 
+
+### Issue 30: device login with refresh token replaces pasted cookies (follow-up to Tasks 10, 12, 13)
+
+**Files:**
+- Create: `Sources/Amazon/AmazonDeviceAuth.cs`, `Commands/LogoutCommand.cs`, `tests/.../AmazonDeviceAuthTests.cs`, `tests/.../Fixtures/AmazonAuth/placeholder_*.json`; Modify: `Config/Secrets.cs`, `Config/ConfigLoader.cs`, `Sources/Amazon/AmazonPhotosSource.cs`, `Commands/LoginCommand.cs`, `Commands/StatusCommand.cs`, `Commands/CommandSupport.cs`, `Commands/RunCommand.cs`, `Commands/RecordFixturesCommand.cs`, `Alerts/AlertTexts.cs`, `App.cs`, the docs
+
+**Interfaces:**
+- `public sealed class AmazonDeviceAuth(HttpMessageHandler? handler = null, string tld = "com") : IDisposable` with `static Uri BuildSignInUrl(string tld, string codeVerifier, string serial)`, `static string ParseAuthorizationCode(string pastedUrl)`, `static string NewCodeVerifier()`, `static string NewSerial()`, `static string ClientId(string serial)`, `Task<DeviceRegistration> RegisterAsync(string authorizationCode, string codeVerifier, string serial, CancellationToken ct)`, `Task<IReadOnlyList<AmazonCookie>> ExchangeCookiesAsync(string refreshToken, CancellationToken ct)` (401/403 or no cookies → `AuthExpiredException`), `Task<string> RefreshAccessTokenAsync(string refreshToken, CancellationToken ct)`, `Task DeregisterAsync(string accessToken, CancellationToken ct)`; other failures → `DeviceAuthException` naming the status and Amazon's `response.error` code/message, never a token. The storefront is a constructor argument rather than a per-call one because every call needs it.
+- `public sealed record AmazonCookie(string Name, string Value, DateTimeOffset? Expires)`; `public sealed record DeviceRegistration(string RefreshToken, string AccessToken, TimeSpan AccessTokenLifetime, IReadOnlyList<AmazonCookie> Cookies, string CustomerName)`.
+- `AmazonPhotosSource`: constructor signature unchanged. With `Secrets.AmazonRefreshToken` set it mints cookies through `ExchangeCookiesAsync` before its first request and once more on the first 401/403 of the run (retrying that request once), sends `x-amzn-sessionid` from the minted `session-id`, and loads every minted cookie for `.amazon.{tld}` and the resolved hosts; without it, the three pasted cookies as before.
+- Secrets file: `[amazon] refresh_token`, `device_serial` (device login) or `session_id`/`ubid_main`/`at_main` (cookies); `[smtp] password` kept by every writer. Neither set present is an error only when Amazon is needed (`not logged in to Amazon Photos; run 'skylight-sync login' first.`, exit 3 from `run`).
+- CLI: `login` (device login: prints the sign-in URL and instructions, reads the pasted `/ap/maplanding` address, registers, proves the login with `WhoAmIAsync`, then writes secrets and clears `needs_login`; prints `Amazon Photos: connected as <name>, N items` and `Device registered as "Skylight Photo Sync"; remove it under Manage Your Content and Devices to revoke.`; any failure after registration deregisters and writes nothing), `login --cookies` (the Task 10/12 paste flow, unchanged), `logout` (deregister, drop the Amazon keys, `needs_login` on), `status` adds `auth: device login | pasted cookies | not logged in`.
+
+- [x] **Step 1: Write failing tests** with `ScriptedHandler` and `placeholder_*.json` fixtures: `SignInUrl_has_pkce_and_device_client_id`, `ParseAuthorizationCode_extracts_code_and_rejects_missing`, `Register_posts_expected_body_and_parses_tokens`, `Exchange_posts_form_and_loads_cookies`, `Exchange_401_throws_AuthExpired`, `Source_refreshes_cookies_before_first_request`, `Source_retries_once_after_401_then_throws`, `Source_without_refresh_token_uses_cookies_unchanged`, `Login_device_flow_writes_refresh_token_not_password`, `Login_failure_after_register_deregisters_and_writes_nothing`, `Logout_deregisters_and_clears_amazon_keys`, `Secrets_roundtrip_refresh_token`; every command test asserts no fake token reaches output or the log.
+- [x] **Step 2–4: fail → implement → green. Step 5: Docs** (`docs/cookies.md` leads with the device login, cookies as the fallback; `docs/setup.md` step 4/5; `docs/troubleshooting.md`; README; `docs/research-notes.md` "documented, awaiting live verification").
+- [x] **Step 6: Commit** `feat: one-time device login with refresh-token cookie exchange`.
+- [ ] **Step 7 (Matt): live verification** — `skylight-sync login`, `skylight-sync run --dry-run --limit 3`, `skylight-sync status`; then replace the `placeholder_*.json` fixtures with redacted recordings and tick this box.
 ---
 
 ## Post-v1 follow-ups (filed as issues, not in the v1 milestone)

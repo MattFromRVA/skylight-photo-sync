@@ -1,6 +1,7 @@
 using System.Net;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Mail;
+using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.Sources.Amazon;
 
 namespace SkylightPhotoSync.Commands;
@@ -23,15 +24,54 @@ internal static class CommandSupport
             ? ConfigLoader.LoadSecrets(paths.SecretsFile)
             : new Secrets(null, null, null, null);
 
-    /// <summary>True when all three Amazon cookies are saved.</summary>
+    /// <summary>The Amazon storefront the tool signs in to and reads from.</summary>
+    public const string AmazonTld = "com";
+
+    public const string NotLoggedInMessage = "not logged in to Amazon Photos; run 'skylight-sync login' first.";
+
+    /// <summary>True when all three Amazon cookies are saved (the fallback login).</summary>
     public static bool HasAmazonCookies(Secrets secrets) =>
         !string.IsNullOrWhiteSpace(secrets.AmazonSessionId)
         && !string.IsNullOrWhiteSpace(secrets.AmazonUbid)
         && !string.IsNullOrWhiteSpace(secrets.AmazonAt);
 
-    /// <summary>An <see cref="AmazonPhotosSource"/> for the saved cookies (see <see cref="HasAmazonCookies"/>).</summary>
+    /// <summary>True when a device login's refresh token is saved (the default login).</summary>
+    public static bool HasDeviceLogin(Secrets secrets) => !string.IsNullOrWhiteSpace(secrets.AmazonRefreshToken);
+
+    /// <summary>True when Amazon can be reached at all: a device login or the three cookies.</summary>
+    public static bool HasAmazonAuth(Secrets secrets) => HasDeviceLogin(secrets) || HasAmazonCookies(secrets);
+
+    /// <summary>How Amazon is authenticated, for <c>status</c>: the device login wins when both are saved.</summary>
+    public static string DescribeAmazonAuth(Secrets secrets) =>
+        HasDeviceLogin(secrets) ? "device login" : HasAmazonCookies(secrets) ? "pasted cookies" : "not logged in";
+
+    /// <summary>An <see cref="AmazonPhotosSource"/> for the saved login (see <see cref="HasAmazonAuth"/>).</summary>
     public static AmazonPhotosSource CreateAmazonSource(Secrets secrets) =>
-        new(secrets, AmazonHandlerFactory?.Invoke());
+        new(secrets, AmazonHandlerFactory?.Invoke(), AmazonTld);
+
+    /// <summary>The device-login client for <c>login</c> and <c>logout</c>.</summary>
+    public static AmazonDeviceAuth CreateDeviceAuth() => new(AmazonHandlerFactory?.Invoke(), AmazonTld);
+
+    /// <summary>
+    /// Removes the device behind <paramref name="refreshToken"/> from the account
+    /// (<c>/auth/token</c> then <c>/auth/deregister</c>). False when Amazon no longer accepts the
+    /// token, i.e. the device is already gone; <see cref="DeviceAuthException"/> when Amazon cannot
+    /// be reached or refuses the removal.
+    /// </summary>
+    public static async Task<bool> DeregisterDeviceAsync(string refreshToken, CancellationToken ct)
+    {
+        using var auth = CreateDeviceAuth();
+        try
+        {
+            var accessToken = await auth.RefreshAccessTokenAsync(refreshToken, ct);
+            await auth.DeregisterAsync(accessToken, ct);
+            return true;
+        }
+        catch (AuthExpiredException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// An <see cref="SmtpMailer"/> for the configured server. STARTTLS is required for every host except

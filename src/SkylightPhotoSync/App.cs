@@ -42,6 +42,7 @@ public static class App
         };
         root.Options.Add(versionOption);
         root.Subcommands.Add(LoginCommand.Create());
+        root.Subcommands.Add(LogoutCommand.Create());
         root.Subcommands.Add(RunCommand.Create());
         root.Subcommands.Add(StatusCommand.Create());
         root.Subcommands.Add(TestEmailCommand.Create());

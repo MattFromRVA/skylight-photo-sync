@@ -6,23 +6,21 @@ public static class AlertTexts
     /// <summary>Re-login steps sent once when Amazon rejects the saved cookies.</summary>
     public const string AuthExpiredBody =
         """
-        Amazon Photos no longer accepts the saved login cookies, so photo syncing is paused.
+        Amazon Photos no longer accepts the saved login, so photo syncing is paused.
         Nothing will be sent to the Skylight frame until you log in again.
 
-        To fix it:
+        This usually means the "Skylight Photo Sync" device was removed from your Amazon
+        account (Manage Your Content and Devices), or Amazon revoked it. If you logged in
+        with pasted browser cookies instead, they have simply expired.
 
-        1. On this Mac, open a browser, go to https://www.amazon.com and sign in.
-        2. Open the browser's developer tools (View > Developer > Developer Tools in Chrome,
-           or Develop > Show Web Inspector in Safari) and find the cookies for amazon.com
-           under Application > Cookies (Chrome) or Storage > Cookies (Safari).
-        3. Copy the values of these three cookies: session-id, ubid-main, at-main.
-           Alternatively, right-click any request to amazon.com in the Network tab and
-           choose "Copy as cURL".
-        4. In Terminal, run:
+        To fix it, in Terminal on the Mac that runs the sync:
 
-               skylight-sync login
+            skylight-sync login
 
-           and paste the three values (or the copied cURL command) when asked.
+        It prints an amazon.com sign-in address. Open it in a browser, sign in (including
+        the two-factor prompt), and paste back the address of the "page not found" page you
+        land on. The tool registers itself as a device again and refreshes its own session
+        from then on.
 
         Syncing resumes on the next scheduled run after the login succeeds.
         """;

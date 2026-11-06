@@ -77,6 +77,78 @@ fixtures under `tests/SkylightPhotoSync.Tests/Fixtures/Amazon/` and `AmazonEndpo
   within about fifteen minutes on 2026-11-06, so `at-main` can rotate quickly; refresh with
   `skylight-sync login` and record right away.
 
+## Device login (issue #30): documented, awaiting live verification
+
+Implemented 2026-11-06 from the sources below, **not yet exercised against a live Amazon
+account**. The placeholder fixtures under `tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/`
+(`placeholder_*.json`, each with a top-level `_placeholder`) are hand-written from these shapes
+and must be replaced by redacted recordings once the first live `login` has run. Points marked
+**(check)** are the ones the live pass should confirm first.
+
+- **Flow** (mkb79/Audible "external login", also Apollon77/alexa-cookie since v2 and
+  airbone42/immich-amazon-sync PR #2): PKCE sign-in in the user's browser → authorization code on
+  the `/ap/maplanding` landing page → `POST /auth/register` once → refresh token stored → per
+  run `POST /ap/exchangetoken/cookies` for fresh website cookies. Never re-register: alexa-cookie
+  issue #190 (June 2026) was a needless `/auth/register` with an expired access token.
+- **Sign-in URL.** `https://www.amazon.{tld}/ap/signin` with `openid.oa2.response_type=code`,
+  `openid.oa2.code_challenge_method=S256`, `openid.oa2.code_challenge=base64url(sha256(verifier))`
+  (verifier = base64url of 32 random bytes), `openid.oa2.client_id=device:<hex(serial#A2CZJZGLK2JJVM)>`,
+  `openid.oa2.scope=device_auth_access`, `openid.return_to=https://www.amazon.{tld}/ap/maplanding`,
+  `openid.assoc_handle=amzn_audible_ios_{us|uk|de|fr|it|es|ca}`, `pageId=amzn_audible_ios`,
+  `openid.identity`/`openid.claimed_id=http://specs.openid.net/auth/2.0/identifier_select`,
+  `openid.mode=checkid_setup`, `openid.ns`, `openid.ns.oa2`, `openid.ns.pape`,
+  `openid.pape.max_auth_age=0`, `accountStatusPolicy=P1`, `forceMobileLayout=true`,
+  `marketPlaceId`. **(check)** `marketPlaceId`: the tool sends the retail marketplace
+  (`ATVPDKIKX0DER` for `.com`, per issue #30); the Audible app sends Audible's own
+  (`AF2M0KC94RCEA` for the US). If the sign-in page refuses or loops, try the Audible id.
+  Serial: 40 random uppercase alphanumerics (alexa-cookie style; Audible uses 32 hex).
+- **Landing page.** After 2FA the browser lands on an error page at
+  `https://www.amazon.{tld}/ap/maplanding?...&openid.oa2.authorization_code=...`. The code is
+  single-use and short-lived. **(check)** that Safari/Chrome show the full address (not a
+  shortened one) and that the code survives copy/paste.
+- **Register.** `POST https://api.amazon.{tld}/auth/register` (JSON): `requested_token_type:
+  ["bearer","mac_dms","website_cookies"]`, `cookies: {website_cookies: [], domain: ".amazon.{tld}"}`,
+  `registration_data: {domain: "Device", app_version: "3.56.2", device_serial, device_type:
+  "A2CZJZGLK2JJVM", device_name: "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Skylight Photo Sync",
+  os_version: "15.0.0", software_version: "35602678", device_model: "iPhone", app_name: "Audible"}`,
+  `auth_data: {client_id (hex, no "device:" prefix), authorization_code, code_verifier,
+  code_algorithm: "SHA-256", client_domain: "DeviceLegacy"}`, `requested_extensions:
+  ["device_info","customer_info"]`. Response: `response.success.tokens.bearer.{refresh_token
+  (Atnr|…), access_token (Atna|…), expires_in ("3600")}`, `tokens.website_cookies[]`
+  (`Name`/`Value`/`Expires`…; `x-main` arrives quoted), `tokens.mac_dms` (unused),
+  `extensions.customer_info.name` (used for "connected as"). Errors: non-200 with
+  `response.error.{code,message}`. **(check)** the host: Audible uses `api.amazon.{tld}`;
+  alexa-cookie always `api.amazon.com`. Identical for `.com`.
+- **Cookie exchange.** `POST https://www.amazon.{tld}/ap/exchangetoken/cookies` (form):
+  `app_name=Audible`, `app_version=3.56.2`, `source_token=<refresh>`,
+  `source_token_type=refresh_token`, `requested_token_type=auth_cookies`, `domain=.amazon.{tld}`;
+  header `x-amzn-identity-auth-domain: api.amazon.{tld}`. Response:
+  `response.tokens.cookies[".amazon.{tld}"][]` with `Name`, `Value`, `Expires`
+  ("06 Dec 2026 12:00:00 GMT"), `Path`, `Secure`, `HttpOnly`: `session-id`, `ubid-main`,
+  `at-main`, `sess-at-main`, `x-main`, `session-token`. alexa-cookie reports them good for ~14
+  days; the tool re-mints at the start of every run and once more on the first 401 of a run.
+  401/403, or a body without cookies, → `AuthExpiredException` → `needs_login`, one alert.
+  **(check)** that the Drive v1 endpoints accept these cookies together with the
+  `x-amzn-sessionid` header taken from the minted `session-id` (the pasted-cookie path needed it).
+- **Access token and deregister.** `POST https://api.amazon.{tld}/auth/token` (form:
+  `app_name`, `app_version`, `source_token=<refresh>`, `source_token_type=refresh_token`,
+  `requested_token_type=access_token`) → `{access_token, token_type: "bearer", expires_in}`.
+  `POST https://api.amazon.{tld}/auth/deregister` with `Authorization: Bearer <access>` and body
+  `{"deregister_all_existing_accounts": false}` removes only this device. Used by `logout` and when
+  `login` fails after registration.
+- **Lifetime and revocation.** The refresh token stays valid until the device is removed from
+  the account (immich-amazon-sync README; alexa-cookie users report years). The device appears
+  under Account > Manage Your Content and Devices > Devices and can be removed there.
+- **2FA.** Email/SMS codes are reported flaky on this sign-in page; Amazon-app approval or an
+  authenticator app works.
+- Storefronts supported: `com`, `co.uk`, `de`, `fr`, `it`, `es`, `ca` (the ones immich-amazon-sync
+  lists); the tool is pinned to `com`.
+
+Sources: https://github.com/mkb79/Audible (`src/audible/login.py`, `register.py`),
+https://audible.readthedocs.io/en/latest/auth/authorization.html,
+https://github.com/Apollon77/alexa-cookie (README; issue #190),
+https://github.com/adn77/alexa-cookie-cli, https://github.com/airbone42/immich-amazon-sync/pull/2.
+
 ## Prior art (same shape of problem)
 
 - MChartier/immich-skylight-mailer (TypeScript, MIT): Immich album → JPEG via sharp →

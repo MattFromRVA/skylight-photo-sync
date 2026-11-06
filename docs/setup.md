@@ -6,9 +6,10 @@ album and one Skylight address, prove the email path works, send one photo, then
 
 > **Status (2026-11).** Everything on this page is implemented. The Amazon Photos client was
 > verified against a live Amazon session on 2026-11-06 (`run --dry-run` end to end; see the
-> README's status section). Amazon's cookies can stop working quickly, so if `login` or `run`
-> reports expired cookies, re-run `login`. Everything from `test-email` onward can also be
-> exercised with `run --source local:PATH`.
+> README's status section). The one-time device login (`skylight-sync login`) is implemented
+> against the documented flow and awaiting its first live verification; `login --cookies` is the
+> verified fallback. Everything from `test-email` onward can also be exercised with
+> `run --source local:PATH`.
 
 ## 1. Prerequisites
 
@@ -21,7 +22,7 @@ album and one Skylight address, prove the email path works, send one photo, then
   (`<name>@ourskylight.com`, shown in the Skylight app under the device's settings). On a
   **Skylight Calendar the photo screensaver requires the Plus plan**; without it the photos
   arrive but nothing displays them. A Skylight Frame needs no plan.
-- **An Amazon Photos account**, signed in in Safari or Chrome on this Mac. If you want album mode
+- **An Amazon Photos account** and a browser to sign in with (any device). If you want album mode
   (recommended), create the album in Amazon Photos first and put a few photos in it.
 - **An SMTP account to send from.** Gmail works: turn on 2-Step Verification, then create an
   [app password](https://myaccount.google.com/apppasswords) for "Mail". You will use the app
@@ -151,26 +152,37 @@ override from the command line: `skylight-sync run --mode all --lookback-days 7`
 
 ## 4. Log in to Amazon Photos
 
-`skylight-sync login` saves the three Amazon session cookies that authenticate the private
-Amazon Photos endpoints. Copying them from your browser is described step by step in
-[cookies.md](cookies.md). In short:
+`skylight-sync login` signs you in once through your own browser and registers the tool on your
+Amazon account as a device named "Skylight Photo Sync". From then on it refreshes its own
+session before every run; nothing to copy, nothing that expires on Amazon's schedule. The full
+walkthrough, including the cookie fallback, is in [cookies.md](cookies.md). In short:
 
 ```bash
 skylight-sync login
-# Paste the 'Copy as cURL' command (or session-id, ubid-main and at-main on three lines), then press Ctrl-D.
 ```
 
-Paste the cURL command you copied from the browser's Network tab (or the three values on three
-lines), press Return, then Ctrl-D. On success:
+1. It prints a long `https://www.amazon.com/ap/signin?...` address. Open it in a browser.
+2. Sign in, including the two-factor prompt (Amazon app approval or an authenticator app is the
+   most reliable).
+3. You land on a "page not found" at `amazon.com/ap/maplanding`. Copy the whole address from the
+   address bar, paste it into the Terminal, press Return.
+
+On success:
 
 ```
-Amazon Photos: connected, 12345 items
+Amazon Photos: connected as Matt Chaulklin, 12345 items
+Device registered as "Skylight Photo Sync"; remove it under Manage Your Content and Devices to revoke.
 Saved. Run 'skylight-sync run --dry-run' to verify.
+Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you pasted contains a single-use sign-in code.
 ```
 
-`login` writes the cookies to `~/.config/skylight-photo-sync/secrets.toml` with mode `0600`,
-checks them against Amazon, and clears the `needs_login` flag. If Amazon rejects them the file is
-still written but the command exits 1 and tells you to copy a fresh set.
+`login` registers the device, checks the new login against Amazon Photos, and only then writes
+`refresh_token` and `device_serial` to `~/.config/skylight-photo-sync/secrets.toml` with mode
+`0600` and clears the `needs_login` flag. If the check fails it removes the device again and
+writes nothing. `skylight-sync logout` removes the device and the keys again.
+
+If the device login does not work for you, `skylight-sync login --cookies` takes the three
+session cookies copied from a signed-in browser instead ([cookies.md](cookies.md#pasted-cookies-fallback)).
 
 ## 5. Add the SMTP password to secrets.toml
 
@@ -180,19 +192,19 @@ table `login` wrote:
 
 ```toml
 [amazon]
-session_id = "..."       # written by `skylight-sync login`
-ubid_main = "..."
-at_main = "..."
+refresh_token = "..."    # written by `skylight-sync login`
+device_serial = "..."
 
 [smtp]
 password = "your-gmail-app-password"
 ```
 
-(The dashed spellings `session-id`, `ubid-main`, `at-main` are accepted too.) Running `login`
-again later rewrites the `[amazon]` table and keeps your `[smtp] password`.
+(`login --cookies` writes `session_id`, `ubid_main` and `at_main` instead; the dashed spellings
+`session-id`, `ubid-main`, `at-main` are accepted too.) Running `login` again later rewrites the
+`[amazon]` table and keeps your `[smtp] password`.
 
-If you created the file yourself, make sure only you can read it, or `run`, `test-email`, `login`
-and `record-fixtures` will refuse to start:
+If you created the file yourself, make sure only you can read it, or `run`, `test-email`, `login`,
+`logout` and `record-fixtures` will refuse to start:
 
 ```bash
 chmod 600 ~/.config/skylight-photo-sync/secrets.toml
@@ -285,6 +297,7 @@ skylight-sync status
 # last run: 2026-11-06 14:02:11 -05:00 ok (found 25, sent 25, skipped 0)
 # total sent: 26
 # needs_login: no
+# auth: device login
 # launchd: installed, next run 2026-11-06 15:02:11 -05:00
 ```
 
@@ -336,13 +349,13 @@ sqlite3 ~/Library/Application\ Support/skylight-photo-sync/state.db \
 Two things raise an alert. An alert is a macOS notification plus an email to `[alerts] email`,
 rate-limited to one per kind per 24 hours.
 
-**Amazon login expired** (subject `Skylight Photo Sync: Amazon login expired`). Amazon
-invalidated the saved cookies: `run` exits with code 3, sets `needs_login`, sends this one
-alert, and every later scheduled run exits 3 immediately without contacting Amazon. The email
-contains the re-login steps; they boil down to copying fresh cookies ([cookies.md](cookies.md))
-and running `skylight-sync login`, which clears the flag. Syncing resumes on the next scheduled
-run. Cookie lifetime is unpredictable, from hours to days; a one-time device login that avoids
-this is planned ([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)).
+**Amazon login expired** (subject `Skylight Photo Sync: Amazon login expired`). Amazon no longer
+accepts the saved login: with the device login that means the "Skylight Photo Sync" device was
+removed from the account or revoked; with pasted cookies it means they expired. `run` exits with
+code 3, sets `needs_login`, sends this one alert, and every later scheduled run exits 3
+immediately without contacting Amazon. The email contains the re-login steps; they boil down to
+running `skylight-sync login` again ([cookies.md](cookies.md)), which clears the flag. Syncing
+resumes on the next scheduled run.
 
 **Sync failing** (subject `Skylight Photo Sync: Sync failing`). Three scheduled runs in a row
 failed for some other reason (SMTP down, Amazon returning errors). A broken `config.toml` never
@@ -353,10 +366,11 @@ next run tries again. See [troubleshooting.md](troubleshooting.md).
 ## 12. Everyday commands
 
 ```bash
-skylight-sync status             # last run, totals, needs_login, next launchd run
+skylight-sync status             # last run, totals, needs_login, login kind, next launchd run
 skylight-sync run                # one run now, same as the schedule
 skylight-sync run --dry-run      # preview
-skylight-sync login              # fresh cookies
+skylight-sync login              # sign in again (device login); login --cookies for pasted cookies
+skylight-sync logout             # remove the device from your Amazon account and forget the login
 skylight-sync reset --yes        # forget everything sent and skipped; next run resends the whole window
 skylight-sync uninstall-launchd  # stop the schedule
 ```
