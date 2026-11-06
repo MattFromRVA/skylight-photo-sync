@@ -16,7 +16,7 @@ namespace SkylightPhotoSync.Recording;
 /// <c>redacted@example.com</c>, GPS <c>location</c> fields are dropped, and the one downloaded
 /// binary is replaced by a generated tiny JPEG. Every other string is redacted by default to
 /// <c>text_0001…</c> unless its key is on a short allowlist (kind, content type, dates, …) or it is
-/// an ISO-8601 date, a numeric string or an uppercase enum-like token. Cookie values never reach
+/// an ISO-8601 date or an uppercase letters-only enum-like token. Cookie values never reach
 /// the output because the client never puts them in a response body.
 /// </summary>
 public static partial class FixtureRecorder
@@ -255,13 +255,12 @@ public static partial class FixtureRecorder
 
     private static bool IsStructuralValue(string text) =>
         IsoDateTimePattern().IsMatch(text)
-        || EnumTokenPattern().IsMatch(text)
-        || decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        || EnumTokenPattern().IsMatch(text);
 
     [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$")]
     private static partial Regex IsoDateTimePattern();
 
-    [GeneratedRegex(@"^[A-Z0-9_]{1,40}$")]
+    [GeneratedRegex(@"^[A-Z][A-Z_]{0,39}$")]
     private static partial Regex EnumTokenPattern();
 
     private static async Task<string> WriteAsync(string path, JsonObject node, CancellationToken ct)
@@ -322,7 +321,7 @@ public static partial class FixtureRecorder
 
         /// <summary>
         /// Any other string: an already-seen node id stays that node's placeholder, a known album or
-        /// account name becomes an album placeholder, dates, numbers and enum-like tokens stay, and
+        /// account name becomes an album placeholder, dates and enum-like tokens stay, and
         /// everything else becomes <c>text_0001…</c>.
         /// </summary>
         public string Text(string real) =>

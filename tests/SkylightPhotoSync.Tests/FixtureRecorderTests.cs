@@ -65,7 +65,8 @@ public sealed class FixtureRecorderTests
               {"id":"ABC123","name":"IMG_9.HEIC","kind":"FILE","ownerId":"OWN1","parents":["ROOT1"],"createdDate":"2026-10-01T10:00:00.000Z",
                "contentProperties":{"md5":"ff","contentType":"image/heic","image":{"location":"37.0,-77.0","make":"Pixel Maker"}}},
               {"id":"DEF456","name":"Beach Trip","kind":"VISUAL_COLLECTION","createdBy":"someone@example.com",
-               "description":"Grandma's beach house","coverIds":["ABC123","cOv3rId9"],"status":"AVAILABLE","size":"1024"}]}
+               "description":"Grandma's beach house","coverIds":["ABC123","cOv3rId9"],"status":"AVAILABLE","size":"1024",
+               "directedId":"A2EUQ1WTGCTBG2","phone":"5551234567","takenOn":"2026-10-01T10:00:00.000Z"}]}
             """;
 
         var redacted = FixtureRecorder.Redact(body, new FixtureRecorder.Redactor(["Beach Trip"]));
@@ -93,6 +94,9 @@ public sealed class FixtureRecorderTests
         Assert.Equal("node_0001", data[1].GetProperty("coverIds")[0].GetString());
         Assert.Equal("text_0003", data[1].GetProperty("coverIds")[1].GetString());
         Assert.Equal("AVAILABLE", data[1].GetProperty("status").GetString());
-        Assert.Equal("1024", data[1].GetProperty("size").GetString());
+        Assert.Equal("text_0004", data[1].GetProperty("size").GetString());
+        Assert.Equal("text_0005", data[1].GetProperty("directedId").GetString());
+        Assert.Equal("text_0006", data[1].GetProperty("phone").GetString());
+        Assert.Equal("2026-10-01T10:00:00.000Z", data[1].GetProperty("takenOn").GetString());
     }
 }
