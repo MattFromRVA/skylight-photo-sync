@@ -136,6 +136,7 @@ public static partial class LoginCommand
         {
             var paths = AppPaths.Resolve();
             var existing = CommandSupport.LoadSecretsIfPresent(paths);
+            var previousSecretsFile = File.Exists(paths.SecretsFile) ? File.ReadAllBytes(paths.SecretsFile) : null;
             using var auth = CommandSupport.CreateDeviceAuth();
 
             DeviceRegistration registration;
@@ -151,6 +152,7 @@ public static partial class LoginCommand
 
             string displayName;
             long count;
+            var written = false;
             try
             {
                 // The device login replaces any pasted cookies; the SMTP password is kept.
@@ -171,14 +173,20 @@ public static partial class LoginCommand
 
                 using var store = new StateStore(paths.StateDb);
                 ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
+                written = true;
                 store.SetNeedsLogin(false, null);
                 displayName = registration.CustomerName.Length > 0 ? registration.CustomerName : name;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 var removed = await TryDeregisterAsync(auth, registration.AccessToken, ct);
+                if (written)
+                {
+                    RestoreSecretsFile(paths.SecretsFile, previousSecretsFile);
+                }
+
                 stderr.WriteLine(
-                    $"login failed: the new device login could not be completed ({ex.Message}). Nothing was saved; "
+                    $"login failed: the new device login could not be completed ({ex.Message}). Nothing was changed; "
                     + (removed
                         ? "the tool removed the device again."
                         : $"the tool could not remove the device, so remove \"{AmazonDeviceAuth.DeviceDisplayName}\" under Manage Your Content and Devices."));
@@ -219,6 +227,19 @@ public static partial class LoginCommand
         catch (DeviceAuthException)
         {
             stderr.WriteLine(PreviousDeviceNotRemovedMessage);
+        }
+    }
+
+    /// <summary>Puts secrets.toml back exactly as it was before a failed login (absent when it did not exist).</summary>
+    private static void RestoreSecretsFile(string path, byte[]? previous)
+    {
+        if (previous is null)
+        {
+            File.Delete(path);
+        }
+        else
+        {
+            File.WriteAllBytes(path, previous);
         }
     }
 

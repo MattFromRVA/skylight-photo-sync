@@ -457,6 +457,44 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Login_state_failure_after_write_restores_secrets_and_deregisters()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(secretsPath, new Secrets(_sessionId, _ubid, _at, "app-password"));
+        var before = File.ReadAllBytes(secretsPath);
+        using (var store = OpenStore())
+        {
+            store.SetNeedsLogin(true, DateTimeOffset.UtcNow);
+        }
+
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={Path.Combine(_home.Dir, "state.db")};Pooling=False"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                CREATE TRIGGER fail_auth_update BEFORE UPDATE ON auth_state BEGIN SELECT RAISE(ABORT, 'scripted state failure'); END;
+                CREATE TRIGGER fail_auth_insert BEFORE INSERT ON auth_state BEGIN SELECT RAISE(ABORT, 'scripted state failure'); END;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        Console.SetIn(new StringReader(_landing + "\n"));
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(1, code);
+        Assert.Contains("login failed", err);
+        Assert.Contains("removed the device again", err);
+        var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
+        Assert.Equal(_access, deregister.Headers.Authorization!.Parameter);
+        Assert.Equal(before, File.ReadAllBytes(secretsPath));
+        AssertNoSecretsIn(out_ + err);
+        using var store2 = OpenStore();
+        Assert.True(store2.NeedsLogin());
+    }
+
+    [Fact]
     public async Task Login_device_flow_tells_the_user_to_clear_scrollback()
     {
         Console.SetIn(new StringReader(_landing + "\n"));
