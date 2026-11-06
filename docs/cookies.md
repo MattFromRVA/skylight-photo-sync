@@ -153,6 +153,7 @@ If this happens often enough to be annoying, that is exactly the problem
 skylight-sync run --dry-run
 ```
 
-exits 0 and prints `found N, sent 0, skipped 0, batches B (dry run)` when the cookies work, or
+exits 0 and prints `found N, sent S, skipped K, batches B (dry run)` (in a dry run `sent` is how
+many would be sent; nothing is emailed) when the cookies work, or
 exits 3 with `run failed: needs_login` / `run failed: auth_expired` when they do not. More in
 [troubleshooting.md](troubleshooting.md#needs_login-exit-code-3).

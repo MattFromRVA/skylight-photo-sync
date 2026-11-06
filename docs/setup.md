@@ -45,8 +45,16 @@ dotnet pack src/SkylightPhotoSync -c Release -o ./artifacts
 dotnet tool install --global SkylightPhotoSync --add-source ./artifacts
 ```
 
-To upgrade a from-clone install later, `git pull`, `dotnet pack` again, then
-`dotnet tool update --global SkylightPhotoSync --add-source ./artifacts`.
+To upgrade a from-clone install later, `git pull`, then reinstall. The package version stays
+`0.1.0` between releases, so `dotnet tool update` would see nothing new and NuGet would reuse the
+old cached package; remove both first:
+
+```bash
+dotnet tool uninstall --global SkylightPhotoSync
+rm -rf ~/.nuget/packages/skylightphotosync
+dotnet pack src/SkylightPhotoSync -c Release -o ./artifacts
+dotnet tool install --global SkylightPhotoSync --add-source ./artifacts
+```
 
 Check it is on your `PATH` (the installer puts it in `~/.dotnet/tools`):
 
@@ -81,8 +89,9 @@ album_name = "Skylight"
 # In all mode 0 is refused (it would select your entire library); default 30.
 lookback_days = 0
 
-# Videos are skipped unless this is true. Skylight accepts MP4/MOV/GIF; videos over
-# 22 MB are skipped as oversize because they will not fit in one email.
+# Videos are skipped unless this is true. Skylight accepts MP4/MOV/GIF; videos larger
+# than [email] max_total_bytes (and never more than 22 MB) are skipped as oversize because
+# they will not fit in one email.
 include_videos = false         # default false
 
 [limits]
@@ -183,8 +192,8 @@ password = "your-gmail-app-password"
 (The dashed spellings `session-id`, `ubid-main`, `at-main` are accepted too.) Running `login`
 again later rewrites the `[amazon]` table and keeps your `[smtp] password`.
 
-If you created the file yourself, make sure only you can read it, or every command will refuse
-to start:
+If you created the file yourself, make sure only you can read it, or `run`, `test-email`, `login`
+and `record-fixtures` will refuse to start:
 
 ```bash
 chmod 600 ~/.config/skylight-photo-sync/secrets.toml
@@ -230,13 +239,13 @@ and the series continues, and the command only fails if no probe was accepted.
 
 ```bash
 skylight-sync run --dry-run
-# found 25, sent 0, skipped 0, batches 2 (dry run)
+# found 25, sent 25, skipped 0, batches 2 (dry run)
 ```
 
 A dry run does everything except send: lists the album, downloads and normalizes up to
 `max_items_per_run` photos, packs them into batches, and marks nothing as sent. It prints the
-counts (`found` is the number of new items in the window; `batches` is how many emails they would
-take), not the individual file names. Exit code 0 means Amazon, your config and the image
+counts (`found` is the number of new items in the window; in a dry run `sent` is how many would
+be sent and `batches` is how many emails they would take), not the individual file names. Exit code 0 means Amazon, your config and the image
 pipeline all work. Items that cannot be sent (videos while `include_videos = false`, files too
 large for one email, unsupported types) are counted under `skipped` and recorded with their
 reason in the state database (see step 10); a dry run records them too.
@@ -246,7 +255,7 @@ Useful variations, all of which exist as real flags (`skylight-sync run --help`)
 ```bash
 skylight-sync run --dry-run --limit 3                 # look at only three
 skylight-sync run --dry-run --mode all --lookback-days 7
-skylight-sync run --dry-run --source local:~/Pictures/test   # a folder instead of Amazon
+skylight-sync run --dry-run --source local:$HOME/Pictures/test   # a folder instead of Amazon
 ```
 
 ## 8. Send one real photo
@@ -330,7 +339,8 @@ run. Cookie lifetime is unpredictable, from hours to days; a one-time device log
 this is planned ([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)).
 
 **Sync failing** (subject `Skylight Photo Sync: Sync failing`). Three scheduled runs in a row
-failed for some other reason (SMTP down, Amazon returning errors, a config problem). The body
+failed for some other reason (SMTP down, Amazon returning errors). A broken `config.toml` never
+triggers this alert: the run stops before it is recorded, so the error only shows in the log. The body
 carries the last error; `skylight-sync status` and the log have the rest. Nothing is paused: the
 next run tries again. See [troubleshooting.md](troubleshooting.md).
 

@@ -60,7 +60,7 @@ the browser, copy again, paste again.
 
 ## HTTP 429 (rate limited)
 
-`run failed: Amazon Photos kept returning HTTP 429 for https://... after 3 retries.`
+`run failed: HttpRequestException: Amazon Photos kept returning HTTP 429 for https://... after 3 retries.`
 
 Amazon throttled the session. The client already requests pages one at a time with a 0.5 s pause
 between them, and on a 429 it waits **60 seconds** and retries, up to three times per request,
@@ -130,8 +130,8 @@ accordingly. The tool requires STARTTLS for every host except `localhost`/loopba
   limit is 25 MB for the whole message after base64 encoding (about a third larger than the raw
   attachments). Lower `[email] max_total_bytes`.
 - `secrets.toml is accessible by other users; it must be mode 0600.` Run
-  `chmod 600 ~/.config/skylight-photo-sync/secrets.toml`. Every command refuses a loosely
-  permissioned secrets file.
+  `chmod 600 ~/.config/skylight-photo-sync/secrets.toml`. `run`, `test-email`, `login` and
+  `record-fixtures` refuse a loosely permissioned secrets file.
 
 ## Lock held (exit code 4)
 
@@ -142,9 +142,11 @@ still downloading a large backlog when the next interval fires). The second one 
 immediately with code 4 without sending anything, which is the intended behaviour. Wait for the
 running one to finish; `status` shows `in progress` for the last run while it is.
 
-If no run is in progress (`ps aux | grep skylight-sync` shows nothing) and you still get exit 4,
-a previous process was killed hard and left the lock behind. Check nothing is running, then
-delete `run.lock` and run again.
+The `run.lock` file staying on disk between runs is normal and harmless: the lock is held by an
+open process, not by the file existing, and macOS releases it the moment that process exits, even
+if it was killed. So a persistent exit 4 means some process really is still holding it. Find it
+with `lsof ~/Library/Application\ Support/skylight-photo-sync/run.lock` and wait for it or stop
+it; deleting the file does not help.
 
 ## `lookback_days = 0` refused in all mode
 
@@ -157,7 +159,7 @@ The same check applies to the command-line override `--mode all --lookback-days 
 
 ## Album not found
 
-`run failed: Album 'Skylight' was not found in Amazon Photos. Albums seen: Family, Holidays 2025, ...`
+`run failed: InvalidOperationException: Album 'Skylight' was not found in Amazon Photos. Albums seen: Family, Holidays 2025, ...`
 
 `[source] album_name` must match an album name in Amazon Photos exactly, including case and
 spaces. The message lists the albums the account does have; copy the right one into
