@@ -85,7 +85,9 @@ no secrets) and use `login --cookies` meanwhile.
 **`login failed: the new device login could not be completed (...)`** Registration worked
 but a later step failed, usually because Amazon Photos rejected the fresh session (or Amazon did
 not answer in time, or `secrets.toml` could not be written). The tool removed the device again and
-wrote nothing. Try once more; then fall back to `login --cookies`.
+wrote nothing. Try once more; then fall back to `login --cookies`. If the message instead says
+`secrets.toml could not be put back as it was and may be damaged`, open `secrets.toml`, re-add
+the `[smtp] password` if it is missing, and run `login` again.
 
 **`warning: the previous device login could not be removed from your Amazon account`** A new
 `login` (device or `--cookies`) replaced a saved device login and tried to remove the old device,

@@ -173,6 +173,7 @@ On success:
 Amazon Photos: connected as Matt Chaulklin, 12345 items
 Device registered as "Skylight Photo Sync"; remove it under Manage Your Content and Devices to revoke.
 Saved. Run 'skylight-sync run --dry-run' to verify.
+Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you pasted contains a single-use sign-in code.
 ```
 
 `login` registers the device, checks the new login against Amazon Photos, and only then writes
