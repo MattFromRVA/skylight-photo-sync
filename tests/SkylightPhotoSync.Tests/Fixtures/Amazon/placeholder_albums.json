@@ -1,0 +1,24 @@
+{
+  "_placeholder": "hand-written from documented shapes, not recorded",
+  "count": 2,
+  "data": [
+    {
+      "id": "ALBUMPLACEHOLDER0001",
+      "name": "Vacation 2025",
+      "kind": "VISUAL_COLLECTION",
+      "description": "Lake house week",
+      "coverIds": ["nodePlaceholderCover0099"],
+      "ownerId": "OWNERPLACEHOLDER0001",
+      "createdDate": "2025-07-01T10:00:00.000Z",
+      "modifiedDate": "2025-07-20T10:00:00.000Z"
+    },
+    {
+      "id": "ALBUMPLACEHOLDER0002",
+      "name": "Skylight",
+      "kind": "VISUAL_COLLECTION",
+      "ownerId": "OWNERPLACEHOLDER0001",
+      "createdDate": "2026-10-01T10:00:00.000Z",
+      "modifiedDate": "2026-11-05T10:00:00.000Z"
+    }
+  ]
+}

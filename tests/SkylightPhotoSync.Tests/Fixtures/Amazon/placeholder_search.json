@@ -1,0 +1,54 @@
+{
+  "_placeholder": "hand-written from documented shapes, not recorded; includes one node older than the window and one video",
+  "count": 3,
+  "data": [
+    {
+      "id": "NODEPLACEHOLDER0010",
+      "name": "too-old.jpg",
+      "kind": "FILE",
+      "ownerId": "OWNERPLACEHOLDER0001",
+      "createdDate": "2026-09-01T12:00:00.000Z",
+      "modifiedDate": "2026-09-01T12:00:00.000Z",
+      "contentProperties": {
+        "size": 100000,
+        "md5": "aaaa0000000000000000000000000000",
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "contentDate": "2026-09-01T12:00:00.000Z",
+        "image": { "width": 800, "height": 600 }
+      }
+    },
+    {
+      "id": "NODEPLACEHOLDER0011",
+      "name": "recent.jpg",
+      "kind": "FILE",
+      "ownerId": "OWNERPLACEHOLDER0001",
+      "createdDate": "2026-11-02T12:00:00.000Z",
+      "modifiedDate": "2026-11-02T12:00:00.000Z",
+      "contentProperties": {
+        "size": 200000,
+        "md5": "bbbb0000000000000000000000000000",
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "contentDate": "2026-11-02T12:00:00.000Z",
+        "image": { "width": 800, "height": 600 }
+      }
+    },
+    {
+      "id": "NODEPLACEHOLDER0012",
+      "name": "clip.mp4",
+      "kind": "FILE",
+      "ownerId": "OWNERPLACEHOLDER0001",
+      "createdDate": "2026-11-03T12:00:00.000Z",
+      "modifiedDate": "2026-11-03T12:00:00.000Z",
+      "contentProperties": {
+        "size": 9000000,
+        "md5": "cccc0000000000000000000000000000",
+        "contentType": "video/mp4",
+        "extension": "mp4",
+        "contentDate": "2026-11-03T12:00:00.000Z",
+        "video": { "width": 1920, "height": 1080, "duration": 12.5 }
+      }
+    }
+  ]
+}

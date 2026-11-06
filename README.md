@@ -40,9 +40,10 @@ Details and sources: [docs/research-notes.md](docs/research-notes.md).
 
 ## Status
 
-Early implementation: configuration loading, the sync pipeline and the `run`, `status`,
-`test-email`, `reset` and `login` commands are in place, but the Amazon Photos source is not
-yet built, so `run` only works with `--source local:PATH` for now. See the
+Early implementation: configuration loading, the sync pipeline, the Amazon Photos source and
+the `run`, `status`, `test-email`, `reset`, `login` and `record-fixtures` commands are in place.
+The Amazon client is built against documented endpoint shapes and still has to be verified
+against a live session (Task 12 Steps 2–3); `--source local:PATH` remains available. See the
 [design spec](docs/superpowers/specs/2026-11-02-skylight-photo-sync-design.md) and the
 [implementation plan](docs/superpowers/plans/2026-11-02-skylight-photo-sync-v1.md). Work is tracked in
 [GitHub issues](https://github.com/MattFromRVA/skylight-photo-sync/issues): issues #1–#13 are

@@ -283,7 +283,7 @@ only Matt can provide, and the reference library is two years stale. Therefore:
   working before Amazon is touched.
 - The Amazon client ships with a `skylight-sync record-fixtures` command that calls each
   endpoint once, redacts ids and personal fields, and writes JSON fixtures under
-  `tests/fixtures/amazon/`. Matt runs it once after `login`; the recorded fixtures then
+  `tests/SkylightPhotoSync.Tests/Fixtures/Amazon/`. Matt runs it once after `login`; the recorded fixtures then
   drive the offline tests.
 - The Amazon client issue is the last in the v1 milestone and is marked as needing Matt's
   participation for verification.
