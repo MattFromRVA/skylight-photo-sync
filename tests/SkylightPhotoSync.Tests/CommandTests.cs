@@ -21,6 +21,7 @@ public sealed class CommandTests : IDisposable
     private const string _ubid = "130-0000000-1111111";
     private const string _at = "Atza|TESTVALUEONLYxxxx";
     private const string _refresh = "Atnr|PLACEHOLDER_REFRESH_TOKEN_NOT_REAL";
+    private const string _previousRefresh = "Atnr|PLACEHOLDER_PREVIOUS_REFRESH_TOKEN_NOT_REAL";
     private const string _access = "Atna|PLACEHOLDER_ACCESS_TOKEN_NOT_REAL";
     private const string _accessFromRefresh = "Atna|PLACEHOLDER_ACCESS_TOKEN_FROM_REFRESH_NOT_REAL";
     private const string _code = "ANPlaceholderAuthorizationCode";
@@ -356,6 +357,120 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Login_device_flow_deregisters_previous_device()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(secretsPath, new Secrets(null, null, null, "app-password", AmazonRefreshToken: _previousRefresh, AmazonDeviceSerial: _serial));
+        Console.SetIn(new StringReader(_landing + "\n"));
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(0, code);
+        var token = Assert.Single(_amazon.RequestsTo("/auth/token"));
+        Assert.Contains($"source_token={Uri.EscapeDataString(_previousRefresh)}", _amazon.BodyOf(token));
+        var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
+        Assert.Equal(_accessFromRefresh, deregister.Headers.Authorization!.Parameter);
+        Assert.Equal(_refresh, ConfigLoader.LoadSecrets(secretsPath).AmazonRefreshToken);
+        Assert.DoesNotContain(LoginCommand.PreviousDeviceNotRemovedMessage, err);
+        AssertNoSecretsIn(out_ + err);
+        Assert.DoesNotContain(_previousRefresh, out_ + err);
+    }
+
+    [Fact]
+    public async Task Login_cookies_deregisters_previous_device()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(secretsPath, new Secrets(null, null, null, null, AmazonRefreshToken: _previousRefresh, AmazonDeviceSerial: _serial));
+        Console.SetIn(new StringReader($"{_sessionId}\n{_ubid}\n{_at}\n"));
+
+        var (code, out_, err) = await Run("login", "--cookies");
+
+        Assert.Equal(0, code);
+        var token = Assert.Single(_amazon.RequestsTo("/auth/token"));
+        Assert.Contains($"source_token={Uri.EscapeDataString(_previousRefresh)}", _amazon.BodyOf(token));
+        var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
+        Assert.Equal(_accessFromRefresh, deregister.Headers.Authorization!.Parameter);
+        AssertSecretsSaved(expectedPassword: null);
+        AssertNoSecretsIn(out_ + err);
+        Assert.DoesNotContain(_previousRefresh, out_ + err);
+    }
+
+    [Fact]
+    public async Task Login_when_previous_device_cannot_be_removed_still_succeeds_with_warning()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(secretsPath, new Secrets(null, null, null, null, AmazonRefreshToken: _previousRefresh, AmazonDeviceSerial: _serial));
+        _amazon.On("/auth/deregister", _ => ScriptedHandler.Status(HttpStatusCode.InternalServerError));
+        Console.SetIn(new StringReader(_landing + "\n"));
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(0, code);
+        Assert.Contains(LoginCommand.PreviousDeviceNotRemovedMessage, err);
+        Assert.Contains(LoginCommand.SavedMessage, out_);
+        Assert.Equal(_refresh, ConfigLoader.LoadSecrets(secretsPath).AmazonRefreshToken);
+        AssertNoSecretsIn(out_ + err);
+        Assert.DoesNotContain(_previousRefresh, out_ + err);
+    }
+
+    [Fact]
+    public async Task Login_registration_timeout_reports_failure()
+    {
+        _amazon.On("/auth/register", _ => throw new TaskCanceledException());
+        Console.SetIn(new StringReader(_landing + "\n"));
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(1, code);
+        Assert.Contains("login failed", err);
+        Assert.Contains("did not answer in time", err);
+        Assert.Empty(_amazon.RequestsTo("/auth/deregister"));
+        Assert.False(File.Exists(Path.Combine(_home.Dir, "secrets.toml")));
+        Assert.Contains(LoginCommand.ClearScrollbackMessage, out_);
+        AssertNoSecretsIn(out_ + err);
+        Assert.DoesNotContain(_code, out_ + err);
+    }
+
+    [Fact]
+    public async Task Login_write_failure_after_register_deregisters()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        Directory.CreateDirectory(secretsPath);
+        using (var store = OpenStore())
+        {
+            store.SetNeedsLogin(true, DateTimeOffset.UtcNow);
+        }
+
+        Console.SetIn(new StringReader(_landing + "\n"));
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(1, code);
+        Assert.Contains("login failed", err);
+        Assert.Contains("removed the device again", err);
+        var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
+        Assert.Equal(_access, deregister.Headers.Authorization!.Parameter);
+        Assert.True(Directory.Exists(secretsPath));
+        AssertNoSecretsIn(out_ + err);
+        using var store2 = OpenStore();
+        Assert.True(store2.NeedsLogin());
+    }
+
+    [Fact]
+    public async Task Login_device_flow_tells_the_user_to_clear_scrollback()
+    {
+        Console.SetIn(new StringReader(_landing + "\n"));
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(0, code);
+        Assert.EndsWith(LoginCommand.ClearScrollbackMessage + Environment.NewLine, out_);
+        AssertNoSecretsIn(out_ + err);
+        Assert.DoesNotContain(_code, out_ + err);
+        Assert.DoesNotContain(_landing, out_ + err);
+    }
+
+    [Fact]
     public async Task Login_registration_failure_writes_nothing_and_does_not_deregister()
     {
         _amazon.On("/auth/register", _ => ScriptedHandler.AuthJson("placeholder_auth_register_error.json", HttpStatusCode.BadRequest));
@@ -445,6 +560,24 @@ public sealed class CommandTests : IDisposable
         Assert.Contains("Manage Your Content and Devices", err);
         Assert.Equal(new Secrets(null, null, null, "app-password"), ConfigLoader.LoadSecrets(secretsPath));
         AssertNoSecretsIn(out_ + err);
+    }
+
+    [Fact]
+    public async Task Logout_when_amazon_times_out_still_clears_and_says_so()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(secretsPath, new Secrets(null, null, null, "app-password", AmazonRefreshToken: _refresh, AmazonDeviceSerial: _serial));
+        _amazon.On("/auth/token", _ => throw new TaskCanceledException());
+
+        var (code, out_, err) = await Run("logout");
+
+        Assert.Equal(1, code);
+        Assert.Contains("did not answer in time", err);
+        Assert.Contains("Manage Your Content and Devices", err);
+        Assert.Equal(new Secrets(null, null, null, "app-password"), ConfigLoader.LoadSecrets(secretsPath));
+        AssertNoSecretsIn(out_ + err);
+        using var store = OpenStore();
+        Assert.True(store.NeedsLogin());
     }
 
     [Fact]

@@ -82,9 +82,15 @@ the pasted address is single-use and short-lived: run `login` again and paste wi
 If it fails every time with the same message, open an issue quoting the error line (it contains
 no secrets) and use `login --cookies` meanwhile.
 
-**`login failed: Amazon Photos did not accept the new device login (...)`** Registration worked
-but the fresh session was rejected by Amazon Photos. The tool removed the device again and wrote
-nothing. Try once more; then fall back to `login --cookies`.
+**`login failed: the new device login could not be completed (...)`** Registration worked
+but a later step failed, usually because Amazon Photos rejected the fresh session (or Amazon did
+not answer in time, or `secrets.toml` could not be written). The tool removed the device again and
+wrote nothing. Try once more; then fall back to `login --cookies`.
+
+**`warning: the previous device login could not be removed from your Amazon account`** A new
+`login` (device or `--cookies`) replaced a saved device login and tried to remove the old device,
+but Amazon could not be reached. The new login is saved and works; remove the older
+"Skylight Photo Sync" entry under Manage Your Content and Devices by hand.
 
 **`login --cookies` fails with `Amazon Photos rejected the cookies`**: the browser session had
 already rotated between copying and pasting, or a cookie was truncated. Reload the Amazon Photos

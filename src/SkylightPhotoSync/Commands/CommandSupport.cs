@@ -1,6 +1,7 @@
 using System.Net;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Mail;
+using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.Sources.Amazon;
 
 namespace SkylightPhotoSync.Commands;
@@ -50,6 +51,27 @@ internal static class CommandSupport
 
     /// <summary>The device-login client for <c>login</c> and <c>logout</c>.</summary>
     public static AmazonDeviceAuth CreateDeviceAuth() => new(AmazonHandlerFactory?.Invoke(), AmazonTld);
+
+    /// <summary>
+    /// Removes the device behind <paramref name="refreshToken"/> from the account
+    /// (<c>/auth/token</c> then <c>/auth/deregister</c>). False when Amazon no longer accepts the
+    /// token, i.e. the device is already gone; <see cref="DeviceAuthException"/> when Amazon cannot
+    /// be reached or refuses the removal.
+    /// </summary>
+    public static async Task<bool> DeregisterDeviceAsync(string refreshToken, CancellationToken ct)
+    {
+        using var auth = CreateDeviceAuth();
+        try
+        {
+            var accessToken = await auth.RefreshAccessTokenAsync(refreshToken, ct);
+            await auth.DeregisterAsync(accessToken, ct);
+            return true;
+        }
+        catch (AuthExpiredException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// An <see cref="SmtpMailer"/> for the configured server. STARTTLS is required for every host except

@@ -53,6 +53,7 @@ https://www.amazon.com/ap/signin?openid.oa2.response_type=code&openid.oa2.code_c
 2. Sign in with your Amazon account, including the two-factor prompt (...).
 3. You will land on a "page not found" at amazon.com/ap/maplanding. That is expected.
 4. Copy the whole address from the address bar of that page and paste it here, then press Return.
+5. Afterwards, clear this terminal window's scrollback (Terminal: Cmd-K); the address contains a single-use sign-in code.
 Paste the address of the /ap/maplanding page:
 ```
 
@@ -68,6 +69,9 @@ Paste the address of the /ap/maplanding page:
    page is the result, not an error.
 4. Copy the **entire** address from the address bar (click it, Cmd-A, Cmd-C), paste it into the
    Terminal and press Return. The code in it is single-use and is useless after a minute or so.
+5. When `login` finishes (successfully or not), clear the Terminal window's scrollback with
+   Cmd-K: the tool never prints the address or any token, but the Terminal itself shows what you
+   pasted. `login` reminds you with a last line saying so.
 
 On success:
 
@@ -75,6 +79,7 @@ On success:
 Amazon Photos: connected as Matt Chaulklin, 52015 items
 Device registered as "Skylight Photo Sync"; remove it under Manage Your Content and Devices to revoke.
 Saved. Run 'skylight-sync run --dry-run' to verify.
+Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you pasted contains a single-use sign-in code.
 ```
 
 What `login` did:
@@ -85,9 +90,11 @@ What `login` did:
    sure they work.
 3. Only then wrote `[amazon] refresh_token` and `device_serial` to `secrets.toml` (mode `0600`),
    keeping any `[smtp] password`, and cleared the `needs_login` flag.
+4. If `secrets.toml` already held a device login, removed that older device from the account
+   (or, when Amazon cannot be reached, printed a warning asking you to remove it by hand).
 
-If step 2 fails (Amazon Photos rejects the fresh session), `login` removes the device again,
-writes nothing, and exits 1. Run it again; if it keeps failing, use `login --cookies`.
+If step 2 or 3 fails (Amazon Photos rejects the fresh session, Amazon does not answer in time,
+or `secrets.toml` cannot be written), `login` removes the device again, writes nothing, and exits 1. Run it again; if it keeps failing, use `login --cookies`.
 
 ### Revoking and logging out
 
@@ -204,7 +211,9 @@ written.
 
 1. Parses the paste and refuses it if any of the three cookies is missing.
 2. Writes `[amazon]` into `secrets.toml` (mode `0600`), replacing any device-login keys there
-   (the device itself stays registered until you `logout`) and keeping `[smtp] password`.
+   and keeping `[smtp] password`. A replaced device login's device is removed from the account
+   (if Amazon cannot be reached, a warning asks you to remove it under Manage Your Content and
+   Devices).
 3. Calls Amazon Photos once to confirm the cookies work and prints
    `Amazon Photos: connected, <count> items` (with `as <name>` when Amazon exposes a name
    for the account; it usually does not).

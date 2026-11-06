@@ -1,6 +1,5 @@
 using System.CommandLine;
 using SkylightPhotoSync.Config;
-using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.Sources.Amazon;
 using SkylightPhotoSync.State;
 
@@ -42,16 +41,9 @@ public static class LogoutCommand
                 var alreadyRemoved = false;
                 if (wasDevice)
                 {
-                    using var auth = CommandSupport.CreateDeviceAuth();
                     try
                     {
-                        var accessToken = await auth.RefreshAccessTokenAsync(secrets.AmazonRefreshToken!, ct);
-                        await auth.DeregisterAsync(accessToken, ct);
-                    }
-                    catch (AuthExpiredException)
-                    {
-                        // The token no longer works: the device is already gone from the account.
-                        alreadyRemoved = true;
+                        alreadyRemoved = !await CommandSupport.DeregisterDeviceAsync(secrets.AmazonRefreshToken!, ct);
                     }
                     catch (DeviceAuthException ex)
                     {

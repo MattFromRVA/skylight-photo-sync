@@ -40,7 +40,15 @@ public static partial class LoginCommand
         2. Sign in with your Amazon account, including the two-factor prompt (an authenticator app or the Amazon app is the most reliable; email/SMS codes can be flaky here).
         3. You will land on a "page not found" at amazon.com/ap/maplanding. That is expected.
         4. Copy the whole address from the address bar of that page and paste it here, then press Return.
+        5. Afterwards, clear this terminal window's scrollback (Terminal: Cmd-K); the address contains a single-use sign-in code.
         """;
+
+    public const string ClearScrollbackMessage =
+        "Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you pasted contains a single-use sign-in code.";
+
+    public const string PreviousDeviceNotRemovedMessage =
+        "warning: the previous device login could not be removed from your Amazon account; remove \""
+        + AmazonDeviceAuth.DeviceDisplayName + "\" under Manage Your Content and Devices.";
 
     public const string PasteAddressPrompt = "Paste the address of the /ap/maplanding page: ";
 
@@ -100,6 +108,19 @@ public static partial class LoginCommand
             return 1;
         }
 
+        try
+        {
+            return await CompleteDeviceLoginAsync(pasted, codeVerifier, serial, stdout, stderr, ct);
+        }
+        finally
+        {
+            stdout.WriteLine(ClearScrollbackMessage);
+        }
+    }
+
+    private static async Task<int> CompleteDeviceLoginAsync(
+        string pasted, string codeVerifier, string serial, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+    {
         string authorizationCode;
         try
         {
@@ -128,39 +149,44 @@ public static partial class LoginCommand
                 return 1;
             }
 
-            // The device login replaces any pasted cookies; the SMTP password is kept.
-            var secrets = existing with
-            {
-                AmazonRefreshToken = registration.RefreshToken,
-                AmazonDeviceSerial = serial,
-                AmazonSessionId = null,
-                AmazonUbid = null,
-                AmazonAt = null,
-            };
-
-            string name;
+            string displayName;
             long count;
             try
             {
-                using var source = CommandSupport.CreateAmazonSource(secrets);
-                (name, count) = await source.WhoAmIAsync(ct);
+                // The device login replaces any pasted cookies; the SMTP password is kept.
+                var secrets = existing with
+                {
+                    AmazonRefreshToken = registration.RefreshToken,
+                    AmazonDeviceSerial = serial,
+                    AmazonSessionId = null,
+                    AmazonUbid = null,
+                    AmazonAt = null,
+                };
+
+                string name;
+                using (var source = CommandSupport.CreateAmazonSource(secrets))
+                {
+                    (name, count) = await source.WhoAmIAsync(ct);
+                }
+
+                using var store = new StateStore(paths.StateDb);
+                ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
+                store.SetNeedsLogin(false, null);
+                displayName = registration.CustomerName.Length > 0 ? registration.CustomerName : name;
             }
-            catch (Exception ex) when (ex is AuthExpiredException or DeviceAuthException or HttpRequestException or InvalidOperationException or ArgumentException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 var removed = await TryDeregisterAsync(auth, registration.AccessToken, ct);
                 stderr.WriteLine(
-                    $"login failed: Amazon Photos did not accept the new device login ({ex.Message}). Nothing was saved; "
+                    $"login failed: the new device login could not be completed ({ex.Message}). Nothing was saved; "
                     + (removed
                         ? "the tool removed the device again."
                         : $"the tool could not remove the device, so remove \"{AmazonDeviceAuth.DeviceDisplayName}\" under Manage Your Content and Devices."));
                 return 1;
             }
 
-            ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
-            using var store = new StateStore(paths.StateDb);
-            store.SetNeedsLogin(false, null);
+            await DeregisterPreviousDeviceAsync(existing, stderr, ct);
 
-            var displayName = registration.CustomerName.Length > 0 ? registration.CustomerName : name;
             stdout.WriteLine(displayName.Length > 0
                 ? $"Amazon Photos: connected as {displayName}, {count} items"
                 : $"Amazon Photos: connected, {count} items");
@@ -175,6 +201,27 @@ public static partial class LoginCommand
         }
     }
 
+    /// <summary>
+    /// Best-effort removal of the device whose refresh token a login just replaced, so it is not
+    /// left on the account with no way for the tool to remove it. A failure only warns.
+    /// </summary>
+    private static async Task DeregisterPreviousDeviceAsync(Secrets previous, TextWriter stderr, CancellationToken ct)
+    {
+        if (!CommandSupport.HasDeviceLogin(previous))
+        {
+            return;
+        }
+
+        try
+        {
+            await CommandSupport.DeregisterDeviceAsync(previous.AmazonRefreshToken!, ct);
+        }
+        catch (DeviceAuthException)
+        {
+            stderr.WriteLine(PreviousDeviceNotRemovedMessage);
+        }
+    }
+
     /// <summary>Best-effort deregistration after a failed login; true when Amazon accepted it.</summary>
     private static async Task<bool> TryDeregisterAsync(AmazonDeviceAuth auth, string accessToken, CancellationToken ct)
     {
@@ -183,7 +230,7 @@ public static partial class LoginCommand
             await auth.DeregisterAsync(accessToken, ct);
             return true;
         }
-        catch (Exception ex) when (ex is DeviceAuthException or AuthExpiredException or HttpRequestException)
+        catch (DeviceAuthException)
         {
             return false;
         }
@@ -230,9 +277,10 @@ public static partial class LoginCommand
             var paths = AppPaths.Resolve();
             var existing = CommandSupport.LoadSecretsIfPresent(paths);
 
-            // Pasted cookies replace a device login (its device stays registered; `logout` removes it).
+            // Pasted cookies replace a device login, whose device is removed from the account.
             var secrets = new Secrets(cookies.SessionId, cookies.Ubid, cookies.At, existing.SmtpPassword);
             ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
+            await DeregisterPreviousDeviceAsync(existing, stderr, ct);
 
             string name;
             long count;

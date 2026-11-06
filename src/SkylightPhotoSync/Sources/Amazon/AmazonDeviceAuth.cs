@@ -430,6 +430,10 @@ public sealed class AmazonDeviceAuth : IDisposable
         {
             throw new DeviceAuthException($"Could not {what}: {ex.Message}", ex);
         }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw new DeviceAuthException($"Could not {what}: Amazon did not answer in time.", ex);
+        }
 
         using (response)
         {
