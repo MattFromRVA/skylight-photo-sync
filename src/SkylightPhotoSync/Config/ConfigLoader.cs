@@ -89,7 +89,9 @@ public static class ConfigLoader
             AmazonSessionId: GetStringEither(amazon, "amazon", "session_id", "session-id"),
             AmazonUbid: GetStringEither(amazon, "amazon", "ubid_main", "ubid-main"),
             AmazonAt: GetStringEither(amazon, "amazon", "at_main", "at-main"),
-            SmtpPassword: GetString(smtp, "smtp", "password"));
+            SmtpPassword: GetString(smtp, "smtp", "password"),
+            AmazonRefreshToken: GetString(amazon, "amazon", "refresh_token"),
+            AmazonDeviceSerial: GetString(amazon, "amazon", "device_serial"));
     }
 
     public static void WriteSecrets(string path, Secrets s)
@@ -97,6 +99,8 @@ public static class ConfigLoader
         var root = new TomlTable();
 
         var amazon = new TomlTable();
+        AddIfPresent(amazon, "refresh_token", s.AmazonRefreshToken);
+        AddIfPresent(amazon, "device_serial", s.AmazonDeviceSerial);
         AddIfPresent(amazon, "session_id", s.AmazonSessionId);
         AddIfPresent(amazon, "ubid_main", s.AmazonUbid);
         AddIfPresent(amazon, "at_main", s.AmazonAt);

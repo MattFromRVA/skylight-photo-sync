@@ -1,0 +1,11 @@
+{
+  "_placeholder": "Hand-written error shape for POST /auth/register (HTTP 400), after mkb79/Audible issue reports; NOT a recorded response.",
+  "response": {
+    "error": {
+      "code": "InvalidValue",
+      "message": "One or more provided values are invalid",
+      "index": "placeholder-error-index"
+    }
+  },
+  "request_id": "placeholder-request-id-register-error"
+}

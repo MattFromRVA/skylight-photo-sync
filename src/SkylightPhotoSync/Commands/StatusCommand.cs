@@ -1,12 +1,13 @@
 using System.CommandLine;
 using System.Globalization;
+using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Infrastructure;
 using SkylightPhotoSync.Launchd;
 using SkylightPhotoSync.State;
 
 namespace SkylightPhotoSync.Commands;
 
-/// <summary><c>status</c>: last run, totals, the <c>needs_login</c> flag and the launchd schedule.</summary>
+/// <summary><c>status</c>: last run, totals, the <c>needs_login</c> flag, how Amazon is authenticated, and the launchd schedule.</summary>
 public static class StatusCommand
 {
     public static Command Create()
@@ -24,6 +25,7 @@ public static class StatusCommand
                 stdout.WriteLine($"last run: {DescribeLastRun(store.LastRun())}");
                 stdout.WriteLine($"total sent: {store.TotalSent()}");
                 stdout.WriteLine($"needs_login: {(store.NeedsLogin() ? "yes" : "no")}");
+                stdout.WriteLine($"auth: {DescribeAuth(paths)}");
                 stdout.WriteLine($"launchd: {await DescribeLaunchdAsync(ct)}");
                 return 0;
             }
@@ -35,6 +37,22 @@ public static class StatusCommand
         });
 
         return command;
+    }
+
+    /// <summary>
+    /// <c>device login</c>, <c>pasted cookies</c> or <c>not logged in</c>; a secrets file that
+    /// cannot be read (wrong mode, bad TOML) is reported rather than failing the whole command.
+    /// </summary>
+    private static string DescribeAuth(AppPaths paths)
+    {
+        try
+        {
+            return CommandSupport.DescribeAmazonAuth(CommandSupport.LoadSecretsIfPresent(paths));
+        }
+        catch (ConfigException ex)
+        {
+            return $"unknown ({ex.Message})";
+        }
     }
 
     internal static string DescribeLastRun(RunRecord? run)

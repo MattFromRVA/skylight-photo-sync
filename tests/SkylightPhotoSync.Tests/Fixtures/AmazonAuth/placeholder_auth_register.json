@@ -1,0 +1,42 @@
+{
+  "_placeholder": "Hand-written from mkb79/Audible register.py and issue #30; NOT a recorded response. Token values are fake. Replace with a redacted recording once the live pass has run.",
+  "response": {
+    "success": {
+      "extensions": {
+        "device_info": {
+          "device_name": "Placeholder's Skylight Photo Sync",
+          "device_serial_number": "PLACEHOLDERSERIAL0000000000000000000000AB",
+          "device_type": "A2CZJZGLK2JJVM"
+        },
+        "customer_info": {
+          "account_pool": "Amazon",
+          "user_id": "amzn1.account.PLACEHOLDERUSERID",
+          "home_region": "NA",
+          "name": "Placeholder Person",
+          "given_name": "Placeholder"
+        }
+      },
+      "tokens": {
+        "website_cookies": [
+          { "Path": "/", "Secure": "true", "Value": "\"placeholder-x-main-from-register\"", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "x-main", "HttpOnly": "false" },
+          { "Path": "/", "Secure": "true", "Value": "placeholder-at-main-from-register", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "at-main", "HttpOnly": "true" },
+          { "Path": "/", "Secure": "true", "Value": "placeholder-sess-at-main-from-register", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "sess-at-main", "HttpOnly": "true" },
+          { "Path": "/", "Secure": "false", "Value": "130-0000000-2222222", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "ubid-main", "HttpOnly": "false" },
+          { "Path": "/", "Secure": "false", "Value": "133-0000000-3333333", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "session-id", "HttpOnly": "false" },
+          { "Path": "/", "Secure": "true", "Value": "placeholder-session-token-from-register", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "session-token", "HttpOnly": "true" }
+        ],
+        "mac_dms": {
+          "device_private_key": "PLACEHOLDER-PRIVATE-KEY-NOT-REAL",
+          "adp_token": "PLACEHOLDER-ADP-TOKEN-NOT-REAL"
+        },
+        "bearer": {
+          "access_token": "Atna|PLACEHOLDER_ACCESS_TOKEN_NOT_REAL",
+          "refresh_token": "Atnr|PLACEHOLDER_REFRESH_TOKEN_NOT_REAL",
+          "expires_in": "3600"
+        }
+      },
+      "customer_id": "PLACEHOLDERCUSTOMERID"
+    }
+  },
+  "request_id": "placeholder-request-id-register"
+}

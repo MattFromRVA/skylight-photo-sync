@@ -236,7 +236,8 @@ password = "app-password-here"
 ### 6.9 CLI
 
 ```
-skylight-sync login            # paste Amazon cookies; clears needs_login
+skylight-sync login            # one-time browser device login (issue #30); --cookies pastes cookies instead; clears needs_login
+skylight-sync logout           # remove the device from the Amazon account; sets needs_login
 skylight-sync run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N]
 skylight-sync status
 skylight-sync test-email [--size-probe]   # one small test image; probe sends growing sizes

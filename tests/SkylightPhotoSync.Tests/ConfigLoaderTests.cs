@@ -327,6 +327,48 @@ public class ConfigLoaderTests
         Assert.Equal(fromDashed, fromUnderscored);
     }
 
+    [Fact]
+    public void Secrets_roundtrip_refresh_token()
+    {
+        using var home = new TestHome();
+        var path = Path.Combine(home.Dir, "secrets.toml");
+        var secrets = new Secrets(
+            AmazonSessionId: null,
+            AmazonUbid: null,
+            AmazonAt: null,
+            SmtpPassword: "smtp-placeholder",
+            AmazonRefreshToken: "Atnr|PLACEHOLDER_REFRESH_TOKEN_NOT_REAL",
+            AmazonDeviceSerial: "ABCDEFGHIJ0123456789KLMNOPQRST0123456789");
+
+        ConfigLoader.WriteSecrets(path, secrets);
+
+        Assert.Equal(secrets, ConfigLoader.LoadSecrets(path));
+        var text = File.ReadAllText(path);
+        Assert.Contains("[amazon]", text);
+        Assert.Contains("refresh_token = ", text);
+        Assert.Contains("device_serial = ", text);
+        Assert.DoesNotContain("session_id", text);
+        Assert.DoesNotContain("at_main", text);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+    }
+
+    [Fact]
+    public void Secrets_without_any_amazon_keys_load_with_nulls()
+    {
+        using var home = new TestHome();
+        var path = WriteSecretsFile(home, "secrets.toml", """
+            [smtp]
+            password = "smtp-placeholder"
+            """);
+
+        var loaded = ConfigLoader.LoadSecrets(path);
+
+        Assert.Null(loaded.AmazonRefreshToken);
+        Assert.Null(loaded.AmazonDeviceSerial);
+        Assert.Null(loaded.AmazonAt);
+        Assert.Equal("smtp-placeholder", loaded.SmtpPassword);
+    }
+
     private static string WriteConfig(TestHome home, string sourceSection, bool appendRest = true)
     {
         var path = Path.Combine(home.Dir, "config.toml");

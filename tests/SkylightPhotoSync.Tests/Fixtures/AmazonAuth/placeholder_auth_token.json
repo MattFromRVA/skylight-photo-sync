@@ -1,0 +1,6 @@
+{
+  "_placeholder": "Hand-written from mkb79/Audible refresh_access_token; NOT a recorded response. Token value is fake.",
+  "access_token": "Atna|PLACEHOLDER_ACCESS_TOKEN_FROM_REFRESH_NOT_REAL",
+  "token_type": "bearer",
+  "expires_in": 3600
+}

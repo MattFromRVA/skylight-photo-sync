@@ -20,7 +20,7 @@ Every hour (configurable) it:
    (`yourname@ourskylight.com`), which is Skylight's officially supported way to add
    photos.
 4. Remembers what it sent so nothing is sent twice.
-5. Tells you, once and clearly, if Amazon's login cookies expire and need refreshing.
+5. Tells you, once and clearly, if its Amazon login stops working and needs a new sign-in.
 
 ## Quick start
 
@@ -49,7 +49,7 @@ skylight-sync --help
 ```bash
 mkdir -p ~/.config/skylight-photo-sync
 # 1. Write config.toml (album, Skylight address, SMTP server); see docs/setup.md for a full example.
-skylight-sync login             # 2. paste your Amazon cookies (docs/cookies.md)
+skylight-sync login             # 2. sign in to Amazon once in your browser (docs/cookies.md)
 # 3. Add the SMTP password to secrets.toml
 skylight-sync test-email        # 4. one test image; approve the sender in Skylight when asked
 skylight-sync run --dry-run     # 5. counts what would be sent, sends nothing
@@ -62,10 +62,10 @@ skylight-sync status
 
 - [docs/setup.md](docs/setup.md): prerequisites, install, every `config.toml` key,
   secrets, first run, the hourly schedule, where logs and state live, alerts.
-- [docs/cookies.md](docs/cookies.md): copying the three Amazon cookies from Safari or
-  Chrome and pasting them into `skylight-sync login`.
-- [docs/troubleshooting.md](docs/troubleshooting.md): `needs_login`, HTTP 429, photos not
-  appearing on the frame, Gmail app passwords, exit codes.
+- [docs/cookies.md](docs/cookies.md): the one-time browser device login behind
+  `skylight-sync login`, and the pasted-cookie fallback (`login --cookies`).
+- [docs/troubleshooting.md](docs/troubleshooting.md): `needs_login`, login problems, HTTP 429,
+  photos not appearing on the frame, Gmail app passwords, exit codes.
 - [docs/research-notes.md](docs/research-notes.md): why the design looks like this, with
   sources.
 
@@ -90,8 +90,8 @@ port = 587
 username = "you@gmail.com"
 ```
 
-Secrets (Amazon cookies, SMTP password) live in a separate `secrets.toml` with `0600`
-permissions and are never committed. The full list of keys and defaults is in
+Secrets (the Amazon device login's refresh token, SMTP password) live in a separate
+`secrets.toml` with `0600` permissions and are never committed. The full list of keys and defaults is in
 [docs/setup.md](docs/setup.md#3-write-configtoml).
 
 ## Requirements
@@ -108,20 +108,23 @@ permissions and are never committed. The full list of keys and defaults is in
 [implementation plan](docs/superpowers/plans/2026-11-02-skylight-photo-sync-v1.md) are
 merged: configuration, the sync pipeline, SQLite sent-state, image normalization, email
 batching, SMTP, alerts, the Amazon Photos client, and the `run`, `status`, `test-email`,
-`reset`, `login`, `install-launchd`, `uninstall-launchd` and `record-fixtures` commands.
+`reset`, `login`, `logout`, `install-launchd`, `uninstall-launchd` and `record-fixtures` commands.
 
 **Verified against a live Amazon session on 2026-11-06.** The Amazon client was fixed against
 Amazon's real Drive v1 API (the required `resourceVersion=V2` parameters, search context, date
 filter and sort; see [docs/research-notes.md](docs/research-notes.md)) and is tested with
 redacted fixtures recorded from a real account by `skylight-sync record-fixtures`. On that
 account `run --dry-run` listed a 595-photo album end to end
-([issue #12](https://github.com/MattFromRVA/skylight-photo-sync/issues/12)). Amazon's cookies
-can stop working within an hour or so, so expect to re-run `login` now and then; a browser
-device login that avoids pasted cookies is planned (below).
+([issue #12](https://github.com/MattFromRVA/skylight-photo-sync/issues/12)).
 
-Planned: a one-time browser device login that replaces pasted cookies and stops them
-expiring every few days ([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)),
-and publishing to NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)).
+**Device login, awaiting live verification.** Pasted cookies stopped working within an hour, so
+`skylight-sync login` is now a one-time browser sign-in that registers the tool as a device on
+your Amazon account and refreshes its own session before every run
+([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)). It is implemented
+against the documented Audible/Alexa flow and tested with placeholder fixtures; the first run
+against a live account is still to come. `login --cookies` remains as the verified fallback.
+
+Planned: publishing to NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)).
 
 Nightly build: [![Nightly](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml/badge.svg)](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml)
 builds, formats and tests on Linux and macOS every night (07:00 UTC) and packs the
@@ -139,14 +142,18 @@ follow-ups. Agents: read [AGENTS.md](AGENTS.md) first.
 C# on .NET 10, packaged as a `dotnet` global tool. System.CommandLine, MailKit,
 Microsoft.Data.Sqlite, Tomlyn, SkiaSharp, and macOS's own `sips` for HEIC decoding.
 
-## Why email, and why cookies?
+## Why email, and why a browser sign-in?
 
 - **Skylight** has no public API. Emailing photos to the household address is the
   supported path and works for both Calendar (Plus plan) and Frame.
 - **Amazon Photos** has no public API and discontinued desktop sync in 2024. The only
-  automated way to read your library is the web app's private endpoints, authenticated
-  with cookies from a logged-in browser session. Those cookies expire on Amazon's
-  schedule, so this tool is built to notice and ask you to log in again.
+  automated way to read your library is the web app's private endpoints, which need a
+  logged-in Amazon session. Rather than store your password (and fight 2FA and CAPTCHAs
+  every run) or copy browser cookies that expire within hours, the tool borrows the login
+  flow of the Audible and Alexa apps: you sign in once in your own browser, the tool
+  registers itself as a device you can see and remove under "Manage Your Content and
+  Devices", and it mints a fresh session from that registration before every run. If the
+  device is removed, the tool notices once and asks you to sign in again.
 
 Details and sources: [docs/research-notes.md](docs/research-notes.md).
 

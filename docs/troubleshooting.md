@@ -25,7 +25,7 @@ foreground, with the log lines echoed to stderr.
 |---|---|---|
 | 0 | Run completed (possibly with items skipped) | Nothing; check the log if fewer photos arrived than expected |
 | 1 | Error: config problem, SMTP failure, Amazon returned an error, unknown `--source` | Read the `run failed: ...` line |
-| 3 | `needs_login`: no cookies saved, or Amazon rejected them | `skylight-sync login` ([below](#needs_login-exit-code-3)) |
+| 3 | `needs_login`: not logged in, the device was removed from the Amazon account, or the cookies expired | `skylight-sync login` ([below](#needs_login-exit-code-3)) |
 | 4 | Lock held: another run is still going | Wait, or see [below](#lock-held-exit-code-4) |
 
 Under launchd nobody sees the exit code, so the same facts arrive as `status` output, log lines,
@@ -35,28 +35,64 @@ and (for 3 and for three consecutive failures) an alert email and a macOS notifi
 
 Three messages share this exit code.
 
-**`run failed: no Amazon cookies saved; run 'skylight-sync login' first.`** You have not run
-`login` yet, or `secrets.toml` lost its `[amazon]` table. Follow [cookies.md](cookies.md).
+**`run failed: not logged in to Amazon Photos; run 'skylight-sync login' first.`** You have not
+run `login` yet, you ran `logout`, or `secrets.toml` lost its `[amazon]` table. Follow
+[cookies.md](cookies.md).
 
-**`run failed: needs_login`** A previous run was rejected by Amazon and set the `needs_login`
-flag. Until it is cleared every run exits here immediately, without contacting Amazon, so that an
-expired session does not produce an hourly stream of failed requests. `status` shows
-`needs_login: yes`. Copy fresh cookies and run `skylight-sync login`; a successful login clears
-the flag and the next run proceeds.
+**`run failed: needs_login`** A previous run was rejected by Amazon (or you ran `logout`) and the
+`needs_login` flag is set. Until it is cleared every run exits here immediately, without
+contacting Amazon, so that a dead login does not produce an hourly stream of failed requests.
+`status` shows `needs_login: yes`. Run `skylight-sync login`; a successful login clears the flag
+and the next run proceeds.
 
-**`run failed: auth_expired`** This is the run that discovered the expiry: Amazon answered 401 or
-403 mid-run. Anything emailed earlier in the run stays marked as sent, `needs_login` is set, one
-alert email (`Skylight Photo Sync: Amazon login expired`) and one macOS notification go out, and
-later runs show `needs_login` as above. Fix is the same: `skylight-sync login`.
+**`run failed: auth_expired`** This is the run that discovered the problem: Amazon answered 401 or
+403. With the device login the tool first minted a fresh cookie set and retried once; 401 again
+means the refresh token itself is dead. Anything emailed earlier in the run stays marked as sent,
+`needs_login` is set, one alert email (`Skylight Photo Sync: Amazon login expired`) and one macOS
+notification go out, and later runs show `needs_login` as above. Fix is the same:
+`skylight-sync login`.
 
-Why it keeps happening: the cookies are copies of a browser session that Amazon rotates on its
-own schedule, anywhere from hours to days. Logging out of Amazon in the browser you copied from
-also invalidates them at once. A device login that does not expire like this is planned in
-[issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30).
+Why it happens:
 
-If `login` itself fails with `Amazon Photos rejected the cookies`, the session had already
-rotated between copying and pasting, or a cookie was truncated. Reload the Amazon Photos page in
-the browser, copy again, paste again.
+- **Device login** (`status` shows `auth: device login`): the "Skylight Photo Sync" device was
+  removed from your Amazon account (Account > Manage Your Content and Devices > Devices), or
+  Amazon revoked it, for example after a password change. This should be rare. `login` registers
+  a new device; the old entry, if still listed, can be removed by hand.
+- **Pasted cookies** (`auth: pasted cookies`): the cookies are copies of a browser session that
+  Amazon rotates on its own schedule, anywhere from minutes to days. Logging out of Amazon in the
+  browser you copied from also invalidates them at once. Switch to the device login with
+  `skylight-sync login`.
+
+## `login` problems
+
+**The sign-in page shows an error or never reaches "page not found".** Each `login` run makes a
+fresh address; open the one it just printed, exactly, and finish the whole sign-in including the
+two-factor step. Email or SMS two-factor codes are reported to be unreliable on this particular
+page: switch the account's 2FA to the Amazon app or an authenticator app, or approve the sign-in
+from the Amazon app on your phone. A CAPTCHA, if shown, must be solved in the browser; the tool
+never sees it.
+
+**`login failed: The pasted address has no openid.oa2.authorization_code`** You pasted the
+sign-in address, a shortened address, or only part of the landing page's address. After signing
+in, copy the complete address of the `amazon.com/ap/maplanding?...` page (click the address bar,
+Cmd-A, Cmd-C) and paste that.
+
+**`login failed: Could not register the device: Amazon answered HTTP 400 (...)`** The code in
+the pasted address is single-use and short-lived: run `login` again and paste within a minute.
+If it fails every time with the same message, open an issue quoting the error line (it contains
+no secrets) and use `login --cookies` meanwhile.
+
+**`login failed: Amazon Photos did not accept the new device login (...)`** Registration worked
+but the fresh session was rejected by Amazon Photos. The tool removed the device again and wrote
+nothing. Try once more; then fall back to `login --cookies`.
+
+**`login --cookies` fails with `Amazon Photos rejected the cookies`**: the browser session had
+already rotated between copying and pasting, or a cookie was truncated. Reload the Amazon Photos
+page in the browser, copy again, paste again. Better: use the device login.
+
+**`logout` says the device could not be removed.** The Amazon keys were removed from
+`secrets.toml` anyway and `needs_login` is set. Remove "Skylight Photo Sync" by hand under
+Account > Manage Your Content and Devices > Devices on amazon.com.
 
 ## HTTP 429 (rate limited)
 
@@ -130,8 +166,8 @@ accordingly. The tool requires STARTTLS for every host except `localhost`/loopba
   limit is 25 MB for the whole message after base64 encoding (about a third larger than the raw
   attachments). Lower `[email] max_total_bytes`.
 - `secrets.toml is accessible by other users; it must be mode 0600.` Run
-  `chmod 600 ~/.config/skylight-photo-sync/secrets.toml`. `run`, `test-email`, `login` and
-  `record-fixtures` refuse a loosely permissioned secrets file.
+  `chmod 600 ~/.config/skylight-photo-sync/secrets.toml`. `run`, `test-email`, `login`, `logout`
+  and `record-fixtures` refuse a loosely permissioned secrets file.
 
 ## Lock held (exit code 4)
 
@@ -164,8 +200,8 @@ The same check applies to the command-line override `--mode all --lookback-days 
 `[source] album_name` must match an album name in Amazon Photos exactly, including case and
 spaces. The message lists the albums the account does have; copy the right one into
 `config.toml`. If the list is empty, the album may belong to another account in your Family
-Vault (only your own albums are visible) or the cookies belong to a different Amazon account than
-you expected (`skylight-sync login` prints the account name).
+Vault (only your own albums are visible) or you signed in to a different Amazon account than you
+expected (`skylight-sync login` prints the account name).
 
 ## HEIC photos are skipped or fail to convert
 
@@ -211,4 +247,4 @@ the backlog goes out a few photos per run.
 
 Open an issue at <https://github.com/MattFromRVA/skylight-photo-sync/issues> with the output of
 `skylight-sync status`, the relevant log lines, and your `config.toml`. **Never include
-`secrets.toml` or any cookie value.**
+`secrets.toml`, the refresh token, or any cookie value.**

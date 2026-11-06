@@ -41,7 +41,7 @@ public static class RunCommand
         };
         var source = new Option<string?>("--source")
         {
-            Description = "Where photos come from: local:PATH reads a folder. Default: Amazon Photos with the saved cookies.",
+            Description = "Where photos come from: local:PATH reads a folder. Default: Amazon Photos with the saved login.",
         };
 
         var command = new Command("run", "Email new photos to the frame.");
@@ -165,9 +165,9 @@ public static class RunCommand
         string sourceLabel;
         if (options.Source is null)
         {
-            if (!CommandSupport.HasAmazonCookies(secrets))
+            if (!CommandSupport.HasAmazonAuth(secrets))
             {
-                stderr.WriteLine("run failed: no Amazon cookies saved; run 'skylight-sync login' first.");
+                stderr.WriteLine($"run failed: {CommandSupport.NotLoggedInMessage}");
                 return ExitNeedsLogin;
             }
 
