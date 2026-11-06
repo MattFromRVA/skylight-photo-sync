@@ -457,6 +457,33 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Login_write_failure_keeps_previous_secrets_and_deregisters()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(secretsPath, new Secrets(_sessionId, _ubid, _at, "app-password"));
+        var before = File.ReadAllBytes(secretsPath);
+        File.SetUnixFileMode(secretsPath, UnixFileMode.UserRead);
+        Console.SetIn(new StringReader(_landing + "\n"));
+
+        try
+        {
+            var (code, out_, err) = await Run("login");
+
+            Assert.Equal(1, code);
+            Assert.Contains("login failed", err);
+            Assert.Contains("removed the device again", err);
+            var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
+            Assert.Equal(_access, deregister.Headers.Authorization!.Parameter);
+            Assert.Equal(before, File.ReadAllBytes(secretsPath));
+            AssertNoSecretsIn(out_ + err);
+        }
+        finally
+        {
+            File.SetUnixFileMode(secretsPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    [Fact]
     public async Task Login_state_failure_after_write_restores_secrets_and_deregisters()
     {
         var secretsPath = Path.Combine(_home.Dir, "secrets.toml");

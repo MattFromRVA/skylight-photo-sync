@@ -172,18 +172,19 @@ public static partial class LoginCommand
                 }
 
                 using var store = new StateStore(paths.StateDb);
-                ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
                 written = true;
+                ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
                 store.SetNeedsLogin(false, null);
                 displayName = registration.CustomerName.Length > 0 ? registration.CustomerName : name;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
-                var removed = await TryDeregisterAsync(auth, registration.AccessToken, ct);
                 if (written)
                 {
                     RestoreSecretsFile(paths.SecretsFile, previousSecretsFile);
                 }
+
+                var removed = await TryDeregisterAsync(auth, registration.AccessToken, ct);
 
                 stderr.WriteLine(
                     $"login failed: the new device login could not be completed ({ex.Message}). Nothing was changed; "
@@ -230,16 +231,22 @@ public static partial class LoginCommand
         }
     }
 
-    /// <summary>Puts secrets.toml back exactly as it was before a failed login (absent when it did not exist).</summary>
+    /// <summary>Best effort: puts secrets.toml back exactly as it was before a failed login (absent when it did not exist).</summary>
     private static void RestoreSecretsFile(string path, byte[]? previous)
     {
-        if (previous is null)
+        try
         {
-            File.Delete(path);
+            if (previous is null)
+            {
+                File.Delete(path);
+            }
+            else
+            {
+                File.WriteAllBytes(path, previous);
+            }
         }
-        else
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            File.WriteAllBytes(path, previous);
         }
     }
 
