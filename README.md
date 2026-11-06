@@ -49,6 +49,11 @@ yet built, so `run` only works with `--source local:PATH` for now. See the
 the v1 tasks (one per agent session, issue number = plan task number); #14–#17 are follow-ups.
 Agents: read [AGENTS.md](AGENTS.md) first.
 
+Nightly build: [![Nightly](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml/badge.svg)](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml)
+builds, formats and tests on Linux and macOS every night (07:00 UTC) and packs the
+`skylight-sync` tool as a downloadable artifact. A failed scheduled run opens or updates the
+"Nightly build failed" issue.
+
 ## Quick start (once implemented)
 
 ```bash
