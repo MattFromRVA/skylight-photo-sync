@@ -7,7 +7,7 @@ namespace SkylightPhotoSync.Commands;
 
 /// <summary>
 /// <c>record-fixtures [--out DIR]</c>: records redacted Amazon Photos responses for the saved cookies
-/// and the configured <c>[source] album_name</c> into <paramref name="DIR"/> (Task 12 Step 2).
+/// and the configured <c>[source] album_name</c> into <c>DIR</c> (Task 12 Step 2).
 /// </summary>
 public static class RecordFixturesCommand
 {

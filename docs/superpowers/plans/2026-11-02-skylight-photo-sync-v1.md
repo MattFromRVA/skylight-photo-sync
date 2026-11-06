@@ -64,7 +64,7 @@ src/SkylightPhotoSync/
   Alerts/INotifier.cs  OsascriptNotifier.cs  Alerter.cs  AlertKind.cs  AlertTexts.cs
   Pipeline/SyncPipeline.cs  RunResult.cs  LockHeldException.cs
   Launchd/LaunchdInstaller.cs
-  Fixtures/FixtureRecorder.cs         (Task 12)
+  Recording/FixtureRecorder.cs        (Task 12)
   Commands/*.cs                       one static class per CLI command
 tests/SkylightPhotoSync.Tests/
   SkylightPhotoSync.Tests.csproj      xUnit, SmtpServer
