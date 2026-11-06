@@ -18,9 +18,17 @@ namespace SkylightPhotoSync.Recording;
 /// <c>text_0001…</c> unless its key is on a short allowlist (kind, content type, dates, …) or it is
 /// an ISO-8601 date or an uppercase letters-only enum-like token. Cookie values never reach
 /// the output because the client never puts them in a response body.
+/// Every page of the album and search listings is written (<c>album_children.json</c>,
+/// <c>album_children_page2.json</c>, …) with only the first <see cref="NodesKeptPerPage"/> nodes of
+/// each page kept, so a 600-photo album stays a few kilobytes of fixtures; a trimmed page records
+/// the original <c>count</c> and data length under <c>_trimmed</c> and gets a <c>count</c> that
+/// matches the nodes kept, so the fixtures still page consistently.
 /// </summary>
 public static partial class FixtureRecorder
 {
+    /// <summary>Nodes kept per recorded item page; the rest are dropped before redaction.</summary>
+    public const int NodesKeptPerPage = 3;
+
     private const int _recentLookbackDays = 7;
 
     private static readonly string[] _kindsInOrder =
@@ -35,17 +43,21 @@ public static partial class FixtureRecorder
 
     private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true };
 
+    private static readonly string[] _trimmedKinds = [AmazonEndpoints.KindAlbumChildren, AmazonEndpoints.KindSearch];
+
     private static readonly HashSet<string> _passThroughKeys = new(StringComparer.Ordinal)
     {
         "kind", "contentType", "mimeType", "extension", "status", "region", "version",
-        "metadataUrl", "contentUrl", "md5", "isRoot",
+        "metadataUrl", "contentUrl", "downloadServiceUrl", "thumbnailServiceUrl", "uploadServiceUrl",
+        "md5", "isRoot",
     };
 
     /// <summary>
     /// Calls the account endpoint (through <see cref="AmazonPhotosSource.WhoAmIAsync"/>), the album
-    /// list, the album's pages, an all-mode search over the last seven days and downloads the smallest
-    /// photo seen, then writes one redacted JSON file per endpoint kind (first page only) plus the
-    /// stand-in JPEG into <paramref name="outDir"/>. Returns the written paths.
+    /// list, every page of the album, an all-mode search over the last seven days and downloads the
+    /// smallest kept photo, then writes one redacted JSON file per response (every page of the item
+    /// listings, trimmed to <see cref="NodesKeptPerPage"/> nodes) plus the stand-in JPEG into
+    /// <paramref name="outDir"/>. Returns the written paths.
     /// </summary>
     public static async Task<IReadOnlyList<string>> RecordAsync(
         AmazonPhotosSource source, string outDir, string albumName, CancellationToken ct)
@@ -55,11 +67,16 @@ public static partial class FixtureRecorder
         ArgumentException.ThrowIfNullOrWhiteSpace(albumName);
         Directory.CreateDirectory(outDir);
 
-        var captured = new Dictionary<string, AmazonResponse>(StringComparer.Ordinal);
+        var captured = new Dictionary<string, List<AmazonResponse>>(StringComparer.Ordinal);
         var previous = source.ResponseObserver;
         source.ResponseObserver = response =>
         {
-            captured.TryAdd(response.Kind, response);
+            if (!captured.TryGetValue(response.Kind, out var list))
+            {
+                captured[response.Kind] = list = [];
+            }
+
+            list.Add(response);
             previous?.Invoke(response);
         };
 
@@ -70,8 +87,21 @@ public static partial class FixtureRecorder
             var recent = await source.ListCandidatesAsync(
                 Window.FromLookback(_recentLookbackDays, DateTimeOffset.UtcNow), SourceMode.All, null, ct);
 
+            var pages = new Dictionary<string, List<Page>>(StringComparer.Ordinal);
+            var keptIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var kind in _kindsInOrder)
+            {
+                if (!captured.TryGetValue(kind, out var responses))
+                {
+                    continue;
+                }
+
+                pages[kind] = responses.Select(response => Trim(Parse(response.Body), kind, keptIds)).ToList();
+                RewriteCounts(pages[kind]);
+            }
+
             var smallest = albumItems.Concat(recent)
-                .Where(item => item.Kind == ItemKind.Photo)
+                .Where(item => item.Kind == ItemKind.Photo && keptIds.Contains(item.Id))
                 .OrderBy(item => item.SizeBytes)
                 .ThenBy(item => item.Id, StringComparer.Ordinal)
                 .FirstOrDefault();
@@ -93,18 +123,30 @@ public static partial class FixtureRecorder
             var written = new List<string>();
             foreach (var kind in _kindsInOrder)
             {
-                if (!captured.TryGetValue(kind, out var response))
+                if (!pages.TryGetValue(kind, out var kindPages))
                 {
                     continue;
                 }
 
-                var node = RedactNode(response.Body, redactor);
-                Stamp(node, kind, recordedAt);
-                written.Add(await WriteAsync(Path.Combine(outDir, $"{kind}.json"), node, ct));
+                for (var i = 0; i < kindPages.Count; i++)
+                {
+                    var page = kindPages[i];
+                    Walk(page.Body, key: null, parentKind: null, idsOnly: false, redactor);
+                    Stamp(page.Body, kind, recordedAt);
+                    page.Body.Insert(2, "_page", i + 1);
+                    if (page.Trimmed is { } trimmed)
+                    {
+                        page.Body.Insert(3, "_trimmed", trimmed);
+                    }
+
+                    var fileName = i == 0 ? $"{kind}.json" : $"{kind}_page{i + 1}.json";
+                    written.Add(await WriteAsync(Path.Combine(outDir, fileName), page.Body, ct));
+                }
             }
 
-            if (smallest is not null && captured.TryGetValue(AmazonEndpoints.KindContent, out var content))
+            if (smallest is not null && captured.TryGetValue(AmazonEndpoints.KindContent, out var contents))
             {
+                var content = contents[0];
                 var nodeId = redactor.NodeId(smallest.Id);
                 var binaryName = $"content_{nodeId}.jpg";
                 var node = new JsonObject
@@ -131,6 +173,80 @@ public static partial class FixtureRecorder
         }
     }
 
+    /// <summary>
+    /// Keeps the first <see cref="NodesKeptPerPage"/> elements of <c>data</c> on an item page and
+    /// remembers their ids. Other kinds (albums, root node, usage) are kept whole.
+    /// </summary>
+    private static Page Trim(JsonObject body, string kind, HashSet<string> keptIds)
+    {
+        if (body["data"] is not JsonArray data)
+        {
+            return new Page(body, Trimmed: null);
+        }
+
+        JsonObject? trimmed = null;
+        if (_trimmedKinds.Contains(kind) && data.Count > NodesKeptPerPage)
+        {
+            trimmed = new JsonObject
+            {
+                ["keptPerPage"] = NodesKeptPerPage,
+                ["originalDataLength"] = data.Count,
+                ["originalCount"] = body["count"]?.DeepClone(),
+            };
+            while (data.Count > NodesKeptPerPage)
+            {
+                data.RemoveAt(data.Count - 1);
+            }
+        }
+
+        foreach (var node in data)
+        {
+            if (node is JsonObject obj && obj["id"] is JsonValue idValue && idValue.TryGetValue<string>(out var id))
+            {
+                keptIds.Add(id);
+            }
+        }
+
+        return new Page(body, trimmed);
+    }
+
+    /// <summary>
+    /// When any page of a kind was trimmed, <c>count</c> on every page becomes the number of nodes
+    /// kept across the pages, so the client's "count promised more than paging delivered" check
+    /// still holds against the fixtures.
+    /// </summary>
+    private static void RewriteCounts(List<Page> pages)
+    {
+        if (pages.All(page => page.Trimmed is null))
+        {
+            return;
+        }
+
+        var kept = pages.Sum(page => page.Body["data"] is JsonArray data ? data.Count : 0);
+        foreach (var page in pages)
+        {
+            page.Body["count"] = kept;
+        }
+    }
+
+    private static JsonObject Parse(string body)
+    {
+        var parsed = JsonNode.Parse(body) ?? throw new InvalidOperationException("The recorded body is not JSON.");
+        if (parsed is not JsonObject root)
+        {
+            root = new JsonObject { ["data"] = parsed };
+        }
+
+        foreach (var key in root.Select(p => p.Key).Where(k => k.StartsWith('_')).ToList())
+        {
+            root.Remove(key);
+        }
+
+        return root;
+    }
+
+    private sealed record Page(JsonObject Body, JsonObject? Trimmed);
+
     /// <summary>Redacts one JSON body; see the class summary for the rules.</summary>
     internal static string Redact(string body, Redactor redactor) =>
         RedactNode(body, redactor).ToJsonString(_writeOptions);
@@ -152,18 +268,8 @@ public static partial class FixtureRecorder
 
     private static JsonObject RedactNode(string body, Redactor redactor)
     {
-        var parsed = JsonNode.Parse(body) ?? throw new InvalidOperationException("The recorded body is not JSON.");
-        if (parsed is not JsonObject root)
-        {
-            root = new JsonObject { ["data"] = parsed };
-        }
-
-        foreach (var key in root.Select(p => p.Key).Where(k => k.StartsWith('_')).ToList())
-        {
-            root.Remove(key);
-        }
-
-        Walk(root, key: null, parentKind: null, redactor);
+        var root = Parse(body);
+        Walk(root, key: null, parentKind: null, idsOnly: false, redactor);
         return root;
     }
 
@@ -175,7 +281,11 @@ public static partial class FixtureRecorder
         node.Insert(0, "_recorded", $"{recordedAt} by skylight-sync record-fixtures; ids, names, owners and emails redacted");
     }
 
-    private static void Walk(JsonNode? node, string? key, string? parentKind, Redactor redactor)
+    /// <summary>
+    /// Redacts every string in place. Inside <c>parentMap</c> (<c>{"FOLDER": [ids]}</c>) every string
+    /// is a node id whatever its key, hence <paramref name="idsOnly"/>.
+    /// </summary>
+    private static void Walk(JsonNode? node, string? key, string? parentKind, bool idsOnly, Redactor redactor)
     {
         switch (node)
         {
@@ -190,13 +300,14 @@ public static partial class FixtureRecorder
                         continue;
                     }
 
+                    var childIdsOnly = idsOnly || property.Equals("parentMap", StringComparison.Ordinal);
                     if (child is JsonValue value && value.TryGetValue<string>(out var text))
                     {
-                        obj[property] = RedactString(property, text, kind, redactor);
+                        obj[property] = RedactString(property, text, kind, childIdsOnly, redactor);
                     }
                     else
                     {
-                        Walk(child, property, kind, redactor);
+                        Walk(child, property, kind, childIdsOnly, redactor);
                     }
                 }
 
@@ -206,11 +317,11 @@ public static partial class FixtureRecorder
                 {
                     if (array[i] is JsonValue item && item.TryGetValue<string>(out var text))
                     {
-                        array[i] = RedactString(key ?? "", text, parentKind, redactor);
+                        array[i] = RedactString(key ?? "", text, parentKind, idsOnly, redactor);
                     }
                     else
                     {
-                        Walk(array[i], key, parentKind, redactor);
+                        Walk(array[i], key, parentKind, idsOnly, redactor);
                     }
                 }
 
@@ -218,11 +329,16 @@ public static partial class FixtureRecorder
         }
     }
 
-    private static string RedactString(string key, string text, string? kind, Redactor redactor)
+    private static string RedactString(string key, string text, string? kind, bool idsOnly, Redactor redactor)
     {
         if (text.Contains('@'))
         {
             return "redacted@example.com";
+        }
+
+        if (idsOnly)
+        {
+            return redactor.NodeId(text);
         }
 
         switch (key)
@@ -231,6 +347,8 @@ public static partial class FixtureRecorder
             case "parentId":
             case "nodeId":
             case "parents":
+            case "coverIds":
+            case "covers":
                 return redactor.NodeId(text);
             case "ownerId":
             case "customerId":
@@ -294,7 +412,8 @@ public static partial class FixtureRecorder
     /// </summary>
     internal sealed class Redactor(IEnumerable<string> knownNames)
     {
-        private readonly HashSet<string> _knownNames = knownNames.Where(n => !string.IsNullOrWhiteSpace(n)).ToHashSet(StringComparer.Ordinal);
+        private readonly HashSet<string> _knownNames =
+            knownNames.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).ToHashSet(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _nodes = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _owners = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _albums = new(StringComparer.Ordinal);
@@ -306,7 +425,21 @@ public static partial class FixtureRecorder
 
         public string OwnerId(string real) => Map(_owners, real, "owner_{0:D4}");
 
-        public string AlbumName(string real) => Map(_albums, real, "album_{0:D4}");
+        /// <summary>
+        /// Album names keep their surrounding whitespace (Amazon preserves a trailing space typed
+        /// into a name), so the fixtures show the quirk the client's trimmed match exists for.
+        /// </summary>
+        public string AlbumName(string real)
+        {
+            var core = real.Trim();
+            if (core.Length == 0)
+            {
+                return Map(_albums, real, "album_{0:D4}");
+            }
+
+            var start = real.IndexOf(core, StringComparison.Ordinal);
+            return real[..start] + Map(_albums, core, "album_{0:D4}") + real[(start + core.Length)..];
+        }
 
         public string Token(string real) => Map(_tokens, real, "next_token_{0:D4}");
 
@@ -326,7 +459,7 @@ public static partial class FixtureRecorder
         /// </summary>
         public string Text(string real) =>
             _nodes.TryGetValue(real, out var node) ? node
-            : _knownNames.Contains(real) ? AlbumName(real)
+            : _knownNames.Contains(real.Trim()) ? AlbumName(real)
             : IsStructuralValue(real) ? real
             : Map(_texts, real, "text_{0:D4}");
 

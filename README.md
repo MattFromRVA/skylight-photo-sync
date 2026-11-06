@@ -110,12 +110,14 @@ merged: configuration, the sync pipeline, SQLite sent-state, image normalization
 batching, SMTP, alerts, the Amazon Photos client, and the `run`, `status`, `test-email`,
 `reset`, `login`, `install-launchd`, `uninstall-launchd` and `record-fixtures` commands.
 
-**Not yet verified against a live Amazon session.** The Amazon client is written against
-documented endpoint shapes and tested with clearly labelled placeholder fixtures. Recording
-real, redacted fixtures with `skylight-sync record-fixtures` and fixing the client against
-them is still pending ([issue #12](https://github.com/MattFromRVA/skylight-photo-sync/issues/12),
-Steps 2 and 3). Until that lands, expect `login` or `run` to fail against the real service;
-`run --source local:PATH` exercises everything except Amazon.
+**Verified against a live Amazon session on 2026-11-06.** The Amazon client was fixed against
+Amazon's real Drive v1 API (the required `resourceVersion=V2` parameters, search context, date
+filter and sort; see [docs/research-notes.md](docs/research-notes.md)) and is tested with
+redacted fixtures recorded from a real account by `skylight-sync record-fixtures`. On that
+account `run --dry-run` listed a 595-photo album end to end
+([issue #12](https://github.com/MattFromRVA/skylight-photo-sync/issues/12)). Amazon's cookies
+can stop working within an hour or so, so expect to re-run `login` now and then; a browser
+device login that avoids pasted cookies is planned (below).
 
 Planned: a one-time browser device login that replaces pasted cookies and stops them
 expiring every few days ([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)),

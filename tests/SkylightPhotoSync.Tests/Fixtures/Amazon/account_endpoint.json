@@ -1,0 +1,15 @@
+{
+  "_recorded": "2026-11-06T13:28:07Z by skylight-sync record-fixtures; ids, names, owners and emails redacted",
+  "_endpoint": "account_endpoint",
+  "_page": 1,
+  "contentUrl": "https://content-na.drive.amazonaws.com/",
+  "countryAtSignup": "US",
+  "customerExists": true,
+  "downloadServiceUrl": "https://download-photos.amazon.com/",
+  "marketplaceAtSignup": "text_0001",
+  "metadataUrl": "https://cdws.us-east-1.amazonaws.com/drive/v1/",
+  "region": "us-east-1",
+  "retailUrl": "text_0002",
+  "thumbnailServiceUrl": "https://thumbnails-photos.amazon.com/",
+  "uploadServiceUrl": "https://upload-photos.amazon.com/"
+}

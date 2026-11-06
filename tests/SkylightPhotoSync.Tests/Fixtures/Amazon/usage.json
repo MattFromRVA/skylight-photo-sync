@@ -1,0 +1,46 @@
+{
+  "_recorded": "2026-11-06T13:28:07Z by skylight-sync record-fixtures; ids, names, owners and emails redacted",
+  "_endpoint": "usage",
+  "_page": 1,
+  "doc": {
+    "billable": {
+      "bytes": 0,
+      "count": 0
+    },
+    "total": {
+      "bytes": 0,
+      "count": 0
+    }
+  },
+  "lastCalculated": "2026-11-06T13:28:04.966Z",
+  "other": {
+    "billable": {
+      "bytes": 0,
+      "count": 0
+    },
+    "total": {
+      "bytes": 0,
+      "count": 0
+    }
+  },
+  "photo": {
+    "billable": {
+      "bytes": 0,
+      "count": 0
+    },
+    "total": {
+      "bytes": 97286147706,
+      "count": 50183
+    }
+  },
+  "video": {
+    "billable": {
+      "bytes": 99088075230,
+      "count": 1615
+    },
+    "total": {
+      "bytes": 101672067211,
+      "count": 1832
+    }
+  }
+}

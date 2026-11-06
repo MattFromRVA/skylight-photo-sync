@@ -85,22 +85,21 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
     public Action<AmazonResponse>? ResponseObserver { get; set; }
 
     /// <summary>
-    /// The account behind the cookies: the root node's name (or owner id) and the number of photos
-    /// plus videos from the usage endpoint. Proves the cookies work after <c>login</c>.
+    /// The account behind the cookies: the root node's <c>name</c> when it has one (the recorded
+    /// account's root node has none, and its <c>ownerId</c> is an opaque id not worth printing, so
+    /// <c>Name</c> is then empty) and the number of photos plus videos from the usage endpoint.
+    /// Proves the cookies work after <c>login</c>.
     /// </summary>
     public async Task<(string Name, long Count)> WhoAmIAsync(CancellationToken ct)
     {
         var (metadataUrl, _) = await ResolveAsync(ct);
 
-        string name = "unknown";
+        var name = "";
         using (var root = await GetJsonAsync(AmazonEndpoints.RootNode(metadataUrl), AmazonEndpoints.KindRootNode, ct))
         {
             if (root.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array && data.GetArrayLength() > 0)
             {
-                var node = data[0];
-                name = GetString(node, "name") is { Length: > 0 } rootName
-                    ? rootName
-                    : GetString(node, "ownerId") ?? name;
+                name = GetString(data[0], "name")?.Trim() ?? "";
             }
         }
 
@@ -222,9 +221,15 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
         return _endpoints.Value;
     }
 
+    /// <summary>
+    /// The id of the album called <paramref name="albumName"/>: an exact, case-sensitive match wins;
+    /// otherwise a name that differs only by surrounding whitespace (Amazon keeps trailing spaces
+    /// typed into an album name). The not-found error quotes every name so such spaces are visible.
+    /// </summary>
     private async Task<string> FindAlbumIdAsync(string metadataUrl, string albumName, CancellationToken ct)
     {
         var seen = new List<string>();
+        string? trimmedMatch = null;
         await foreach (var album in PagesAsync(token => AmazonEndpoints.Albums(metadataUrl, token), AmazonEndpoints.KindAlbums, ct))
         {
             var name = GetString(album, "name");
@@ -239,10 +244,22 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
             {
                 return id;
             }
+
+            if (trimmedMatch is null && name.Trim().Equals(albumName.Trim(), StringComparison.Ordinal))
+            {
+                trimmedMatch = id;
+            }
+        }
+
+        if (trimmedMatch is not null)
+        {
+            return trimmedMatch;
         }
 
         throw new InvalidOperationException(
-            $"Album '{albumName}' was not found in Amazon Photos. Albums seen: {(seen.Count == 0 ? "(none)" : string.Join(", ", seen))}.");
+            $"Album '{albumName}' was not found in Amazon Photos. Albums seen: "
+            + (seen.Count == 0 ? "(none)" : string.Join(", ", seen.Select(name => $"\"{name}\"")))
+            + ".");
     }
 
     /// <summary>
@@ -276,8 +293,8 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
                     && total > received)
                 {
                     throw new InvalidOperationException(
-                        $"Amazon {kind} reported count {total} but paging stopped after {received} items; "
-                        + "the pagination shape must be verified against real fixtures in Task 12 Step 3.");
+                        $"Amazon {kind} reported count {total} but paging stopped after {received} items "
+                        + "without a nextToken; the response shape may have changed.");
                 }
 
                 yield break;

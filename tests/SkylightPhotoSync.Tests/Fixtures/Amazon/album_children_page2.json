@@ -1,0 +1,287 @@
+{
+  "_recorded": "2026-11-06T13:28:07Z by skylight-sync record-fixtures; ids, names, owners and emails redacted",
+  "_endpoint": "album_children",
+  "_page": 2,
+  "_trimmed": {
+    "keptPerPage": 3,
+    "originalDataLength": 200,
+    "originalCount": 595
+  },
+  "count": 9,
+  "data": [
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [
+        {
+          "assetType": "LIVE_VIDEO"
+        },
+        {
+          "assetType": "LIVE_VIDEO"
+        }
+      ],
+      "contentProperties": {
+        "contentDate": "2026-05-18T17:07:10.000Z",
+        "contentSignatures": [],
+        "contentType": "image/heic",
+        "extension": "heic",
+        "image": {
+          "apertureValue": "text_0084",
+          "colorSpace": "text_0085",
+          "dateTime": "2026-05-18T17:07:10.000Z",
+          "dateTimeDigitized": "2026-05-18T17:07:10.000Z",
+          "dateTimeOriginal": "2026-05-18T17:07:10.000Z",
+          "exposureMode": "text_0081",
+          "exposureProgram": "text_0086",
+          "exposureTime": "1/60",
+          "flash": "text_0087",
+          "focalLength": "text_0088",
+          "gpsTimeStamp": "text_0089",
+          "height": 4032,
+          "make": "text_0090",
+          "meteringMode": "text_0091",
+          "model": "text_0092",
+          "orientation": "text_0093",
+          "resolutionUnit": "text_0067",
+          "sensingMethod": "text_0086",
+          "software": "text_0094",
+          "whiteBalance": "text_0081",
+          "width": 3024
+        },
+        "md5": "5c03f1d3480ff620d92885ac32d9f17f",
+        "size": 1627643,
+        "version": 1
+      },
+      "createdBy": "owner_0004",
+      "createdDate": "2026-05-18T22:09:22.811Z",
+      "eTagResponse": "text_0095",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:00.891Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0100",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:00.899Z",
+      "name": "file_0004.heic",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0101"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0101",
+        "node_0095"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "settings": {
+        "favorite": false
+      },
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 5,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [
+        {
+          "assetType": "LIVE_VIDEO"
+        }
+      ],
+      "contentProperties": {
+        "contentDate": "2026-05-18T17:07:11.407Z",
+        "contentSignatures": [],
+        "contentType": "image/heic",
+        "extension": "heic",
+        "image": {
+          "apertureValue": "text_0084",
+          "colorSpace": "text_0085",
+          "dateTime": "2026-05-18T17:07:11.000Z",
+          "dateTimeDigitized": "2026-05-18T17:07:11.000Z",
+          "dateTimeOriginal": "2026-05-18T17:07:11.000Z",
+          "exposureMode": "text_0081",
+          "exposureProgram": "text_0086",
+          "exposureTime": "1/60",
+          "flash": "text_0087",
+          "focalLength": "text_0088",
+          "gpsTimeStamp": "text_0089",
+          "height": 4032,
+          "make": "text_0090",
+          "meteringMode": "text_0091",
+          "model": "text_0092",
+          "orientation": "text_0093",
+          "resolutionUnit": "text_0067",
+          "sensingMethod": "text_0086",
+          "software": "text_0094",
+          "whiteBalance": "text_0081",
+          "width": 3024
+        },
+        "md5": "17062f7aecee7e5708e0e5d72d926dcd",
+        "size": 1583418,
+        "version": 1
+      },
+      "createdBy": "owner_0004",
+      "createdDate": "2026-05-18T22:09:22.925Z",
+      "eTagResponse": "text_0096",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:01.394Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0102",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:01.403Z",
+      "name": "file_0005.heic",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0101"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0101",
+        "node_0095"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "settings": {
+        "favorite": false
+      },
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 5,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [
+        {
+          "assetType": "LIVE_VIDEO"
+        },
+        {
+          "assetType": "LIVE_VIDEO"
+        }
+      ],
+      "contentProperties": {
+        "contentDate": "2026-05-18T17:07:30.820Z",
+        "contentSignatures": [],
+        "contentType": "image/heic",
+        "extension": "heic",
+        "image": {
+          "apertureValue": "text_0084",
+          "colorSpace": "text_0085",
+          "dateTime": "2026-05-18T17:07:30.000Z",
+          "dateTimeDigitized": "2026-05-18T17:07:30.000Z",
+          "dateTimeOriginal": "2026-05-18T17:07:30.000Z",
+          "exposureMode": "text_0081",
+          "exposureProgram": "text_0086",
+          "exposureTime": "1/60",
+          "flash": "text_0087",
+          "focalLength": "text_0088",
+          "gpsTimeStamp": "text_0097",
+          "height": 4032,
+          "make": "text_0090",
+          "meteringMode": "text_0091",
+          "model": "text_0092",
+          "orientation": "text_0093",
+          "resolutionUnit": "text_0067",
+          "sensingMethod": "text_0086",
+          "software": "text_0094",
+          "whiteBalance": "text_0081",
+          "width": 3024
+        },
+        "md5": "221da0e374a72a8d12cb558ce2352674",
+        "size": 1311902,
+        "version": 1
+      },
+      "createdBy": "owner_0004",
+      "createdDate": "2026-05-18T22:09:23.962Z",
+      "eTagResponse": "text_0098",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:01.110Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0103",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:01.120Z",
+      "name": "file_0006.heic",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0101"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0101",
+        "node_0095"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "settings": {
+        "favorite": false
+      },
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 5,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    }
+  ],
+  "nextToken": "next_token_0002"
+}

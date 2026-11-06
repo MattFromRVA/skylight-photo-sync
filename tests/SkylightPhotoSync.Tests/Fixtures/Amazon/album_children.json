@@ -1,0 +1,258 @@
+{
+  "_recorded": "2026-11-06T13:28:07Z by skylight-sync record-fixtures; ids, names, owners and emails redacted",
+  "_endpoint": "album_children",
+  "_page": 1,
+  "_trimmed": {
+    "keptPerPage": 3,
+    "originalDataLength": 200,
+    "originalCount": 595
+  },
+  "count": 9,
+  "data": [
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "contentProperties": {
+        "contentDate": "2020-07-09T12:42:11.080Z",
+        "contentSignatures": [
+          {
+            "contentSignature": "text_0058",
+            "contentSignatureType": "text_0059"
+          }
+        ],
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "image": {
+          "apertureValue": "text_0060",
+          "dateTime": "2020-07-09T12:42:11.000Z",
+          "dateTimeDigitized": "2020-07-09T12:42:11.000Z",
+          "dateTimeOriginal": "2020-07-09T12:42:11.000Z",
+          "exposureMode": "text_0061",
+          "exposureProgram": "text_0061",
+          "exposureTime": "1/200",
+          "flash": "text_0062",
+          "focalLength": "text_0063",
+          "height": 2000,
+          "make": "text_0064",
+          "meteringMode": "text_0065",
+          "model": "text_0066",
+          "resolutionUnit": "text_0067",
+          "sensingMethod": "text_0068",
+          "sharpness": "text_0069",
+          "software": "text_0070",
+          "subSecTimeDigitized": "text_0071",
+          "subSecTimeOriginal": "text_0071",
+          "whiteBalance": "text_0061",
+          "width": 3000
+        },
+        "md5": "2867b70f508e2ae935ab7decbb0d66a8",
+        "size": 1684228,
+        "version": 1
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-06-26T18:09:56.745Z",
+      "eTagResponse": "text_0072",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:04.536Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0096",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:04.545Z",
+      "name": "file_0001.jpeg",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0097"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0097",
+        "node_0095"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "contentProperties": {
+        "contentDate": "2020-07-10T17:12:00.000Z",
+        "contentSignatures": [
+          {
+            "contentSignature": "text_0073",
+            "contentSignatureType": "text_0059"
+          }
+        ],
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "image": {
+          "dateTime": "2020-07-10T17:12:00.000Z",
+          "dateTimeDigitized": "2020-07-10T17:12:00.000Z",
+          "dateTimeOriginal": "2020-07-10T17:12:00.000Z",
+          "height": 1000,
+          "resolutionUnit": "text_0067",
+          "width": 1500
+        },
+        "md5": "586436764d1886ff97d8cb1de5e769e4",
+        "size": 285484,
+        "version": 1
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-06-26T18:11:40.061Z",
+      "eTagResponse": "text_0074",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:04.381Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0098",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:04.391Z",
+      "name": "file_0002.jpeg",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0097"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0095",
+        "node_0097"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "contentProperties": {
+        "contentDate": "2020-07-10T17:14:57.000Z",
+        "contentSignatures": [
+          {
+            "contentSignature": "text_0075",
+            "contentSignatureType": "text_0059"
+          }
+        ],
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "image": {
+          "apertureValue": "text_0076",
+          "dateTime": "2020-07-10T17:14:57.000Z",
+          "dateTimeDigitized": "2020-07-10T17:14:57.000Z",
+          "dateTimeOriginal": "2020-07-10T17:14:57.000Z",
+          "exposureMode": "text_0061",
+          "exposureProgram": "text_0061",
+          "exposureTime": "1/100",
+          "flash": "text_0077",
+          "focalLength": "text_0078",
+          "height": 3000,
+          "make": "text_0079",
+          "meteringMode": "text_0065",
+          "model": "text_0080",
+          "resolutionUnit": "text_0067",
+          "sharpness": "text_0081",
+          "software": "text_0070",
+          "subSecTimeOriginal": "text_0082",
+          "whiteBalance": "text_0061",
+          "width": 1993
+        },
+        "md5": "abc68e854192db6e1def7acc9063e25d",
+        "size": 2161902,
+        "version": 1
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-06-26T18:11:40.688Z",
+      "eTagResponse": "text_0083",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:03.685Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0099",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:03.700Z",
+      "name": "file_0003.jpeg",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0097"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0095",
+        "node_0097"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    }
+  ],
+  "nextToken": "next_token_0001"
+}

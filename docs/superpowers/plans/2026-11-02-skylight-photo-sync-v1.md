@@ -312,9 +312,9 @@ public class AppTests
 - CLI: `record-fixtures`; `login` now calls `WhoAmIAsync` and prints `Amazon Photos: connected as {name}, {count} items` or the auth error; `run` default source becomes Amazon.
 
 - [x] **Step 1 (agent): Implement the client and recorder** against the documented endpoint shapes, with unit tests driven by hand-written placeholder fixtures (clearly named `placeholder_*.json`) and a scripted `HttpMessageHandler`: `Album_mode_lists_album_children_oldest_first`, `All_mode_uses_search_with_date_range`, `Http401_throws_AuthExpired`, `Http429_backs_off_and_retries`, `Pagination_follows_startToken`, `Accepts_underscore_cookie_names`.
-- [ ] **Step 2 (Matt):** `skylight-sync login` → `skylight-sync record-fixtures` → commit the redacted fixtures, replacing the placeholders.
-- [ ] **Step 3 (agent): Fix the client against the real fixtures**; `skylight-sync run --dry-run` on Matt's Mac lists expected photos; `skylight-sync run --limit 1` lands one photo on the Calendar.
-- [ ] **Step 4: Commit** `feat: Amazon Photos source with recorded fixtures`.
+- [x] **Step 2 (Matt):** `skylight-sync login` → `skylight-sync record-fixtures` → commit the redacted fixtures, replacing the placeholders. (Recorded 2026-11-06; every item page is written, trimmed to three nodes, with the original counts under `_trimmed`.)
+- [x] **Step 3 (agent): Fix the client against the real fixtures**; `skylight-sync run --dry-run` on Matt's Mac lists expected photos (2026-11-06: `found 595, sent 3, skipped 24, batches 1 (dry run)` with `--limit 3`; the 24 skips are videos with `include_videos = false`). `skylight-sync run --limit 1` landing one photo on the Calendar waits for the real Skylight and SMTP addresses in `config.toml`.
+- [x] **Step 4: Commit** `feat: Amazon Photos source with recorded fixtures`.
 
 ---
 

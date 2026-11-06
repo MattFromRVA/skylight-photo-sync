@@ -165,7 +165,7 @@ Paste the cURL command you copied from the browser's Network tab (or the three v
 lines), press Return, then Ctrl-D. On success:
 
 ```
-Amazon Photos: connected as Matt, 12345 items
+Amazon Photos: connected, 12345 items
 Saved. Run 'skylight-sync run --dry-run' to verify.
 ```
 

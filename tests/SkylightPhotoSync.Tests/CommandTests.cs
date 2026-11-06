@@ -16,7 +16,7 @@ namespace SkylightPhotoSync.Tests;
 public sealed class CommandTests : IDisposable
 {
     private const string _frame = "frame@example.com";
-    private const string _album = "Skylight";
+    private const string _album = ScriptedHandler.AlbumName;
     private const string _sessionId = "133-0000000-0000000";
     private const string _ubid = "130-0000000-1111111";
     private const string _at = "Atza|TESTVALUEONLYxxxx";
@@ -77,7 +77,7 @@ public sealed class CommandTests : IDisposable
         var (code, out_, _) = await Run("run", "--dry-run", "--limit", "1");
 
         Assert.Equal(0, code);
-        Assert.Contains("found 3, sent 1, skipped 0, batches 1 (dry run)", out_);
+        Assert.Contains("found 9, sent 1, skipped 0, batches 1 (dry run)", out_);
         Assert.Single(_amazon.RequestsTo($"/nodes/{ScriptedHandler.AlbumId}/children"), r => !ScriptedHandler.Query(r).Contains("startToken"));
         Assert.Single(_amazon.RequestsTo("/content"));
         Assert.Contains("source=amazon", File.ReadAllText(Path.Combine(_home.Dir, "sync.log")));
@@ -199,7 +199,10 @@ public sealed class CommandTests : IDisposable
 
         Assert.Equal(0, code);
         Assert.Contains("Saved. Run 'skylight-sync run --dry-run' to verify.", out_);
-        Assert.Contains("Amazon Photos: connected as Placeholder Owner, 1234 items", out_);
+        // The recorded root node has no name, so the line names no account holder.
+        Assert.Contains("Amazon Photos: connected, 52015 items", out_);
+        Assert.DoesNotContain("unknown", out_);
+        Assert.DoesNotContain("owner_", out_);
         AssertSecretsSaved(expectedPassword: null);
         Assert.DoesNotContain(_sessionId, out_ + err);
         Assert.DoesNotContain(_at, out_ + err);

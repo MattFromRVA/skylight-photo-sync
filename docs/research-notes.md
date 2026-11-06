@@ -34,6 +34,49 @@
   cookie refresh + loud failure alerts, and isolate it behind an interface so a
   different source (iCloud/Immich/local folder) could be swapped in.
 
+## Amazon Drive v1, verified 2026-11-06
+
+Probed live with curl against a us-east-1 account on amazon.com, then pinned by the recorded
+fixtures under `tests/SkylightPhotoSync.Tests/Fixtures/Amazon/` and `AmazonEndpointsTests`.
+
+- **Discovery.** `GET https://www.amazon.com/drive/v1/account/endpoint` returns `metadataUrl`
+  (`https://cdws.us-east-1.amazonaws.com/drive/v1/`), `contentUrl`
+  (`https://content-na.drive.amazonaws.com/`), `downloadServiceUrl`, `thumbnailServiceUrl`,
+  `uploadServiceUrl`, `region` and `customerExists`.
+- **Required query params.** Every metadata request needs `resourceVersion=V2&ContentType=JSON`.
+  Without them `nodes/{id}/children` answers 404 and `search` answers 400. The Python library also
+  sends `asset=ALL&tempLink=false`; not required. `search` additionally needs
+  `searchContext=customer` (else 400 `Value null at 'searchContext' failed to satisfy constraint`).
+- **Date filters.** `contentDate:[A TO B]` and `contentProperties.contentDate:[A TO B]` are rejected
+  (`There is no fieldNumber for contentDate` / `Invalid fieldName`).
+  `createdDate:[2026-09-01T00:00:00.000Z TO 2026-12-31T23:59:59.999Z]` works (ISO with `.000Z`),
+  as do `timeYear:(2026) AND timeMonth:(10)`. Upload date is never earlier than capture date, so
+  all mode filters server-side on `createdDate` and keeps the client-side capture-date window on
+  `contentProperties.contentDate`.
+- **Sorting.** `sort=['contentDate ASC']` is rejected; `sort=['contentProperties.contentDate ASC']`
+  works on both children and search and gives true capture-date order. `['createdDate ASC']` also
+  works. The value is a single-quoted JSON-ish list, URL-encoded.
+- **Pagination.** Responses carry `count` (total) and `nextToken`; pass it back as `startToken`.
+  `limit=200` is accepted. Verified across a 595-item album and on search; pages differ.
+- **Albums.** `nodes?filters=kind:VISUAL_COLLECTION` returns `data[]` of `id`, `name`, `kind`,
+  `createdDate`, `ownerId`, `collectionProperties.covers`, `isShared`, … Names can carry trailing
+  spaces, so the client accepts a trimmed match and quotes names in its not-found error.
+- **FILE node.** Top level: `id`, `name`, `kind: "FILE"`, `createdDate`, `modifiedDate`,
+  `ownerId`, `parents[]`, `parentMap`, `isShared`, `status`. `contentProperties`: `contentDate`,
+  `contentType` (`image/jpeg`), `extension` (`jpg`), `md5` (32 hex), `size`, `version`,
+  `contentSignatures`, `image{width,height,orientation,make,model,dateTimeOriginal,…}`. Videos
+  presumably carry `video{}`; not yet observed.
+- **Download.** `GET {contentUrl}nodes/{id}/content` returns 200 with the original bytes and the
+  right `Content-Type`. `{contentUrl}cdproxy/nodes/{id}/content` also works, and
+  `{metadataUrl}nodes/{id}/contentRedirection?querySuffix=%3Fdownload%3Dtrue&ownerId=…` 302s to the
+  content host with a `Content-Disposition` filename.
+- **Auth failures.** Wrong `at-main`: 401 `{"message":"Get error during session authentication."}`
+  on the account endpoint and metadata calls. No cookies: 401 `{"Message":"No Auth Method Provided"}`.
+  Valid cookies without the `x-amzn-sessionid` header: 401, so the client always sends it.
+  401/403 map to `AuthExpiredException`. Cookies that had just passed `login` were rejected again
+  within about fifteen minutes on 2026-11-06, so `at-main` can rotate quickly; refresh with
+  `skylight-sync login` and record right away.
+
 ## Prior art (same shape of problem)
 
 - MChartier/immich-skylight-mailer (TypeScript, MIT): Immich album → JPEG via sharp →
