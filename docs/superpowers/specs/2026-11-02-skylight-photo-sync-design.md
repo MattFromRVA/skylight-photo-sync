@@ -263,7 +263,7 @@ skylight-sync reset --yes
 
 1. `dotnet tool install --global SkylightPhotoSync` (or pack from a clone and install with
    `--add-source`).
-2. `skylight-sync login` → paste cookies → "Amazon Photos: connected as <name>, 12,345 items".
+2. `skylight-sync login` → paste cookies → "Amazon Photos: connected, 12,345 items".
 3. Edit `config.toml`: album name, Skylight address, SMTP.
 4. `skylight-sync test-email` → one photo arrives; Matt approves the sender in the Skylight
    approval email (if privacy is "Senders who I approve").
