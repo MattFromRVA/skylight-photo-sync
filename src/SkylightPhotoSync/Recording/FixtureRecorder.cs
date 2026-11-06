@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using SkiaSharp;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Models;
@@ -13,10 +14,12 @@ namespace SkylightPhotoSync.Recording;
 /// real shapes (Task 12 Step 2). Node ids become <c>node_0001…</c>, owner ids <c>owner_0001…</c>,
 /// album names <c>album_0001…</c>, file names <c>file_0001.ext</c>, emails
 /// <c>redacted@example.com</c>, GPS <c>location</c> fields are dropped, and the one downloaded
-/// binary is replaced by a generated tiny JPEG. Cookie values never reach the output because the
-/// client never puts them in a response body.
+/// binary is replaced by a generated tiny JPEG. Every other string is redacted by default to
+/// <c>text_0001…</c> unless its key is on a short allowlist (kind, content type, dates, …) or it is
+/// an ISO-8601 date, a numeric string or an uppercase enum-like token. Cookie values never reach
+/// the output because the client never puts them in a response body.
 /// </summary>
-public static class FixtureRecorder
+public static partial class FixtureRecorder
 {
     private const int _recentLookbackDays = 7;
 
@@ -31,6 +34,12 @@ public static class FixtureRecorder
     ];
 
     private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true };
+
+    private static readonly HashSet<string> _passThroughKeys = new(StringComparer.Ordinal)
+    {
+        "kind", "contentType", "mimeType", "extension", "status", "region", "version",
+        "metadataUrl", "contentUrl", "md5", "isRoot",
+    };
 
     /// <summary>
     /// Calls the account endpoint (through <see cref="AmazonPhotosSource.WhoAmIAsync"/>), the album
@@ -154,7 +163,7 @@ public static class FixtureRecorder
             root.Remove(key);
         }
 
-        Walk(root, parentKind: null, redactor);
+        Walk(root, key: null, parentKind: null, redactor);
         return root;
     }
 
@@ -166,38 +175,28 @@ public static class FixtureRecorder
         node.Insert(0, "_recorded", $"{recordedAt} by skylight-sync record-fixtures; ids, names, owners and emails redacted");
     }
 
-    private static void Walk(JsonNode? node, string? parentKind, Redactor redactor)
+    private static void Walk(JsonNode? node, string? key, string? parentKind, Redactor redactor)
     {
         switch (node)
         {
             case JsonObject obj:
                 var kind = obj["kind"] is JsonValue kindValue && kindValue.TryGetValue<string>(out var k) ? k : parentKind;
-                foreach (var key in obj.Select(p => p.Key).ToList())
+                foreach (var property in obj.Select(p => p.Key).ToList())
                 {
-                    var child = obj[key];
-                    if (key.Equals("location", StringComparison.OrdinalIgnoreCase))
+                    var child = obj[property];
+                    if (property.Equals("location", StringComparison.OrdinalIgnoreCase))
                     {
-                        obj.Remove(key);
+                        obj.Remove(property);
                         continue;
                     }
 
                     if (child is JsonValue value && value.TryGetValue<string>(out var text))
                     {
-                        obj[key] = RedactString(key, text, kind, redactor);
-                    }
-                    else if (child is JsonArray array && key is "parents")
-                    {
-                        for (var i = 0; i < array.Count; i++)
-                        {
-                            if (array[i] is JsonValue item && item.TryGetValue<string>(out var parentId))
-                            {
-                                array[i] = redactor.NodeId(parentId);
-                            }
-                        }
+                        obj[property] = RedactString(property, text, kind, redactor);
                     }
                     else
                     {
-                        Walk(child, kind, redactor);
+                        Walk(child, property, kind, redactor);
                     }
                 }
 
@@ -207,11 +206,11 @@ public static class FixtureRecorder
                 {
                     if (array[i] is JsonValue item && item.TryGetValue<string>(out var text))
                     {
-                        array[i] = redactor.KnownName(text);
+                        array[i] = RedactString(key ?? "", text, parentKind, redactor);
                     }
                     else
                     {
-                        Walk(array[i], parentKind, redactor);
+                        Walk(array[i], key, parentKind, redactor);
                     }
                 }
 
@@ -231,6 +230,7 @@ public static class FixtureRecorder
             case "id":
             case "parentId":
             case "nodeId":
+            case "parents":
                 return redactor.NodeId(text);
             case "ownerId":
             case "customerId":
@@ -243,10 +243,26 @@ public static class FixtureRecorder
                 return redactor.Token(text);
             case "name":
                 return kind == "VISUAL_COLLECTION" ? redactor.AlbumName(text) : redactor.FileName(text);
-            default:
-                return redactor.KnownName(text);
         }
+
+        if (_passThroughKeys.Contains(key) || key.EndsWith("Date", StringComparison.Ordinal) || key.EndsWith("Time", StringComparison.Ordinal))
+        {
+            return text;
+        }
+
+        return redactor.Text(text);
     }
+
+    private static bool IsStructuralValue(string text) =>
+        IsoDateTimePattern().IsMatch(text)
+        || EnumTokenPattern().IsMatch(text)
+        || decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+
+    [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$")]
+    private static partial Regex IsoDateTimePattern();
+
+    [GeneratedRegex(@"^[A-Z0-9_]{1,40}$")]
+    private static partial Regex EnumTokenPattern();
 
     private static async Task<string> WriteAsync(string path, JsonObject node, CancellationToken ct)
     {
@@ -285,6 +301,7 @@ public static class FixtureRecorder
         private readonly Dictionary<string, string> _albums = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _files = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _tokens = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _texts = new(StringComparer.Ordinal);
 
         public string NodeId(string real) => Map(_nodes, real, "node_{0:D4}");
 
@@ -303,8 +320,16 @@ public static class FixtureRecorder
                 : Map(_files, real, "name_{0:D4}");
         }
 
-        /// <summary>Album and account names the recorder knows, wherever they appear.</summary>
-        public string KnownName(string text) => _knownNames.Contains(text) ? AlbumName(text) : text;
+        /// <summary>
+        /// Any other string: an already-seen node id stays that node's placeholder, a known album or
+        /// account name becomes an album placeholder, dates, numbers and enum-like tokens stay, and
+        /// everything else becomes <c>text_0001…</c>.
+        /// </summary>
+        public string Text(string real) =>
+            _nodes.TryGetValue(real, out var node) ? node
+            : _knownNames.Contains(real) ? AlbumName(real)
+            : IsStructuralValue(real) ? real
+            : Map(_texts, real, "text_{0:D4}");
 
         private static string Map(Dictionary<string, string> map, string real, string format)
         {

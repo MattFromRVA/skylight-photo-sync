@@ -225,7 +225,6 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
     private async Task<string> FindAlbumIdAsync(string metadataUrl, string albumName, CancellationToken ct)
     {
         var seen = new List<string>();
-        string? caseInsensitive = null;
         await foreach (var album in PagesAsync(token => AmazonEndpoints.Albums(metadataUrl, token), AmazonEndpoints.KindAlbums, ct))
         {
             var name = GetString(album, "name");
@@ -240,22 +239,22 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
             {
                 return id;
             }
-
-            if (name.Equals(albumName, StringComparison.OrdinalIgnoreCase))
-            {
-                caseInsensitive ??= id;
-            }
         }
 
-        return caseInsensitive ?? throw new InvalidOperationException(
+        throw new InvalidOperationException(
             $"Album '{albumName}' was not found in Amazon Photos. Albums seen: {(seen.Count == 0 ? "(none)" : string.Join(", ", seen))}.");
     }
 
-    /// <summary>Yields every element of <c>data</c> across pages, following <c>nextToken</c>.</summary>
+    /// <summary>
+    /// Yields every element of <c>data</c> across pages, following <c>nextToken</c>. When the last
+    /// page's <c>count</c> promises more elements than were received, it throws rather than
+    /// silently stopping short.
+    /// </summary>
     private async IAsyncEnumerable<JsonElement> PagesAsync(
         Func<string?, Uri> uriFor, string kind, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
         string? startToken = null;
+        long received = 0;
         while (true)
         {
             using var page = await GetJsonAsync(uriFor(startToken), kind, ct);
@@ -263,6 +262,7 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
             {
                 foreach (var node in data.EnumerateArray())
                 {
+                    received++;
                     yield return node.Clone();
                 }
             }
@@ -270,6 +270,16 @@ public sealed class AmazonPhotosSource : IPhotoSource, IDisposable
             var nextToken = GetString(page.RootElement, "nextToken");
             if (string.IsNullOrEmpty(nextToken) || nextToken == startToken)
             {
+                if (page.RootElement.TryGetProperty("count", out var count)
+                    && count.ValueKind == JsonValueKind.Number
+                    && count.TryGetInt64(out var total)
+                    && total > received)
+                {
+                    throw new InvalidOperationException(
+                        $"Amazon {kind} reported count {total} but paging stopped after {received} items; "
+                        + "the pagination shape must be verified against real fixtures in Task 12 Step 3.");
+                }
+
                 yield break;
             }
 

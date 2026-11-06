@@ -68,7 +68,7 @@ public static class RecordFixturesCommand
             stderr.WriteLine($"record-fixtures failed: {ex.Message}");
             return 1;
         }
-        catch (Exception ex) when (ex is ConfigException or HttpRequestException or InvalidOperationException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is ConfigException or HttpRequestException or InvalidOperationException or ArgumentException or IOException or UnauthorizedAccessException)
         {
             stderr.WriteLine($"record-fixtures failed: {ex.Message}");
             return 1;

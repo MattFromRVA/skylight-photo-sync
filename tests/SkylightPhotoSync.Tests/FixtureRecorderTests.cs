@@ -45,6 +45,11 @@ public sealed class FixtureRecorderTests
         Assert.DoesNotContain("Placeholder Owner", text);
         Assert.DoesNotContain("Skylight", text);
         Assert.DoesNotContain("Vacation", text);
+        Assert.DoesNotContain("Lake house", text);
+        Assert.DoesNotContain("nodePlaceholderCover0099", text);
+        Assert.Contains("VISUAL_COLLECTION", text);
+        Assert.Contains("image/jpeg", text);
+        Assert.Contains("2026-10-01T10:00:00.000Z", text);
         Assert.DoesNotContain(_secrets.AmazonAt!, text);
         Assert.DoesNotContain(_secrets.AmazonSessionId!, text);
 
@@ -57,8 +62,10 @@ public sealed class FixtureRecorderTests
     {
         const string body = """
             {"count":2,"nextToken":"opaque","data":[
-              {"id":"ABC123","name":"IMG_9.HEIC","ownerId":"OWN1","parents":["ROOT1"],"contentProperties":{"md5":"ff","image":{"location":"37.0,-77.0"}}},
-              {"id":"DEF456","name":"Beach Trip","kind":"VISUAL_COLLECTION","createdBy":"someone@example.com"}]}
+              {"id":"ABC123","name":"IMG_9.HEIC","kind":"FILE","ownerId":"OWN1","parents":["ROOT1"],"createdDate":"2026-10-01T10:00:00.000Z",
+               "contentProperties":{"md5":"ff","contentType":"image/heic","image":{"location":"37.0,-77.0","make":"Pixel Maker"}}},
+              {"id":"DEF456","name":"Beach Trip","kind":"VISUAL_COLLECTION","createdBy":"someone@example.com",
+               "description":"Grandma's beach house","coverIds":["ABC123","cOv3rId9"],"status":"AVAILABLE","size":"1024"}]}
             """;
 
         var redacted = FixtureRecorder.Redact(body, new FixtureRecorder.Redactor(["Beach Trip"]));
@@ -75,5 +82,17 @@ public sealed class FixtureRecorderTests
         Assert.Equal("redacted@example.com", data[1].GetProperty("createdBy").GetString());
         Assert.Equal("next_token_0001", doc.RootElement.GetProperty("nextToken").GetString());
         Assert.Equal(2, doc.RootElement.GetProperty("count").GetInt32());
+
+        Assert.Equal("FILE", data[0].GetProperty("kind").GetString());
+        Assert.Equal("VISUAL_COLLECTION", data[1].GetProperty("kind").GetString());
+        Assert.Equal("2026-10-01T10:00:00.000Z", data[0].GetProperty("createdDate").GetString());
+        Assert.Equal("image/heic", data[0].GetProperty("contentProperties").GetProperty("contentType").GetString());
+        Assert.Equal("ff", data[0].GetProperty("contentProperties").GetProperty("md5").GetString());
+        Assert.Equal("text_0001", data[0].GetProperty("contentProperties").GetProperty("image").GetProperty("make").GetString());
+        Assert.Equal("text_0002", data[1].GetProperty("description").GetString());
+        Assert.Equal("node_0001", data[1].GetProperty("coverIds")[0].GetString());
+        Assert.Equal("text_0003", data[1].GetProperty("coverIds")[1].GetString());
+        Assert.Equal("AVAILABLE", data[1].GetProperty("status").GetString());
+        Assert.Equal("1024", data[1].GetProperty("size").GetString());
     }
 }

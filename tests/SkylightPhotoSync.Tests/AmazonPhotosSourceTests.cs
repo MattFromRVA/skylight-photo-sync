@@ -71,6 +71,16 @@ public sealed class AmazonPhotosSourceTests
     }
 
     [Fact]
+    public async Task Album_mode_matches_the_album_name_exactly()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Source().ListCandidatesAsync(new Window(null), SourceMode.Album, "skylight", CancellationToken.None));
+
+        Assert.Contains("'skylight'", ex.Message);
+        Assert.Contains("Skylight", ex.Message);
+    }
+
+    [Fact]
     public async Task All_mode_uses_search_with_date_range()
     {
         var items = await Source().ListCandidatesAsync(new Window(_since), SourceMode.All, null, CancellationToken.None);
@@ -146,6 +156,25 @@ public sealed class AmazonPhotosSourceTests
         Assert.Contains("limit=200", pages[0]);
         Assert.Contains("sort=[\"contentDate ASC\"]", pages[0]);
         Assert.Equal([TimeSpan.FromSeconds(0.5)], _delays);
+    }
+
+    [Fact]
+    public async Task Search_without_nextToken_but_more_results_fails_loudly()
+    {
+        _handler.On("/drive/v1/search", _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"count":500,"data":[{"id":"NODEPLACEHOLDER0020","kind":"FILE","name":"a.jpg","contentProperties":{"contentType":"image/jpeg","contentDate":"2026-11-02T12:00:00.000Z"}}]}""",
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Source().ListCandidatesAsync(new Window(_since), SourceMode.All, null, CancellationToken.None));
+
+        Assert.Contains(AmazonEndpoints.KindSearch, ex.Message);
+        Assert.Contains("500", ex.Message);
+        Assert.Contains("Step 3", ex.Message);
     }
 
     [Fact]
