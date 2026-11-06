@@ -88,7 +88,7 @@ span many lines and contain any other headers; `login` only reads the `Cookie:` 
 understands `-b`/`--cookie`). On success:
 
 ```
-Amazon Photos: connected as Matt, 12345 items
+Amazon Photos: connected, 12345 items
 Saved. Run 'skylight-sync run --dry-run' to verify.
 ```
 
@@ -120,7 +120,8 @@ written.
 2. Writes `[amazon]` into `secrets.toml` (mode `0600`), keeping any `[smtp] password` already
    there.
 3. Calls Amazon Photos once to confirm the cookies work and prints
-   `Amazon Photos: connected as <name>, <count> items`.
+   `Amazon Photos: connected, <count> items` (with `as <name>` when Amazon exposes a name
+   for the account; it usually does not).
 4. Clears the `needs_login` flag so the next scheduled run resumes.
 
 If Amazon rejects the cookies, `login` exits 1 with

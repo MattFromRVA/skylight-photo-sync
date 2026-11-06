@@ -4,12 +4,11 @@ This walks through the first run end to end: install the tool, point it at one A
 album and one Skylight address, prove the email path works, send one photo, then let
 `launchd` take over. Budget about twenty minutes, most of it waiting for emails.
 
-> **Status (2026-11).** Everything on this page is implemented, but the Amazon Photos client has
-> not yet been verified against a live Amazon session: its endpoint shapes come from documentation
-> and placeholder fixtures, and recording real fixtures is still pending
-> ([issue #12](https://github.com/MattFromRVA/skylight-photo-sync/issues/12), Step 2). If `login`
-> or `run` fails against the real service, that is the likely reason; everything from
-> `test-email` onward can still be exercised with `run --source local:PATH`.
+> **Status (2026-11).** Everything on this page is implemented. The Amazon Photos client was
+> verified against a live Amazon session on 2026-11-06 (`run --dry-run` end to end; see the
+> README's status section). Amazon's cookies can stop working quickly, so if `login` or `run`
+> reports expired cookies, re-run `login`. Everything from `test-email` onward can also be
+> exercised with `run --source local:PATH`.
 
 ## 1. Prerequisites
 
@@ -165,7 +164,7 @@ Paste the cURL command you copied from the browser's Network tab (or the three v
 lines), press Return, then Ctrl-D. On success:
 
 ```
-Amazon Photos: connected as Matt, 12345 items
+Amazon Photos: connected, 12345 items
 Saved. Run 'skylight-sync run --dry-run' to verify.
 ```
 

@@ -1,0 +1,9 @@
+{
+  "_recorded": "2026-11-06T13:28:07Z by skylight-sync record-fixtures; ids, names, owners and emails redacted",
+  "_endpoint": "content",
+  "statusCode": 200,
+  "contentType": "image/jpeg",
+  "contentLength": 285484,
+  "nodeId": "node_0098",
+  "binary": "content_node_0098.jpg is a generated stand-in; the real bytes were downloaded and discarded"
+}

@@ -1,0 +1,1372 @@
+{
+  "_recorded": "2026-11-06T13:28:07Z by skylight-sync record-fixtures; ids, names, owners and emails redacted",
+  "_endpoint": "albums",
+  "_page": 1,
+  "count": 25,
+  "data": [
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0002",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0003",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0004",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2022-08-13T17:06:38.339Z",
+      "eTagResponse": "text_0004",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0005",
+          "lastModifiedTime": "2022-08-15T14:13:03.124Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0006",
+          "lastModifiedTime": "2022-08-15T14:01:07.539Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0005",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2023-01-14T19:18:50.827Z",
+      "name": "album_0002",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 24,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0006",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0007",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0008",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2022-12-13T16:32:15.942Z",
+      "eTagResponse": "text_0007",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0008",
+          "lastModifiedTime": "2022-12-14T14:11:51.504Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0009",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2022-12-14T14:11:51.513Z",
+      "name": "album_0003 ",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 5,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0010",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0011",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0012",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2021-10-12T19:25:46.032Z",
+      "eTagResponse": "text_0009",
+      "groupPermissions": [],
+      "id": "node_0013",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2021-10-12T19:26:11.945Z",
+      "name": "album_0004 ",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 3,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0014",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0015",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0016",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2021-10-15T00:31:40.998Z",
+      "eTagResponse": "text_0010",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0011",
+          "lastModifiedTime": "2021-10-15T11:12:34.906Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0012",
+          "lastModifiedTime": "2021-10-15T11:12:02.994Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0017",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2021-10-15T11:12:34.920Z",
+      "name": "album_0005",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 10,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0018",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0019",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0020",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2019-12-09T14:52:15.954Z",
+      "eTagResponse": "text_0013",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0014",
+          "lastModifiedTime": "2020-05-08T18:38:57.165Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0015",
+          "lastModifiedTime": "2020-11-02T21:40:25.273Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0016",
+          "lastModifiedTime": "2020-11-02T21:40:08.179Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0021",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2020-11-02T21:40:25.282Z",
+      "name": "album_0006",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 65,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0022",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0023",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0024",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2021-10-18T13:23:33.028Z",
+      "eTagResponse": "text_0017",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0018",
+          "lastModifiedTime": "2021-10-18T13:24:10.471Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0025",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2021-10-18T13:24:10.482Z",
+      "name": "album_0007",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0026",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0027",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0028",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0004",
+      "createdDate": "2022-11-12T15:15:49.827Z",
+      "eTagResponse": "text_0019",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0020",
+          "lastModifiedTime": "2022-11-15T01:11:55.757Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0021",
+          "lastModifiedTime": "2022-11-15T01:09:34.838Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0029",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2023-01-14T19:18:50.846Z",
+      "name": "album_0008 ",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 31,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0030",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0031",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0032",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2021-12-16T15:07:37.999Z",
+      "eTagResponse": "text_0022",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0023",
+          "lastModifiedTime": "2021-12-16T15:09:26.046Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0033",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2021-12-16T15:09:26.055Z",
+      "name": "album_0009",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0034",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0035",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0036",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2024-12-09T14:42:25.009Z",
+      "eTagResponse": "text_0024",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0025",
+          "lastModifiedTime": "2024-12-09T15:57:58.546Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0037",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2025-03-09T19:07:29.711Z",
+      "name": "album_0010",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 26,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0038",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0039",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0040",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2025-05-20T13:17:11.604Z",
+      "eTagResponse": "text_0026",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0027",
+          "lastModifiedTime": "2025-05-20T13:21:01.734Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0041",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2025-05-20T13:21:01.761Z",
+      "name": "album_0011",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 6,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0042",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0043",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0044",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0004",
+      "createdDate": "2023-07-17T22:00:24.019Z",
+      "eTagResponse": "text_0028",
+      "groupPermissions": [],
+      "id": "node_0045",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2025-01-02T22:06:59.298Z",
+      "name": "album_0012",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 13,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0046",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0047",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0048",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2024-11-08T17:57:04.404Z",
+      "eTagResponse": "text_0029",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0030",
+          "lastModifiedTime": "2024-11-08T17:57:29.295Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0031",
+          "lastModifiedTime": "2025-01-05T18:16:24.982Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0049",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2025-01-05T18:16:24.994Z",
+      "name": "album_0013",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 7,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "createdBy": "owner_0005",
+      "createdDate": "2024-12-11T17:07:30.611Z",
+      "eTagResponse": "text_0032",
+      "groupPermissions": [],
+      "id": "node_0050",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2024-12-11T17:07:57.285Z",
+      "name": "album_0014",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 2,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0051",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0052",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0053",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2024-12-27T13:03:34.515Z",
+      "eTagResponse": "text_0033",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0034",
+          "lastModifiedTime": "2024-12-27T13:26:02.630Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0054",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2024-12-27T13:26:02.651Z",
+      "name": "album_0015",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 9,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0055",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0056",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0057",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2024-01-23T20:13:57.432Z",
+      "eTagResponse": "text_0035",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0036",
+          "lastModifiedTime": "2024-01-23T20:14:23.130Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0058",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2024-01-23T20:14:23.139Z",
+      "name": "album_0016",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 8,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "createdBy": "owner_0003",
+      "createdDate": "2024-01-23T18:10:21.230Z",
+      "eTagResponse": "text_0037",
+      "groupPermissions": [],
+      "id": "node_0059",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2024-01-23T18:10:21.230Z",
+      "name": "album_0017",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 1,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0060",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0061",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0062",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2023-12-08T16:50:10.261Z",
+      "eTagResponse": "text_0038",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0039",
+          "lastModifiedTime": "2023-12-08T21:09:41.558Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0063",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2023-12-08T21:09:41.565Z",
+      "name": "album_0018",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 12,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0064",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0065",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0066",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0004",
+      "createdDate": "2023-12-04T03:48:04.322Z",
+      "eTagResponse": "text_0040",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0041",
+          "lastModifiedTime": "2023-12-08T15:14:00.368Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0042",
+          "lastModifiedTime": "2023-12-04T03:48:56.811Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0067",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2023-12-08T15:14:00.377Z",
+      "name": "album_0019",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0068",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0069",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0070",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0003",
+      "createdDate": "2023-05-08T14:22:27.293Z",
+      "eTagResponse": "text_0043",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0044",
+          "lastModifiedTime": "2023-05-08T14:27:50.942Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0071",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2023-05-08T14:27:50.955Z",
+      "name": "album_0020",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 9,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0072",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0073",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0074",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2025-09-29T19:33:02.707Z",
+      "eTagResponse": "text_0045",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0046",
+          "lastModifiedTime": "2025-09-29T19:59:01.442Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0075",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2025-09-29T19:59:01.460Z",
+      "name": "album_0021",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 19,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0076",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0077",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0078",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2025-12-01T14:19:11.475Z",
+      "eTagResponse": "text_0047",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0048",
+          "lastModifiedTime": "2025-12-01T14:28:55.967Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0079",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2025-12-01T14:28:55.996Z",
+      "name": "album_0022",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0080",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0081",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0082",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0004",
+      "createdDate": "2022-04-07T12:53:29.234Z",
+      "eTagResponse": "text_0049",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0050",
+          "lastModifiedTime": "2022-04-07T12:56:06.224Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0051",
+          "lastModifiedTime": "2026-01-04T15:06:25.447Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0083",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2026-01-04T15:06:25.471Z",
+      "name": "album_0023",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 15,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0084",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0085",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0086",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2025-11-19T12:29:52.588Z",
+      "eTagResponse": "text_0052",
+      "groupPermissions": [],
+      "id": "node_0087",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2025-11-19T12:32:57.209Z",
+      "name": "album_0024",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 6,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0088",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0089",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0090",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-04-20T18:12:00.657Z",
+      "eTagResponse": "text_0053",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0054",
+          "lastModifiedTime": "2026-06-25T16:22:59.021Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        },
+        {
+          "albumIds": [],
+          "groupId": "text_0055",
+          "lastModifiedTime": "2026-04-20T18:14:36.196Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0091",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2026-06-25T16:22:59.033Z",
+      "name": "album_0025",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 6,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "collectionProperties": {
+        "covers": [
+          {
+            "id": "node_0092",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0093",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          },
+          {
+            "id": "node_0094",
+            "isDefault": true,
+            "ownerId": "owner_0002"
+          }
+        ]
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-06-25T23:26:31.247Z",
+      "eTagResponse": "text_0056",
+      "groupPermissions": [
+        {
+          "albumIds": [],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:29:59.250Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0095",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "VISUAL_COLLECTION",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:29:59.257Z",
+      "name": "album_0026",
+      "ownerId": "owner_0002",
+      "parentMap": {},
+      "parents": [],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [],
+      "version": 29,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    }
+  ]
+}

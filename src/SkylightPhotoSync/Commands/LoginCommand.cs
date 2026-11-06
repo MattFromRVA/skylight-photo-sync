@@ -86,7 +86,9 @@ public static partial class LoginCommand
                 using var store = new StateStore(paths.StateDb);
                 store.SetNeedsLogin(false, null);
 
-                stdout.WriteLine($"Amazon Photos: connected as {name}, {count} items");
+                stdout.WriteLine(name.Length > 0
+                    ? $"Amazon Photos: connected as {name}, {count} items"
+                    : $"Amazon Photos: connected, {count} items");
                 stdout.WriteLine(SavedMessage);
                 return 0;
             }

@@ -1,0 +1,280 @@
+{
+  "_recorded": "2026-11-06T13:28:07Z by skylight-sync record-fixtures; ids, names, owners and emails redacted",
+  "_endpoint": "album_children",
+  "_page": 3,
+  "_trimmed": {
+    "keptPerPage": 3,
+    "originalDataLength": 195,
+    "originalCount": 595
+  },
+  "count": 9,
+  "data": [
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "contentProperties": {
+        "contentDate": "2026-05-21T12:35:30.009Z",
+        "contentSignatures": [
+          {
+            "contentSignature": "text_0099",
+            "contentSignatureType": "text_0059"
+          }
+        ],
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "image": {
+          "colorSpace": "text_0100",
+          "dateTime": "2026-05-21T12:35:30.000Z",
+          "dateTimeDigitized": "2026-05-21T12:35:30.000Z",
+          "dateTimeOriginal": "2026-05-21T12:35:30.000Z",
+          "exposureMode": "text_0061",
+          "exposureProgram": "text_0061",
+          "exposureTime": "1/125",
+          "flash": "text_0077",
+          "focalLength": "text_0078",
+          "height": 3449,
+          "make": "text_0064",
+          "meteringMode": "text_0065",
+          "model": "text_0066",
+          "orientation": "text_0101",
+          "resolutionUnit": "text_0067",
+          "sensingMethod": "text_0068",
+          "sharpness": "text_0069",
+          "software": "text_0102",
+          "subSecTime": "09",
+          "subSecTimeDigitized": "text_0103",
+          "subSecTimeOriginal": "text_0103",
+          "whiteBalance": "text_0104",
+          "width": 5172
+        },
+        "md5": "31ce47fafa6f4b6ece0600097059ffb5",
+        "size": 4603255,
+        "version": 1
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-06-26T18:01:22.754Z",
+      "eTagResponse": "text_0105",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:01.384Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0104",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:01.394Z",
+      "name": "file_0007.jpeg",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0097"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0095",
+        "node_0097"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "contentProperties": {
+        "contentDate": "2026-05-21T12:35:33.044Z",
+        "contentSignatures": [
+          {
+            "contentSignature": "text_0106",
+            "contentSignatureType": "text_0059"
+          }
+        ],
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "image": {
+          "colorSpace": "text_0100",
+          "dateTime": "2026-05-21T12:35:33.000Z",
+          "dateTimeDigitized": "2026-05-21T12:35:33.000Z",
+          "dateTimeOriginal": "2026-05-21T12:35:33.000Z",
+          "exposureMode": "text_0061",
+          "exposureProgram": "text_0061",
+          "exposureTime": "1/125",
+          "flash": "text_0077",
+          "focalLength": "text_0078",
+          "height": 2842,
+          "make": "text_0064",
+          "meteringMode": "text_0065",
+          "model": "text_0066",
+          "orientation": "text_0101",
+          "resolutionUnit": "text_0067",
+          "sensingMethod": "text_0068",
+          "sharpness": "text_0069",
+          "software": "text_0102",
+          "subSecTime": "44",
+          "subSecTimeDigitized": "text_0107",
+          "subSecTimeOriginal": "text_0107",
+          "whiteBalance": "text_0104",
+          "width": 4265
+        },
+        "md5": "b118a0a5c7ca66cc9eaba72e7ae0ce79",
+        "size": 3115169,
+        "version": 1
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-06-26T18:01:21.824Z",
+      "eTagResponse": "text_0108",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:01.231Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0105",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:01.241Z",
+      "name": "file_0008.jpeg",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0097"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0095",
+        "node_0097"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    },
+    {
+      "accessRuleIds": [],
+      "childAssetTypeInfo": [],
+      "contentProperties": {
+        "contentDate": "2026-05-21T12:35:39.024Z",
+        "contentSignatures": [
+          {
+            "contentSignature": "text_0109",
+            "contentSignatureType": "text_0059"
+          }
+        ],
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "image": {
+          "colorSpace": "text_0100",
+          "dateTime": "2026-05-21T12:35:39.000Z",
+          "dateTimeDigitized": "2026-05-21T12:35:39.000Z",
+          "dateTimeOriginal": "2026-05-21T12:35:39.000Z",
+          "exposureMode": "text_0061",
+          "exposureProgram": "text_0061",
+          "exposureTime": "1/125",
+          "flash": "text_0077",
+          "focalLength": "text_0078",
+          "height": 3812,
+          "make": "text_0064",
+          "meteringMode": "text_0065",
+          "model": "text_0066",
+          "orientation": "text_0101",
+          "resolutionUnit": "text_0067",
+          "sensingMethod": "text_0068",
+          "sharpness": "text_0069",
+          "software": "text_0102",
+          "subSecTime": "24",
+          "subSecTimeDigitized": "text_0078",
+          "subSecTimeOriginal": "text_0078",
+          "whiteBalance": "text_0104",
+          "width": 2542
+        },
+        "md5": "e525c18148cb04da6b0ddcd86d5adbb7",
+        "size": 2658959,
+        "version": 1
+      },
+      "createdBy": "owner_0005",
+      "createdDate": "2026-06-26T18:01:20.952Z",
+      "eTagResponse": "text_0110",
+      "groupPermissions": [
+        {
+          "albumIds": [
+            "node_0095"
+          ],
+          "groupId": "text_0057",
+          "lastModifiedTime": "2026-06-27T18:30:01.828Z",
+          "sharedByIds": [
+            "album_0001"
+          ]
+        }
+      ],
+      "id": "node_0106",
+      "isRoot": false,
+      "isShared": false,
+      "keywords": [],
+      "kind": "FILE",
+      "labels": [],
+      "modifiedDate": "2026-06-27T18:30:01.837Z",
+      "name": "file_0009.jpeg",
+      "ownerId": "owner_0002",
+      "parentMap": {
+        "FOLDER": [
+          "node_0097"
+        ],
+        "VISUAL_COLLECTION": [
+          "node_0095"
+        ]
+      },
+      "parents": [
+        "node_0097",
+        "node_0095"
+      ],
+      "protectedFolder": false,
+      "restricted": false,
+      "status": "AVAILABLE",
+      "subKinds": [],
+      "transforms": [
+        "IMAGE_THUMBNAIL"
+      ],
+      "version": 4,
+      "xAccntParentMap": {},
+      "xAccntParents": []
+    }
+  ]
+}

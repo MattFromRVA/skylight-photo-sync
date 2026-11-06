@@ -60,7 +60,7 @@ public static class RecordFixturesCommand
                 stdout.WriteLine(path);
             }
 
-            stdout.WriteLine($"Wrote {written.Count} redacted files to {outDir}. Review them, then commit (placeholder_*.json can go).");
+            stdout.WriteLine($"Wrote {written.Count} redacted files to {outDir}. Review every file for leaks before committing.");
             return 0;
         }
         catch (AuthExpiredException ex)
