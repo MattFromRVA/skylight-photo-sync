@@ -463,6 +463,11 @@ public sealed class CommandTests : IDisposable
         var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
         ConfigLoader.WriteSecrets(secretsPath, new Secrets(_sessionId, _ubid, _at, "app-password"));
         var before = File.ReadAllBytes(secretsPath);
+
+        // Held open for the whole run so state.db's WAL and shm files exist and the login's own
+        // StateStore opens in the read-only directory; only the secrets write can fail.
+        using var heldStore = OpenStore();
+        heldStore.SetNeedsLogin(true, DateTimeOffset.UtcNow);
         var homeMode = File.GetUnixFileMode(_home.Dir);
         File.SetUnixFileMode(_home.Dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         Console.SetIn(new StringReader(_landing + "\n"));
@@ -473,6 +478,9 @@ public sealed class CommandTests : IDisposable
 
             Assert.Equal(1, code);
             Assert.Contains("login failed", err);
+            Assert.Contains(".secrets.toml.", err);
+            Assert.DoesNotContain("SQLite", err);
+            Assert.True(heldStore.NeedsLogin());
             Assert.Contains("removed the device again", err);
             var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
             Assert.Equal(_access, deregister.Headers.Authorization!.Parameter);
