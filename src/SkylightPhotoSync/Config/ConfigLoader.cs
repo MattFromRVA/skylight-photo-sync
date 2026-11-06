@@ -124,11 +124,15 @@ public static class ConfigLoader
             Directory.CreateDirectory(directory);
         }
 
-        // Create the file already locked down, and tighten an existing looser file before any
-        // secret is written, so the contents are never readable by other users.
+        // Write a new file, created already locked down, next to the target and move it over the
+        // target: an existing secrets file is either fully replaced or left untouched, and the
+        // contents are never readable by other users.
+        var temp = Path.Combine(
+            string.IsNullOrEmpty(directory) ? "." : directory,
+            $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
         var options = new FileStreamOptions
         {
-            Mode = FileMode.Create,
+            Mode = FileMode.CreateNew,
             Access = FileAccess.Write,
             Share = FileShare.None,
         };
@@ -137,15 +141,20 @@ public static class ConfigLoader
             options.UnixCreateMode = _secretsMode;
         }
 
-        using (var stream = new FileStream(path, options))
-        using (var writer = new StreamWriter(stream))
+        try
         {
-            if (!OperatingSystem.IsWindows())
+            using (var stream = new FileStream(temp, options))
+            using (var writer = new StreamWriter(stream))
             {
-                File.SetUnixFileMode(path, _secretsMode);
+                writer.Write(text);
             }
 
-            writer.Write(text);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(temp);
+            throw;
         }
 
         if (!OperatingSystem.IsWindows())

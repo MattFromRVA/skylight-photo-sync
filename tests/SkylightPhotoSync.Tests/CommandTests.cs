@@ -450,6 +450,7 @@ public sealed class CommandTests : IDisposable
         Assert.Contains("removed the device again", err);
         var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
         Assert.Equal(_access, deregister.Headers.Authorization!.Parameter);
+        Assert.Contains("Nothing was changed", err);
         Assert.True(Directory.Exists(secretsPath));
         AssertNoSecretsIn(out_ + err);
         using var store2 = OpenStore();
@@ -462,7 +463,8 @@ public sealed class CommandTests : IDisposable
         var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
         ConfigLoader.WriteSecrets(secretsPath, new Secrets(_sessionId, _ubid, _at, "app-password"));
         var before = File.ReadAllBytes(secretsPath);
-        File.SetUnixFileMode(secretsPath, UnixFileMode.UserRead);
+        var homeMode = File.GetUnixFileMode(_home.Dir);
+        File.SetUnixFileMode(_home.Dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         Console.SetIn(new StringReader(_landing + "\n"));
 
         try
@@ -474,12 +476,13 @@ public sealed class CommandTests : IDisposable
             Assert.Contains("removed the device again", err);
             var deregister = Assert.Single(_amazon.RequestsTo("/auth/deregister"));
             Assert.Equal(_access, deregister.Headers.Authorization!.Parameter);
+            Assert.Contains("Nothing was changed", err);
             Assert.Equal(before, File.ReadAllBytes(secretsPath));
             AssertNoSecretsIn(out_ + err);
         }
         finally
         {
-            File.SetUnixFileMode(secretsPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.SetUnixFileMode(_home.Dir, homeMode);
         }
     }
 

@@ -287,6 +287,43 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void WriteSecrets_failure_leaves_previous_file_intact()
+    {
+        using var home = new TestHome();
+        var path = Path.Combine(home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(path, new Secrets("sid-placeholder", "ubid-placeholder", "at-placeholder", "smtp-placeholder"));
+        var before = File.ReadAllBytes(path);
+        var homeMode = File.GetUnixFileMode(home.Dir);
+        File.SetUnixFileMode(home.Dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+
+        try
+        {
+            Assert.ThrowsAny<UnauthorizedAccessException>(() =>
+                ConfigLoader.WriteSecrets(path, new Secrets(null, null, null, null, AmazonRefreshToken: "refresh-placeholder")));
+
+            Assert.Equal(before, File.ReadAllBytes(path));
+            Assert.Equal(["secrets.toml"], Directory.GetFiles(home.Dir).Select(Path.GetFileName));
+        }
+        finally
+        {
+            File.SetUnixFileMode(home.Dir, homeMode);
+        }
+    }
+
+    [Fact]
+    public void WriteSecrets_to_a_directory_path_fails_and_leaves_no_temp_file()
+    {
+        using var home = new TestHome();
+        var path = Path.Combine(home.Dir, "secrets.toml");
+        Directory.CreateDirectory(path);
+
+        Assert.ThrowsAny<IOException>(() => ConfigLoader.WriteSecrets(path, new Secrets(null, null, null, "smtp-placeholder")));
+
+        Assert.True(Directory.Exists(path));
+        Assert.Empty(Directory.GetFiles(home.Dir));
+    }
+
+    [Fact]
     public void WriteSecrets_omits_null_values()
     {
         using var home = new TestHome();

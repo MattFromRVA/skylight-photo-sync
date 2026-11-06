@@ -172,22 +172,21 @@ public static partial class LoginCommand
                 }
 
                 using var store = new StateStore(paths.StateDb);
-                written = true;
                 ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
+                written = true;
                 store.SetNeedsLogin(false, null);
                 displayName = registration.CustomerName.Length > 0 ? registration.CustomerName : name;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
-                if (written)
-                {
-                    RestoreSecretsFile(paths.SecretsFile, previousSecretsFile);
-                }
-
+                var restored = !written || RestoreSecretsFile(paths.SecretsFile, previousSecretsFile);
                 var removed = await TryDeregisterAsync(auth, registration.AccessToken, ct);
 
                 stderr.WriteLine(
-                    $"login failed: the new device login could not be completed ({ex.Message}). Nothing was changed; "
+                    $"login failed: the new device login could not be completed ({ex.Message}). "
+                    + (restored
+                        ? "Nothing was changed; "
+                        : "secrets.toml could not be put back as it was and may be damaged: check it, re-add the SMTP password if it is missing, and run login again; ")
                     + (removed
                         ? "the tool removed the device again."
                         : $"the tool could not remove the device, so remove \"{AmazonDeviceAuth.DeviceDisplayName}\" under Manage Your Content and Devices."));
@@ -232,7 +231,7 @@ public static partial class LoginCommand
     }
 
     /// <summary>Best effort: puts secrets.toml back exactly as it was before a failed login (absent when it did not exist).</summary>
-    private static void RestoreSecretsFile(string path, byte[]? previous)
+    private static bool RestoreSecretsFile(string path, byte[]? previous)
     {
         try
         {
@@ -244,9 +243,12 @@ public static partial class LoginCommand
             {
                 File.WriteAllBytes(path, previous);
             }
+
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            return false;
         }
     }
 
