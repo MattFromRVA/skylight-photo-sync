@@ -15,7 +15,6 @@ public static class RunCommand
 {
     public const int ExitOk = 0;
     public const int ExitError = 1;
-    public const int ExitAmazonUnavailable = 2;
     public const int ExitNeedsLogin = 3;
     public const int ExitLockHeld = 4;
 
@@ -42,7 +41,7 @@ public static class RunCommand
         };
         var source = new Option<string?>("--source")
         {
-            Description = "Where photos come from: local:PATH reads a folder. Default: Amazon Photos.",
+            Description = "Where photos come from: local:PATH reads a folder. Default: Amazon Photos with the saved cookies.",
         };
 
         var command = new Command("run", "Email new photos to the frame.");
@@ -160,22 +159,34 @@ public static class RunCommand
         AppPaths paths, Options options, Logger log, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         var cfg = ApplyOverrides(ConfigLoader.LoadConfig(paths.ConfigFile), options.Mode, options.LookbackDays);
+        var secrets = CommandSupport.LoadSecretsIfPresent(paths);
 
+        IPhotoSource source;
+        string sourceLabel;
         if (options.Source is null)
         {
-            stderr.WriteLine("Amazon source not yet available; use --source local:PATH.");
-            return ExitAmazonUnavailable;
-        }
+            if (!CommandSupport.HasAmazonCookies(secrets))
+            {
+                stderr.WriteLine("run failed: no Amazon cookies saved; run 'skylight-sync login' first.");
+                return ExitNeedsLogin;
+            }
 
-        if (!options.Source.StartsWith(_localSourcePrefix, StringComparison.Ordinal)
-            || options.Source.Length == _localSourcePrefix.Length)
+            source = CommandSupport.CreateAmazonSource(secrets);
+            sourceLabel = "amazon";
+        }
+        else if (options.Source.StartsWith(_localSourcePrefix, StringComparison.Ordinal)
+            && options.Source.Length > _localSourcePrefix.Length)
         {
-            stderr.WriteLine($"run failed: unknown source '{options.Source}'; use local:PATH.");
+            source = new LocalFolderSource(options.Source[_localSourcePrefix.Length..]);
+            sourceLabel = options.Source;
+        }
+        else
+        {
+            stderr.WriteLine($"run failed: unknown source '{options.Source}'; use local:PATH or omit --source for Amazon Photos.");
             return ExitError;
         }
 
-        var source = new LocalFolderSource(options.Source[_localSourcePrefix.Length..]);
-        var secrets = CommandSupport.LoadSecretsIfPresent(paths);
+        using var disposableSource = source as IDisposable;
         var runner = new ProcessRunner();
         var now = () => DateTimeOffset.UtcNow;
 
@@ -187,7 +198,7 @@ public static class RunCommand
 
         log.Information(
             "run started: mode={Mode} album={Album} lookbackDays={LookbackDays} limit={Limit} dryRun={DryRun} source={Source}",
-            cfg.Source.Mode, cfg.Source.AlbumName, cfg.Source.LookbackDays, options.Limit, options.DryRun, options.Source);
+            cfg.Source.Mode, cfg.Source.AlbumName, cfg.Source.LookbackDays, options.Limit, options.DryRun, sourceLabel);
 
         var result = await pipeline.RunAsync(options.DryRun, options.Limit, ct);
 

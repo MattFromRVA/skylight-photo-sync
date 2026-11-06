@@ -48,6 +48,7 @@ public static class App
         root.Subcommands.Add(InstallLaunchdCommand.Create());
         root.Subcommands.Add(UninstallLaunchdCommand.Create());
         root.Subcommands.Add(ResetCommand.Create());
+        root.Subcommands.Add(RecordFixturesCommand.Create());
 
         root.SetAction(parseResult =>
         {

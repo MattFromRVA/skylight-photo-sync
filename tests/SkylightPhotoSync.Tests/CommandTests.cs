@@ -1,3 +1,4 @@
+using System.Net;
 using MimeKit;
 using SkiaSharp;
 using SkylightPhotoSync.Commands;
@@ -23,9 +24,16 @@ public sealed class CommandTests : IDisposable
     private readonly TestHome _home = new();
     private readonly TempDir _root = new();
     private readonly TextReader _originalStdin = Console.In;
+    private readonly ScriptedHandler _amazon = new ScriptedHandler().WithAmazonDefaults();
+
+    public CommandTests()
+    {
+        CommandSupport.AmazonHandlerFactory = () => _amazon;
+    }
 
     public void Dispose()
     {
+        CommandSupport.AmazonHandlerFactory = null;
         Console.SetIn(_originalStdin);
         _root.Dispose();
         _home.Dispose();
@@ -61,14 +69,71 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Run_without_source_exits_2()
+    public async Task Run_without_source_uses_amazon()
+    {
+        WriteConfig();
+        WriteAmazonSecrets();
+
+        var (code, out_, _) = await Run("run", "--dry-run", "--limit", "1");
+
+        Assert.Equal(0, code);
+        Assert.Contains("found 3, sent 1, skipped 0, batches 1 (dry run)", out_);
+        Assert.Single(_amazon.RequestsTo($"/nodes/{ScriptedHandler.AlbumId}/children"), r => !ScriptedHandler.Query(r).Contains("startToken"));
+        Assert.Single(_amazon.RequestsTo("/content"));
+        Assert.Contains("source=amazon", File.ReadAllText(Path.Combine(_home.Dir, "sync.log")));
+    }
+
+    [Fact]
+    public async Task Run_without_cookies_exits_3()
     {
         WriteConfig();
 
         var (code, _, err) = await Run("run", "--dry-run");
 
-        Assert.Equal(2, code);
-        Assert.Contains("Amazon source not yet available", err);
+        Assert.Equal(3, code);
+        Assert.Contains("skylight-sync login", err);
+        Assert.Empty(_amazon.Requests);
+    }
+
+    [Fact]
+    public async Task Run_rejects_unknown_source()
+    {
+        WriteConfig();
+
+        var (code, _, err) = await Run("run", "--dry-run", "--source", "icloud");
+
+        Assert.Equal(1, code);
+        Assert.Contains("unknown source", err);
+    }
+
+    [Fact]
+    public async Task Run_exit_3_when_amazon_rejects_cookies()
+    {
+        WriteConfig();
+        WriteAmazonSecrets();
+        _amazon.On("/drive/v1/account/endpoint", _ => ScriptedHandler.Status(HttpStatusCode.Unauthorized));
+
+        var (code, _, err) = await Run("run", "--dry-run");
+
+        Assert.Equal(3, code);
+        Assert.Contains("auth_expired", err);
+        using var store = OpenStore();
+        Assert.True(store.NeedsLogin());
+    }
+
+    [Fact]
+    public async Task RecordFixtures_writes_redacted_files()
+    {
+        WriteConfig();
+        WriteAmazonSecrets();
+        using var outDir = new TempDir();
+
+        var (code, out_, _) = await Run("record-fixtures", "--out", outDir.Path);
+
+        Assert.Equal(0, code);
+        Assert.Contains(Path.Combine(outDir.Path, "album_children.json"), out_);
+        Assert.True(File.Exists(Path.Combine(outDir.Path, "album_children.json")));
+        Assert.DoesNotContain("PLACEHOLDER", File.ReadAllText(Path.Combine(outDir.Path, "album_children.json")));
     }
 
     [Fact]
@@ -134,11 +199,34 @@ public sealed class CommandTests : IDisposable
 
         Assert.Equal(0, code);
         Assert.Contains("Saved. Run 'skylight-sync run --dry-run' to verify.", out_);
+        Assert.Contains("Amazon Photos: connected as Placeholder Owner, 1234 items", out_);
         AssertSecretsSaved(expectedPassword: null);
         Assert.DoesNotContain(_sessionId, out_ + err);
         Assert.DoesNotContain(_at, out_ + err);
         using var store2 = OpenStore();
         Assert.False(store2.NeedsLogin());
+    }
+
+    [Fact]
+    public async Task Login_reports_rejected_cookies_but_keeps_them_saved()
+    {
+        using (var store = OpenStore())
+        {
+            store.SetNeedsLogin(true, DateTimeOffset.UtcNow);
+        }
+
+        _amazon.On("/drive/v1/account/endpoint", _ => ScriptedHandler.Status(HttpStatusCode.Unauthorized));
+        Console.SetIn(new StringReader($"{_sessionId}\n{_ubid}\n{_at}\n"));
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(1, code);
+        Assert.Contains("login failed", err);
+        Assert.Contains("rejected", err);
+        AssertSecretsSaved(expectedPassword: null);
+        Assert.DoesNotContain(_at, out_ + err);
+        using var store2 = OpenStore();
+        Assert.True(store2.NeedsLogin());
     }
 
     [Fact]
@@ -297,6 +385,9 @@ public sealed class CommandTests : IDisposable
         new(id, $"{id}.jpg", ItemKind.Photo, DateTimeOffset.UtcNow.AddDays(-1), 100, null, "image/jpeg");
 
     private StateStore OpenStore() => new(Path.Combine(_home.Dir, "state.db"));
+
+    private void WriteAmazonSecrets() =>
+        ConfigLoader.WriteSecrets(Path.Combine(_home.Dir, "secrets.toml"), new Secrets(_sessionId, _ubid, _at, null));
 
     private void WriteConfig(int smtpPort = 25) =>
         File.WriteAllText(

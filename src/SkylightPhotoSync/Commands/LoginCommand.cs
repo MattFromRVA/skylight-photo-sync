@@ -1,18 +1,24 @@
 using System.CommandLine;
 using System.Text.RegularExpressions;
 using SkylightPhotoSync.Config;
+using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.State;
 
 namespace SkylightPhotoSync.Commands;
 
 /// <summary>
 /// <c>login</c>: reads the Amazon session cookies from stdin, either from a pasted "Copy as cURL"
-/// command or as three lines (session-id, ubid-main, at-main), saves them to secrets.toml and clears
-/// <c>needs_login</c>. Cookie values are never printed or logged.
+/// command or as three lines (session-id, ubid-main, at-main), saves them to secrets.toml, proves them
+/// against Amazon Photos (<see cref="Sources.Amazon.AmazonPhotosSource.WhoAmIAsync"/>) and clears
+/// <c>needs_login</c>. Rejected cookies stay saved but exit 1. Cookie values are never printed or logged.
 /// </summary>
 public static partial class LoginCommand
 {
     public const string SavedMessage = "Saved. Run 'skylight-sync run --dry-run' to verify.";
+
+    public const string RejectedMessage =
+        "login failed: Amazon Photos rejected the cookies (they are saved in secrets.toml anyway). They may be expired or incomplete: "
+        + "copy a fresh 'Copy as cURL' from a signed-in Amazon Photos tab and run login again.";
 
     public const string PastePrompt =
         "Paste the 'Copy as cURL' command (or session-id, ubid-main and at-main on three lines), then press Ctrl-D.";
@@ -56,13 +62,31 @@ public static partial class LoginCommand
             {
                 var paths = AppPaths.Resolve();
                 var existing = CommandSupport.LoadSecretsIfPresent(paths);
-                ConfigLoader.WriteSecrets(
-                    paths.SecretsFile,
-                    new Secrets(cookies.SessionId, cookies.Ubid, cookies.At, existing.SmtpPassword));
+                var secrets = new Secrets(cookies.SessionId, cookies.Ubid, cookies.At, existing.SmtpPassword);
+                ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
+
+                string name;
+                long count;
+                try
+                {
+                    using var source = CommandSupport.CreateAmazonSource(secrets);
+                    (name, count) = await source.WhoAmIAsync(ct);
+                }
+                catch (AuthExpiredException)
+                {
+                    stderr.WriteLine(RejectedMessage);
+                    return 1;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or ArgumentException)
+                {
+                    stderr.WriteLine($"login failed: could not verify the cookies with Amazon Photos (they are saved in secrets.toml anyway): {ex.Message}");
+                    return 1;
+                }
 
                 using var store = new StateStore(paths.StateDb);
                 store.SetNeedsLogin(false, null);
 
+                stdout.WriteLine($"Amazon Photos: connected as {name}, {count} items");
                 stdout.WriteLine(SavedMessage);
                 return 0;
             }

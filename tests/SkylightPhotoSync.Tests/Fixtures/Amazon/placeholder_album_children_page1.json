@@ -1,0 +1,41 @@
+{
+  "_placeholder": "hand-written from documented shapes, not recorded; nodes deliberately newest-first so tests prove the client sorts",
+  "count": 3,
+  "nextToken": "PLACEHOLDERNEXTTOKEN0001",
+  "data": [
+    {
+      "id": "NODEPLACEHOLDER0002",
+      "name": "IMG_0002.HEIC",
+      "kind": "FILE",
+      "ownerId": "OWNERPLACEHOLDER0001",
+      "parents": ["ROOTNODEPLACEHOLDER0001"],
+      "createdDate": "2026-11-03T15:00:00.000Z",
+      "modifiedDate": "2026-11-03T15:00:00.000Z",
+      "contentProperties": {
+        "size": 2345678,
+        "md5": "22222222222222222222222222222222",
+        "contentType": "image/heic",
+        "extension": "heic",
+        "contentDate": "2026-11-02T18:30:00.000Z",
+        "image": { "width": 4032, "height": 3024, "make": "Placeholder", "model": "Placeholder" }
+      }
+    },
+    {
+      "id": "NODEPLACEHOLDER0001",
+      "name": "IMG_0001.JPG",
+      "kind": "FILE",
+      "ownerId": "OWNERPLACEHOLDER0001",
+      "parents": ["ROOTNODEPLACEHOLDER0001"],
+      "createdDate": "2026-11-01T12:00:00.000Z",
+      "modifiedDate": "2026-11-01T12:00:00.000Z",
+      "contentProperties": {
+        "size": 1234567,
+        "md5": "11111111111111111111111111111111",
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "contentDate": "2026-10-31T09:15:00.000Z",
+        "image": { "width": 4032, "height": 3024, "make": "Placeholder", "model": "Placeholder" }
+      }
+    }
+  ]
+}

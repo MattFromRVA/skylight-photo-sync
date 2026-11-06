@@ -302,7 +302,7 @@ public class AppTests
 ### Task 12: Amazon Photos source and fixture recorder (needs Matt's live session)
 
 **Files:**
-- Create: `Sources/Amazon/AmazonPhotosSource.cs`, `Sources/Amazon/AmazonEndpoints.cs`, `Fixtures/FixtureRecorder.cs`, `Commands/RecordFixturesCommand.cs`, `tests/.../AmazonPhotosSourceTests.cs`, `tests/.../Fixtures/Amazon/*.json`; Modify: `Commands/LoginCommand.cs`, `Commands/RunCommand.cs`, `App.cs`
+- Create: `Sources/Amazon/AmazonPhotosSource.cs`, `Sources/Amazon/AmazonEndpoints.cs`, `Recording/FixtureRecorder.cs` (namespace `Recording`, not `Fixtures`, which would shadow the tests' `Fixtures` helper), `Commands/RecordFixturesCommand.cs`, `tests/.../AmazonPhotosSourceTests.cs`, `tests/.../Fixtures/Amazon/*.json`; Modify: `Commands/LoginCommand.cs`, `Commands/RunCommand.cs`, `App.cs`
 
 **Interfaces:**
 - Produces `public sealed class AmazonPhotosSource(Secrets secrets, HttpMessageHandler? handler = null, string tld = "com", Func<TimeSpan, CancellationToken, Task>? delay = null) : IPhotoSource` plus `Task<(string Name, long Count)> WhoAmIAsync(CancellationToken ct)`.
@@ -311,7 +311,7 @@ public class AppTests
 - `FixtureRecorder.RecordAsync(AmazonPhotosSource source, string outDir, string albumName, CancellationToken ct) -> IReadOnlyList<string>`: calls account endpoint, album list, first page of the album, first page of all-mode search (lookback 7), downloads one small item; writes JSON with ids replaced by `node_0001…`, names/emails replaced, binary replaced by `tiny.jpg`.
 - CLI: `record-fixtures`; `login` now calls `WhoAmIAsync` and prints `Amazon Photos: connected as {name}, {count} items` or the auth error; `run` default source becomes Amazon.
 
-- [ ] **Step 1 (agent): Implement the client and recorder** against the documented endpoint shapes, with unit tests driven by hand-written placeholder fixtures (clearly named `placeholder_*.json`) and a scripted `HttpMessageHandler`: `Album_mode_lists_album_children_oldest_first`, `All_mode_uses_search_with_date_range`, `Http401_throws_AuthExpired`, `Http429_backs_off_and_retries`, `Pagination_follows_startToken`, `Accepts_underscore_cookie_names`.
+- [x] **Step 1 (agent): Implement the client and recorder** against the documented endpoint shapes, with unit tests driven by hand-written placeholder fixtures (clearly named `placeholder_*.json`) and a scripted `HttpMessageHandler`: `Album_mode_lists_album_children_oldest_first`, `All_mode_uses_search_with_date_range`, `Http401_throws_AuthExpired`, `Http429_backs_off_and_retries`, `Pagination_follows_startToken`, `Accepts_underscore_cookie_names`.
 - [ ] **Step 2 (Matt):** `skylight-sync login` → `skylight-sync record-fixtures` → commit the redacted fixtures, replacing the placeholders.
 - [ ] **Step 3 (agent): Fix the client against the real fixtures**; `skylight-sync run --dry-run` on Matt's Mac lists expected photos; `skylight-sync run --limit 1` lands one photo on the Calendar.
 - [ ] **Step 4: Commit** `feat: Amazon Photos source with recorded fixtures`.

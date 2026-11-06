@@ -1,0 +1,8 @@
+{
+  "_placeholder": "hand-written from documented shapes, not recorded",
+  "lastCalculated": "2026-11-05T00:00:00.000Z",
+  "other": { "total": { "bytes": 1000, "count": 2 }, "billable": { "bytes": 1000, "count": 2 } },
+  "doc": { "total": { "bytes": 0, "count": 0 }, "billable": { "bytes": 0, "count": 0 } },
+  "photo": { "total": { "bytes": 5000000000, "count": 1200 }, "billable": { "bytes": 0, "count": 0 } },
+  "video": { "total": { "bytes": 2000000000, "count": 34 }, "billable": { "bytes": 2000000000, "count": 34 } }
+}

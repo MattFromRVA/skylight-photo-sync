@@ -1,0 +1,7 @@
+{
+  "_placeholder": "hand-written from documented shapes, not recorded",
+  "customerExists": true,
+  "metadataUrl": "https://metadata.example.test/drive/v1/",
+  "contentUrl": "https://content.example.test/cdproxy/",
+  "region": "us-east-1"
+}
