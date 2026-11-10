@@ -166,6 +166,20 @@ Google Workspace accounts may have SMTP or app passwords disabled by the adminis
 SMTP provider that supports STARTTLS on port 587 works; set `[smtp] host`, `port` and `username`
 accordingly. The tool requires STARTTLS for every host except `localhost`/loopback.
 
+## Gmail: "An incomplete certificate revocation check occurred"
+
+Versions before 2026-11-10 failed every connection to `smtp.gmail.com` from a Mac with
+`SslHandshakeException ... An incomplete certificate revocation check occurred`. Google's mail
+certificates publish a certificate revocation list (CRL) and no OCSP responder, and .NET on macOS
+does not download CRLs, so MailKit's default revocation check could never finish.
+
+The tool now skips only the revocation lookup when it connects (`CheckCertificateRevocation = false`
+on the MailKit client). The certificate chain is still validated against the system roots, so a
+forged, expired or wrong-host certificate is still rejected; what is lost is detection of a Google
+certificate revoked before its expiry date. If you still see this error, the installed build
+predates the fix: `git pull` and reinstall with the from-clone upgrade steps in
+[setup.md](setup.md#2-install). `dotnet tool update` does not pick up the fix (see setup.md for why).
+
 ## Other SMTP failures
 
 - `send_failed: Sending via host:port failed: ...` with a connection or timeout error: the host

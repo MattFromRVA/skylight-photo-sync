@@ -222,7 +222,7 @@ public class AppTests
 - Produces:
   - `public static class MessageBuilder { MimeMessage Build(Batch batch, string to, string from, SourceMode mode, string? albumName, DateTimeOffset now); }` — subject `Skylight Photo Sync — {n} photos ({yyyy-MM-dd})`; plain body `Source: all` or `Source: album "{albumName}"`; one attachment per file with MIME type from extension.
   - `public interface IMailer { Task SendAsync(MimeMessage message, CancellationToken ct); }`
-  - `public sealed class SmtpMailer(SmtpConfig cfg, string password, bool useStartTls = true) : IMailer` using MailKit `SmtpClient`; any `SmtpCommandException`/`SmtpProtocolException`/socket error → `SendFailedException`.
+  - `public sealed class SmtpMailer(SmtpConfig cfg, string password, bool useStartTls = true) : IMailer` using MailKit `SmtpClient`; any `SmtpCommandException`/`SmtpProtocolException`/`SslHandshakeException`/`AuthenticationException`/socket/IO error → `SendFailedException`.
   - `SmtpStub : IAsyncDisposable` wraps the `SmtpServer` package on `127.0.0.1` with an ephemeral port, no auth, no TLS, exposes `Received: List<MimeMessage>` and `Port`.
 
 - [x] **Step 1: Write failing tests**: `Subject_and_body`, `Attachments_present_with_mime`, `Send_delivers_to_stub`, `Send_failure_throws_SendFailed` (connect to a closed port).
