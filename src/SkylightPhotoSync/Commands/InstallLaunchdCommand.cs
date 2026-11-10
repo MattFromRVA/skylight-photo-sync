@@ -23,9 +23,14 @@ public static class InstallLaunchdCommand
                 var cfg = ConfigLoader.LoadConfig(AppPaths.Resolve().ConfigFile);
                 var programPath = Environment.ProcessPath
                     ?? throw new LaunchdException("Could not determine the path of the running program.");
+                var environment = LaunchdInstaller.ForwardedEnvironment(Environment.GetEnvironmentVariable);
                 var installer = new LaunchdInstaller(new ProcessRunner(), LaunchdInstaller.DefaultPlistDir);
-                var plist = await installer.InstallAsync(cfg, programPath, ct);
+                var plist = await installer.InstallAsync(cfg, programPath, ct, environment);
                 stdout.WriteLine(plist);
+                foreach (var (name, value) in environment)
+                {
+                    stdout.WriteLine($"forwarding {name}={value} to the agent");
+                }
                 return 0;
             }
             catch (Exception ex) when (ex is ConfigException or LaunchdException or IOException or UnauthorizedAccessException)

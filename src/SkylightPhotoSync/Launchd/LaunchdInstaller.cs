@@ -16,6 +16,8 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
 
     private const string _launchctl = "launchctl";
 
+    private static readonly string[] _forwardedVariables = ["DOTNET_ROOT"];
+
     /// <summary><c>~/Library/LaunchAgents</c>, where per-user agents live.</summary>
     public static string DefaultPlistDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "LaunchAgents");
@@ -23,14 +25,39 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
     public string PlistPath => Path.Combine(plistDir, Label + ".plist");
 
     /// <summary>
+    /// The environment variables <c>install-launchd</c> forwards into the agent. launchd starts
+    /// agents with a minimal environment, so a Mac that relies on <c>DOTNET_ROOT</c> to find the
+    /// .NET runtime (two installs side by side, Homebrew plus the Microsoft installer) would see
+    /// every scheduled run fail with "You must install or update .NET" unless the value the user
+    /// installed with is carried along. Only non-blank values are forwarded.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ForwardedEnvironment(Func<string, string?> getenv)
+    {
+        ArgumentNullException.ThrowIfNull(getenv);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in _forwardedVariables)
+        {
+            if (getenv(name) is { } value && !string.IsNullOrWhiteSpace(value))
+            {
+                result[name] = value;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Renders the LaunchAgent plist: runs <paramref name="programPath"/> with the <c>run</c> argument
     /// every <paramref name="intervalMinutes"/> minutes and once at login, appending stdout and stderr
-    /// to <paramref name="logFile"/>.
+    /// to <paramref name="logFile"/>. A non-empty <paramref name="environment"/> becomes the agent's
+    /// <c>EnvironmentVariables</c> dictionary.
     /// </summary>
-    public static string RenderPlist(string programPath, int intervalMinutes, string logFile)
+    public static string RenderPlist(
+        string programPath, int intervalMinutes, string logFile, IReadOnlyDictionary<string, string>? environment = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(intervalMinutes);
         var startInterval = checked(intervalMinutes * 60);
+        var environmentBlock = RenderEnvironment(environment);
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -50,11 +77,30 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
                 <key>StandardOutPath</key>
                 <string>{Escape(logFile)}</string>
                 <key>StandardErrorPath</key>
-                <string>{Escape(logFile)}</string>
+                <string>{Escape(logFile)}</string>{environmentBlock}
             </dict>
             </plist>
 
             """;
+    }
+
+    private static string RenderEnvironment(IReadOnlyDictionary<string, string>? environment)
+    {
+        if (environment is null || environment.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("\n    <key>EnvironmentVariables</key>\n    <dict>");
+        foreach (var (name, value) in environment.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            sb.Append("\n        <key>").Append(Escape(name)).Append("</key>")
+              .Append("\n        <string>").Append(Escape(value)).Append("</string>");
+        }
+
+        sb.Append("\n    </dict>");
+        return sb.ToString();
     }
 
     /// <summary>
@@ -63,7 +109,8 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
     /// interval takes effect. An out-of-range interval is rejected before anything is touched, and
     /// when loading fails the plist is deleted so nothing is left behind. Returns the plist path.
     /// </summary>
-    public async Task<string> InstallAsync(AppConfig cfg, string programPath, CancellationToken ct)
+    public async Task<string> InstallAsync(
+        AppConfig cfg, string programPath, CancellationToken ct, IReadOnlyDictionary<string, string>? environment = null)
     {
         var minutes = cfg.Schedule.IntervalMinutes;
         if (minutes <= 0 || minutes > int.MaxValue / 60)
@@ -74,7 +121,7 @@ public sealed partial class LaunchdInstaller(IProcessRunner runner, string plist
 
         var path = PlistPath;
         var logFile = AppPaths.Resolve().LogFile;
-        var plist = RenderPlist(programPath, minutes, logFile);
+        var plist = RenderPlist(programPath, minutes, logFile, environment);
         Directory.CreateDirectory(plistDir);
         Directory.CreateDirectory(Path.GetDirectoryName(logFile)!);
 

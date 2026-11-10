@@ -252,6 +252,14 @@ the config, or the secrets.
 To resend a smaller set, lower `lookback_days` first, or use `run --limit N` after the reset so
 the backlog goes out a few photos per run.
 
+## launchd runs fail with "You must install or update .NET"
+
+launchd starts agents with a minimal environment. If `skylight-sync` only works in your terminal
+with `DOTNET_ROOT` set (typical when Homebrew's .NET 10 and an older Microsoft installer both
+exist), run `install-launchd` from a shell where `DOTNET_ROOT` is exported: the installer copies it
+into the agent's `EnvironmentVariables` and prints `forwarding DOTNET_ROOT=... to the agent`. The
+log file shows the .NET error if it was missing; fix the variable and run `install-launchd` again.
+
 ## launchd says "not installed" or "next run unknown"
 
 - `launchd: not installed`: run `skylight-sync install-launchd`. It prints the plist path on

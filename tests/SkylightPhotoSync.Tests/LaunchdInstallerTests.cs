@@ -36,6 +36,54 @@ public class LaunchdInstallerTests
     }
 
     [Fact]
+    public void RenderPlist_includes_environment_variables_when_given()
+    {
+        var env = new Dictionary<string, string> { ["DOTNET_ROOT"] = "/opt/homebrew/opt/dotnet/libexec" };
+
+        var plist = LaunchdInstaller.RenderPlist(_program, 60, "/logs/sync.log", env);
+
+        var dict = ParsePlistDict(plist);
+        var variables = ParseDict(dict["EnvironmentVariables"]);
+        Assert.Equal("/opt/homebrew/opt/dotnet/libexec", variables["DOTNET_ROOT"].Value);
+    }
+
+    [Fact]
+    public void RenderPlist_omits_environment_block_when_none()
+    {
+        var plist = LaunchdInstaller.RenderPlist(_program, 60, "/logs/sync.log");
+
+        Assert.DoesNotContain("EnvironmentVariables", plist);
+        Assert.False(ParsePlistDict(plist).ContainsKey("EnvironmentVariables"));
+    }
+
+    [Fact]
+    public void ForwardedEnvironment_includes_dotnet_root_only_when_set()
+    {
+        var set = LaunchdInstaller.ForwardedEnvironment(name => name == "DOTNET_ROOT" ? "/opt/homebrew/opt/dotnet/libexec" : null);
+        var unset = LaunchdInstaller.ForwardedEnvironment(_ => null);
+        var blank = LaunchdInstaller.ForwardedEnvironment(name => name == "DOTNET_ROOT" ? "  " : "ignored");
+
+        Assert.Equal(new Dictionary<string, string> { ["DOTNET_ROOT"] = "/opt/homebrew/opt/dotnet/libexec" }, set);
+        Assert.Empty(unset);
+        Assert.Empty(blank);
+    }
+
+    [Fact]
+    public async Task Install_writes_forwarded_environment_into_plist()
+    {
+        using var dir = new TempDir();
+        using var home = new TestHome();
+        var runner = new FakeProcessRunner().Enqueue(0);
+        var installer = new LaunchdInstaller(runner, Path.Combine(dir.Path, "LaunchAgents"), _uid);
+        var env = new Dictionary<string, string> { ["DOTNET_ROOT"] = "/opt/homebrew/opt/dotnet/libexec" };
+
+        var path = await installer.InstallAsync(Config(60), _program, CancellationToken.None, env);
+
+        var dict = ParsePlistDict(await File.ReadAllTextAsync(path));
+        Assert.Equal("/opt/homebrew/opt/dotnet/libexec", ParseDict(dict["EnvironmentVariables"])["DOTNET_ROOT"].Value);
+    }
+
+    [Fact]
     public async Task Install_writes_plist_and_calls_launchctl()
     {
         using var dir = new TempDir();
@@ -294,7 +342,12 @@ public class LaunchdInstallerTests
     {
         var doc = XDocument.Parse(plist);
         Assert.Equal("plist", doc.Root!.Name.LocalName);
-        var dict = doc.Root.Element("dict")!;
+        return ParseDict(doc.Root.Element("dict")!);
+    }
+
+    private static Dictionary<string, XElement> ParseDict(XElement dict)
+    {
+        Assert.Equal("dict", dict.Name.LocalName);
         var result = new Dictionary<string, XElement>();
         var elements = dict.Elements().ToList();
         for (var i = 0; i + 1 < elements.Count; i += 2)
