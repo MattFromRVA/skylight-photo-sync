@@ -57,12 +57,14 @@ public static partial class FixtureRecorder
     /// list, every page of the album, an all-mode search over the last seven days and downloads the
     /// smallest kept photo, then writes one redacted JSON file per response (every page of the item
     /// listings, trimmed to <see cref="NodesKeptPerPage"/> nodes) plus the stand-in JPEG into
-    /// <paramref name="outDir"/>. Returns the written paths.
+    /// <paramref name="outDir"/>. Returns the written paths. <paramref name="now"/> fixes the clock
+    /// used for the recent-search window and the <c>_recordedAt</c> stamp (tests); the CLI leaves it unset.
     /// </summary>
     public static async Task<IReadOnlyList<string>> RecordAsync(
-        AmazonPhotosSource source, string outDir, string albumName, CancellationToken ct)
+        AmazonPhotosSource source, string outDir, string albumName, CancellationToken ct, DateTimeOffset? now = null)
     {
         ArgumentNullException.ThrowIfNull(source);
+        var clock = now ?? DateTimeOffset.UtcNow;
         ArgumentException.ThrowIfNullOrWhiteSpace(outDir);
         ArgumentException.ThrowIfNullOrWhiteSpace(albumName);
         Directory.CreateDirectory(outDir);
@@ -85,7 +87,7 @@ public static partial class FixtureRecorder
             var (accountName, _) = await source.WhoAmIAsync(ct);
             var albumItems = await source.ListCandidatesAsync(new Window(null), SourceMode.Album, albumName, ct);
             var recent = await source.ListCandidatesAsync(
-                Window.FromLookback(_recentLookbackDays, DateTimeOffset.UtcNow), SourceMode.All, null, ct);
+                Window.FromLookback(_recentLookbackDays, clock), SourceMode.All, null, ct);
 
             var pages = new Dictionary<string, List<Page>>(StringComparer.Ordinal);
             var keptIds = new HashSet<string>(StringComparer.Ordinal);
@@ -119,7 +121,7 @@ public static partial class FixtureRecorder
             }
 
             var redactor = new Redactor([albumName, accountName]);
-            var recordedAt = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+            var recordedAt = clock.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
             var written = new List<string>();
             foreach (var kind in _kindsInOrder)
             {

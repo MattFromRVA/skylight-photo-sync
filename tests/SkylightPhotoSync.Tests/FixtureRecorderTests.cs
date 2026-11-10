@@ -11,6 +11,10 @@ public sealed class FixtureRecorderTests
 {
     private static readonly Secrets _secrets = new("133-0000000-0000000", "130-0000000-1111111", "Atza|TESTVALUEONLYxxxx", null);
 
+    // The raw fixtures below are dated 2026-10-31 .. 2026-11-04; the recorder's 7-day "recent" search
+    // window is taken from this clock so the test does not drift out of range as real time passes.
+    private static readonly DateTimeOffset _now = new(2026, 11, 5, 12, 0, 0, TimeSpan.Zero);
+
     /// <summary>
     /// An unredacted account with recognisable fake values (names, an owner, a cover id), so the
     /// tests can prove they do not survive recording. Two album pages, a three-node search.
@@ -66,7 +70,7 @@ public sealed class FixtureRecorderTests
         var handler = RawAmazonHandler();
         var source = new AmazonPhotosSource(_secrets, handler, "com", (_, _) => Task.CompletedTask);
 
-        var written = await FixtureRecorder.RecordAsync(source, outDir.Path, "Skylight", CancellationToken.None);
+        var written = await FixtureRecorder.RecordAsync(source, outDir.Path, "Skylight", CancellationToken.None, _now);
 
         Assert.All(written, path => Assert.True(File.Exists(path), path));
         var names = written.Select(Path.GetFileName).ToList();
@@ -185,7 +189,7 @@ public sealed class FixtureRecorderTests
         var handler = RawAmazonHandler();
         var source = new AmazonPhotosSource(_secrets, handler, "com", (_, _) => Task.CompletedTask);
 
-        var written = await FixtureRecorder.RecordAsync(source, outDir.Path, "Skylight", CancellationToken.None);
+        var written = await FixtureRecorder.RecordAsync(source, outDir.Path, "Skylight", CancellationToken.None, _now);
 
         var names = written.Select(Path.GetFileName).ToList();
         Assert.Contains("album_children.json", names);
@@ -222,7 +226,7 @@ public sealed class FixtureRecorderTests
             .On("/drive/v1/search", _ => ScriptedHandler.JsonBody("""{"count":0,"data":[]}"""));
         var source = new AmazonPhotosSource(_secrets, handler, "com", (_, _) => Task.CompletedTask);
 
-        var written = await FixtureRecorder.RecordAsync(source, outDir.Path, ScriptedHandler.AlbumName, CancellationToken.None);
+        var written = await FixtureRecorder.RecordAsync(source, outDir.Path, ScriptedHandler.AlbumName, CancellationToken.None, _now);
 
         using var page = JsonDocument.Parse(File.ReadAllText(Path.Combine(outDir.Path, "album_children.json")));
         var data = page.RootElement.GetProperty("data");
