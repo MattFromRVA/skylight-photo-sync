@@ -176,8 +176,18 @@ does not download CRLs, so MailKit's default revocation check could never finish
 The tool now skips only the revocation lookup when it connects (`CheckCertificateRevocation = false`
 on the MailKit client). The certificate chain is still validated against the system roots, so a
 forged, expired or wrong-host certificate is still rejected; what is lost is detection of a Google
-certificate revoked before its expiry date. If you see this error on a current build, update the
-tool (`dotnet tool update --global SkylightPhotoSync --add-source ./artifacts` after packing).
+certificate revoked before its expiry date. If you still see this error, the installed build
+predates the fix; reinstall it from an updated clone. `dotnet tool update` does not pick up the fix, because the package
+version stays `0.1.0` and NuGet reuses the cached package; follow the upgrade steps in
+[setup.md](setup.md#2-install) instead:
+
+```bash
+git pull
+dotnet tool uninstall --global SkylightPhotoSync
+rm -rf ~/.nuget/packages/skylightphotosync
+dotnet pack src/SkylightPhotoSync -c Release -o ./artifacts
+dotnet tool install --global SkylightPhotoSync --add-source ./artifacts
+```
 
 ## Other SMTP failures
 
