@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -29,6 +30,12 @@ public static partial class FixtureRecorder
     /// <summary>Nodes kept per recorded item page; the rest are dropped before redaction.</summary>
     public const int NodesKeptPerPage = 3;
 
+    /// <summary>The file <see cref="RecordExchangeAsync"/> writes.</summary>
+    public const string ExchangeFixtureName = "exchange_cookies.json";
+
+    /// <summary>Cookie fields kept as they are by <see cref="RedactExchange"/>; <c>Value</c> is replaced.</summary>
+    private static readonly HashSet<string> _cookieKeptKeys = new(StringComparer.Ordinal) { "Name", "Path", "Secure", "HttpOnly", "Expires" };
+
     private const int _recentLookbackDays = 7;
 
     private static readonly string[] _kindsInOrder =
@@ -41,7 +48,8 @@ public static partial class FixtureRecorder
         AmazonEndpoints.KindSearch,
     ];
 
-    private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true };
+    /// <summary>Indented, with quotes written as <c>\"</c> rather than <c>\u0022</c> so a reviewer can read the file.</summary>
+    private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private static readonly string[] _trimmedKinds = [AmazonEndpoints.KindAlbumChildren, AmazonEndpoints.KindSearch];
 
@@ -174,6 +182,135 @@ public static partial class FixtureRecorder
     }
 
     /// <summary>
+    /// Calls <see cref="AmazonDeviceAuth.ExchangeCookiesAsync"/> once with the saved refresh token
+    /// (issue #30) and writes its raw body, redacted by <see cref="RedactExchange"/>, as
+    /// <see cref="ExchangeFixtureName"/> in <paramref name="outDir"/>. Nothing is written when the
+    /// exchange fails. Returns the written path.
+    /// </summary>
+    public static async Task<string> RecordExchangeAsync(AmazonDeviceAuth auth, string refreshToken, string outDir, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(auth);
+        ArgumentException.ThrowIfNullOrWhiteSpace(refreshToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outDir);
+
+        string? body = null;
+        var previous = auth.ResponseObserver;
+        auth.ResponseObserver = response =>
+        {
+            if (response.Kind == AmazonDeviceAuth.KindExchangeCookies)
+            {
+                body = response.Body;
+            }
+
+            previous?.Invoke(response);
+        };
+
+        try
+        {
+            await auth.ExchangeCookiesAsync(refreshToken, ct);
+        }
+        finally
+        {
+            auth.ResponseObserver = previous;
+        }
+
+        if (body is null)
+        {
+            throw new InvalidOperationException("The cookie exchange answered without a body to record.");
+        }
+
+        Directory.CreateDirectory(outDir);
+        var redacted = RedactExchange(body);
+        Stamp(redacted, AmazonDeviceAuth.KindExchangeCookies, DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+            "by skylight-sync record-fixtures --auth; every cookie value and id replaced by a placeholder of the same shape");
+        return await WriteAsync(Path.Combine(outDir, ExchangeFixtureName), redacted, ct);
+    }
+
+    /// <summary>
+    /// Redacts a <c>/ap/exchangetoken/cookies</c> body. Inside <c>cookies</c> every cookie keeps its
+    /// <c>Name</c>, <c>Path</c>, <c>Secure</c>, <c>HttpOnly</c> and <c>Expires</c> and gets a
+    /// <c>Value</c> of the same shape: a session or ubid id stays three digit groups
+    /// (<c>000-0000000-0000001</c>), a <c>Atza|…</c> token keeps its prefix (<c>Atza|redacted_0001</c>),
+    /// a quoted value stays quoted. Every other string anywhere in the body (request id, customer
+    /// id, anything new) becomes <c>redacted_0001…</c>; the domain keys under <c>cookies</c> stay.
+    /// </summary>
+    internal static JsonObject RedactExchange(string body)
+    {
+        var root = Parse(body);
+        var counter = 0;
+        var cookies = root["response"]?["tokens"]?["cookies"] as JsonObject;
+        WalkExchange(root, cookies, ref counter);
+        return root;
+    }
+
+    private static void WalkExchange(JsonNode? node, JsonObject? cookies, ref int counter)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                var isCookie = ReferenceEquals(obj.Parent?.Parent, cookies) && obj.Parent is JsonArray;
+                foreach (var property in obj.Select(p => p.Key).ToList())
+                {
+                    var child = obj[property];
+                    if (child is JsonValue value && value.TryGetValue<string>(out var text))
+                    {
+                        if (isCookie && _cookieKeptKeys.Contains(property))
+                        {
+                            continue;
+                        }
+
+                        obj[property] = isCookie && property == "Value"
+                            ? CookiePlaceholder(text, ++counter)
+                            : string.Format(CultureInfo.InvariantCulture, "redacted_{0:D4}", ++counter);
+                    }
+                    else
+                    {
+                        WalkExchange(child, cookies, ref counter);
+                    }
+                }
+
+                break;
+            case JsonArray array:
+                for (var i = 0; i < array.Count; i++)
+                {
+                    if (array[i] is JsonValue item && item.TryGetValue<string>(out _))
+                    {
+                        array[i] = string.Format(CultureInfo.InvariantCulture, "redacted_{0:D4}", ++counter);
+                    }
+                    else
+                    {
+                        WalkExchange(array[i], cookies, ref counter);
+                    }
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>A placeholder with the shape of <paramref name="value"/>; see <see cref="RedactExchange"/>.</summary>
+    private static string CookiePlaceholder(string value, int number)
+    {
+        var quoted = value.Length >= 2 && value[0] == '"' && value[^1] == '"';
+        var core = quoted ? value[1..^1] : value;
+        string placeholder;
+        if (SessionIdPattern().IsMatch(core))
+        {
+            placeholder = string.Format(CultureInfo.InvariantCulture, "000-0000000-{0:D7}", number);
+        }
+        else
+        {
+            var bar = core.IndexOf('|');
+            var prefix = bar > 0 && bar <= 8 && core[..bar].All(char.IsAsciiLetterOrDigit) ? core[..(bar + 1)] : "";
+            placeholder = string.Format(CultureInfo.InvariantCulture, "{0}redacted_{1:D4}", prefix, number);
+        }
+
+        return quoted ? "\"" + placeholder + "\"" : placeholder;
+    }
+
+    [GeneratedRegex(@"^\d{3}-\d{7}-\d{7}$")]
+    private static partial Regex SessionIdPattern();
+
+    /// <summary>
     /// Keeps the first <see cref="NodesKeptPerPage"/> elements of <c>data</c> on an item page and
     /// remembers their ids. Other kinds (albums, root node, usage) are kept whole.
     /// </summary>
@@ -273,12 +410,12 @@ public static partial class FixtureRecorder
         return root;
     }
 
-    private static void Stamp(JsonObject node, string kind, string recordedAt)
+    private static void Stamp(JsonObject node, string kind, string recordedAt, string how = "by skylight-sync record-fixtures; ids, names, owners and emails redacted")
     {
         node.Remove("_recorded");
         node.Remove("_endpoint");
         node.Insert(0, "_endpoint", kind);
-        node.Insert(0, "_recorded", $"{recordedAt} by skylight-sync record-fixtures; ids, names, owners and emails redacted");
+        node.Insert(0, "_recorded", $"{recordedAt} {how}");
     }
 
     /// <summary>

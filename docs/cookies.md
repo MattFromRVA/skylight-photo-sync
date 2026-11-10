@@ -19,10 +19,10 @@ logged-in Amazon session and nothing else. There are two ways to give the tool o
 > `~/.config/skylight-photo-sync/secrets.toml` with mode `0600` (readable only by you) and never
 > prints or logs them. Do not paste them into chats, issues or screenshots.
 
-> **Status (2026-11).** The device login is implemented against the documented Audible/Alexa
-> flow and is awaiting its first verification against a live Amazon account. If `login` fails at
-> the sign-in page or at registration, fall back to `login --cookies` and open an issue with the
-> error line (never with any token).
+> **Status (2026-11-10).** The device login was verified against a live Amazon account:
+> sign-in, registration, the per-run cookie exchange and a dry run all worked as described here.
+> If `login` fails at the sign-in page or at registration, fall back to `login --cookies` and open
+> an issue with the error line (never with any token).
 
 ## Why there is no simple "enter your password"
 
@@ -50,7 +50,7 @@ Sign in to Amazon once in your browser; the tool then registers itself as a devi
 
 https://www.amazon.com/ap/signin?openid.oa2.response_type=code&openid.oa2.code_challenge_method=S256&...
 
-2. Sign in with your Amazon account, including the two-factor prompt (...).
+2. Sign in with your Amazon account, including the two-factor prompt (an authenticator app or the Amazon app is the most reliable; email/SMS codes can be flaky here).
 3. You will land on a "page not found" at amazon.com/ap/maplanding. That is expected.
 4. Copy the whole address from the address bar of that page and paste it here, then press Return.
 5. Afterwards, clear this terminal window's scrollback (Terminal: Cmd-K); the address contains a single-use sign-in code.
@@ -62,8 +62,8 @@ Paste the address of the /ap/maplanding page:
    new address; do not reuse an old one.
 2. Sign in. Complete the two-factor prompt. **Use the Amazon app approval or an authenticator
    app if you can**; codes sent by email or SMS are reported to be flaky on this sign-in page.
-   Solve a CAPTCHA if one appears. Amazon may show a consent page for the "Audible for iPhone"
-   style device registration; accept it.
+   Solve a CAPTCHA if one appears. No separate consent page appeared in the live pass; if
+   Amazon shows one for the device registration, accept it.
 3. The browser lands on a blank or "page not found" page whose address starts with
    `https://www.amazon.com/ap/maplanding?` and contains `openid.oa2.authorization_code=`. That
    page is the result, not an error.
@@ -76,7 +76,7 @@ Paste the address of the /ap/maplanding page:
 On success:
 
 ```
-Amazon Photos: connected as Matt Chaulklin, 52015 items
+Amazon Photos: connected as <your name>, 52067 items
 Device registered as "Skylight Photo Sync"; remove it under Manage Your Content and Devices to revoke.
 Saved. Run 'skylight-sync run --dry-run' to verify.
 Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you pasted contains a single-use sign-in code.
@@ -84,8 +84,8 @@ Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you p
 
 What `login` did:
 
-1. Registered this tool on your account as a device (it appears as "Matt's Skylight Photo Sync"
-   under Amazon > Account > Manage Your Content and Devices > Devices).
+1. Registered this tool on your account as a device (it appears as "<your first name>'s
+   Skylight Photo Sync" under Amazon > Account > Manage Your Content and Devices > Devices).
 2. Traded the device's refresh token for session cookies and called Amazon Photos once to make
    sure they work.
 3. Only then wrote `[amazon] refresh_token` and `device_serial` to `secrets.toml` (mode `0600`),
@@ -111,8 +111,8 @@ can also remove the device on Amazon's site at any time; the next run then fails
 
 The refresh token stays valid until the device is removed from the account (by you, or by
 Amazon). Projects using the same flow report tokens that keep working for years. The cookies it
-mints are good for days, but the tool does not rely on that: it mints a fresh set at the start of
-every run, and once more if Amazon answers 401 during a run.
+mints come with a thirty-day `ttl`, but the tool does not rely on that: it mints a fresh set at
+the start of every run, and once more if Amazon answers 401 during a run.
 
 ## Pasted cookies (fallback)
 

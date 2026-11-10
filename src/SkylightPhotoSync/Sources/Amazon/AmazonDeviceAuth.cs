@@ -48,7 +48,8 @@ public sealed class DeviceAuthException : Exception
 /// device is removed from the account; <see cref="ExchangeCookiesAsync"/> mints fresh website
 /// cookies from it before every run. Registration happens exactly once: re-registering is what
 /// broke alexa-cookie (issue #190). No password, TOTP secret or token is ever printed or logged.
-/// Shapes are documented, not yet verified live; see <c>docs/research-notes.md</c>.
+/// Verified live on 2026-11-10 (sign-in, register, exchange, Drive v1 with the minted cookies);
+/// see <c>docs/research-notes.md</c>.
 /// </summary>
 public sealed class AmazonDeviceAuth : IDisposable
 {
@@ -72,13 +73,19 @@ public sealed class AmazonDeviceAuth : IDisposable
 
     public const string AuthorizationCodeParameter = "openid.oa2.authorization_code";
 
+    /// <summary>Response kinds reported to <see cref="ResponseObserver"/>.</summary>
+    public const string KindRegister = "auth_register";
+    public const string KindExchangeCookies = "exchange_cookies";
+    public const string KindToken = "auth_token";
+    public const string KindDeregister = "auth_deregister";
+
     private const string _openIdIdentifierSelect = "http://specs.openid.net/auth/2.0/identifier_select";
 
     /// <summary>
     /// Audible's country suffix for <c>openid.assoc_handle</c> and the retail marketplace id per
     /// storefront (the tlds immich-amazon-sync supports). The marketplace ids are Amazon's retail
-    /// ones (US <c>ATVPDKIKX0DER</c>); the Audible app sends its own (US <c>AF2M0KC94RCEA</c>), so
-    /// the live pass should try the Audible value if sign-in refuses.
+    /// ones (US <c>ATVPDKIKX0DER</c>, accepted by the live sign-in on 2026-11-10); the Audible app
+    /// sends its own (US <c>AF2M0KC94RCEA</c>), the value to try if another storefront refuses.
     /// </summary>
     private static readonly Dictionary<string, (string Country, string MarketplaceId)> _storefronts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -112,6 +119,13 @@ public sealed class AmazonDeviceAuth : IDisposable
 
     public string Tld => _tld;
 
+    /// <summary>
+    /// Sees every successful JSON response (its kind is one of the <c>Kind*</c> constants), so the
+    /// fixture recorder can capture the raw body before redacting it. Bodies carry live tokens
+    /// and cookies: only <c>record-fixtures</c> sets this, and it never writes them unredacted.
+    /// </summary>
+    public Action<AmazonResponse>? ResponseObserver { get; set; }
+
     /// <summary>A PKCE verifier: base64url of 32 random bytes, no padding.</summary>
     public static string NewCodeVerifier() => Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
 
@@ -135,7 +149,7 @@ public sealed class AmazonDeviceAuth : IDisposable
     /// <summary>
     /// The <c>https://www.amazon.{tld}/ap/signin</c> URL the user opens in a browser. It asks for
     /// an authorization code bound to the PKCE challenge and to a device client id, with the
-    /// Audible iOS association handle and page id so Amazon shows the device-registration consent.
+    /// Audible iOS association handle and page id (accepted live without a separate consent page).
     /// </summary>
     public static Uri BuildSignInUrl(string tld, string codeVerifier, string serial)
     {
@@ -258,7 +272,7 @@ public sealed class AmazonDeviceAuth : IDisposable
         {
             Content = JsonContent.Create(body),
         };
-        using var document = await SendJsonAsync(request, "register the device", ct);
+        using var document = await SendJsonAsync(request, KindRegister, "register the device", ct);
         var root = document.RootElement;
 
         if (!TryGet(root, out var success, "response", "success") || !TryGet(success, out var tokens, "tokens"))
@@ -308,9 +322,11 @@ public sealed class AmazonDeviceAuth : IDisposable
 
     /// <summary>
     /// <c>POST https://www.amazon.{tld}/ap/exchangetoken/cookies</c>: trades the refresh token for
-    /// a fresh set of website cookies (<c>session-id</c>, <c>ubid-main</c>, <c>at-main</c>,
-    /// <c>sess-at-main</c>, <c>x-main</c>, <c>session-token</c>). A 401/403, or a reply without
-    /// cookies, means the device was removed or the token revoked: <see cref="AuthExpiredException"/>.
+    /// a fresh set of website cookies (<c>session-id</c>, <c>ubid-main</c>, <c>session-token</c>,
+    /// <c>x-main</c>, <c>at-main</c>, <c>sess-at-main</c>, keyed by domain under
+    /// <c>response.tokens.cookies</c>; the last three arrive wrapped in quotes). A 401/403, or a
+    /// reply without cookies, means the device was removed or the token revoked:
+    /// <see cref="AuthExpiredException"/>.
     /// </summary>
     public async Task<IReadOnlyList<AmazonCookie>> ExchangeCookiesAsync(string refreshToken, CancellationToken ct)
     {
@@ -330,7 +346,7 @@ public sealed class AmazonDeviceAuth : IDisposable
         };
         request.Headers.Add("x-amzn-identity-auth-domain", $"api.amazon.{_tld}");
 
-        using var document = await SendJsonAsync(request, "refresh the Amazon cookies", ct, authFailureIsExpiry: true);
+        using var document = await SendJsonAsync(request, KindExchangeCookies, "refresh the Amazon cookies", ct, authFailureIsExpiry: true);
 
         var cookies = new List<AmazonCookie>();
         if (TryGet(document.RootElement, out var byDomain, "response", "tokens", "cookies") && byDomain.ValueKind == JsonValueKind.Object)
@@ -381,7 +397,7 @@ public sealed class AmazonDeviceAuth : IDisposable
             }),
         };
 
-        using var document = await SendJsonAsync(request, "get an access token", ct, authFailureIsExpiry: true);
+        using var document = await SendJsonAsync(request, KindToken, "get an access token", ct, authFailureIsExpiry: true);
         var accessToken = GetString(document.RootElement, "access_token");
         if (string.IsNullOrWhiteSpace(accessToken))
         {
@@ -406,7 +422,7 @@ public sealed class AmazonDeviceAuth : IDisposable
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-        using var document = await SendJsonAsync(request, "remove the device", ct);
+        using var document = await SendJsonAsync(request, KindDeregister, "remove the device", ct);
     }
 
     public void Dispose() => _http.Dispose();
@@ -419,7 +435,7 @@ public sealed class AmazonDeviceAuth : IDisposable
     /// tokens. With <paramref name="authFailureIsExpiry"/>, 401/403 become
     /// <see cref="AuthExpiredException"/>.
     /// </summary>
-    private async Task<JsonDocument> SendJsonAsync(HttpRequestMessage request, string what, CancellationToken ct, bool authFailureIsExpiry = false)
+    private async Task<JsonDocument> SendJsonAsync(HttpRequestMessage request, string kind, string what, CancellationToken ct, bool authFailureIsExpiry = false)
     {
         HttpResponseMessage response;
         try
@@ -451,14 +467,19 @@ public sealed class AmazonDeviceAuth : IDisposable
                 throw new DeviceAuthException($"Could not {what}: Amazon answered HTTP {status}{DescribeError(body)}.");
             }
 
+            JsonDocument document;
             try
             {
-                return JsonDocument.Parse(body);
+                document = JsonDocument.Parse(body);
             }
             catch (JsonException ex)
             {
                 throw new DeviceAuthException($"Could not {what}: Amazon answered HTTP {status} with a non-JSON body.", ex);
             }
+
+            ResponseObserver?.Invoke(new AmazonResponse(
+                kind, status, response.Content.Headers.ContentType?.ToString(), response.Content.Headers.ContentLength, body));
+            return document;
         }
     }
 

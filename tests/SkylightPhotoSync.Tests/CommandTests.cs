@@ -144,6 +144,44 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task RecordFixtures_auth_records_only_the_exchange()
+    {
+        WriteConfig();
+        ConfigLoader.WriteSecrets(Path.Combine(_home.Dir, "secrets.toml"), new Secrets(null, null, null, null, AmazonRefreshToken: _refresh, AmazonDeviceSerial: _serial));
+        using var outDir = new TempDir();
+
+        var (code, out_, err) = await Run("record-fixtures", "--auth", "--out", outDir.Path);
+
+        Assert.Equal(0, code);
+        var path = Path.Combine(outDir.Path, "exchange_cookies.json");
+        Assert.Contains(path, out_);
+        Assert.Equal([path], Directory.GetFiles(outDir.Path));
+        Assert.Single(_amazon.RequestsTo("/ap/exchangetoken/cookies"));
+        Assert.Empty(_amazon.RequestsTo("/drive/v1"));
+        Assert.Empty(_amazon.RequestsTo("/auth/register"));
+        var text = File.ReadAllText(path);
+        Assert.Contains("\"_recorded\"", text);
+        Assert.DoesNotContain("_placeholder", text);
+        AssertNoSecretsIn(out_ + err);
+    }
+
+    [Fact]
+    public async Task RecordFixtures_auth_needs_the_device_login()
+    {
+        WriteConfig();
+        WriteAmazonSecrets();
+        using var outDir = new TempDir();
+
+        var (code, _, err) = await Run("record-fixtures", "--auth", "--out", outDir.Path);
+
+        Assert.Equal(1, code);
+        Assert.Contains("device login", err);
+        Assert.Contains("skylight-sync login", err);
+        Assert.Empty(_amazon.Requests);
+        Assert.Empty(Directory.GetFiles(outDir.Path));
+    }
+
+    [Fact]
     public async Task Run_exit_3_when_needs_login()
     {
         WriteConfig();
@@ -863,7 +901,7 @@ public sealed class CommandTests : IDisposable
     /// <summary>No fake token, cookie or authorization code may ever reach output or logs.</summary>
     private static void AssertNoSecretsIn(string text)
     {
-        foreach (var secret in new[] { _refresh, _access, _accessFromRefresh, _at, "placeholder-at-main", "placeholder-x-main", "placeholder-session-token", "placeholder-sess-at-main" })
+        foreach (var secret in new[] { _refresh, _access, _accessFromRefresh, _at, "placeholder-at-main", "placeholder-x-main", "placeholder-session-token", "placeholder-sess-at-main", "redacted_000", "000-0000000-000" })
         {
             Assert.DoesNotContain(secret, text);
         }

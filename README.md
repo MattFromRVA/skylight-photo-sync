@@ -117,12 +117,14 @@ redacted fixtures recorded from a real account by `skylight-sync record-fixtures
 account `run --dry-run` listed a 595-photo album end to end
 ([issue #12](https://github.com/MattFromRVA/skylight-photo-sync/issues/12)).
 
-**Device login, awaiting live verification.** Pasted cookies stopped working within an hour, so
-`skylight-sync login` is now a one-time browser sign-in that registers the tool as a device on
-your Amazon account and refreshes its own session before every run
-([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)). It is implemented
-against the documented Audible/Alexa flow and tested with placeholder fixtures; the first run
-against a live account is still to come. `login --cookies` remains as the verified fallback.
+**Device login verified live on 2026-11-10.** Pasted cookies stopped working within an hour, so
+`skylight-sync login` is a one-time browser sign-in that registers the tool as a device on your
+Amazon account and refreshes its own session before every run
+([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)). On a live account
+`login`, `run --dry-run` and `status` worked as documented, and the per-run cookie exchange is
+tested against a redacted recording made by `skylight-sync record-fixtures --auth`
+(`tests/SkylightPhotoSync.Tests/Fixtures/Amazon/exchange_cookies.json`). `login --cookies`
+remains as the fallback.
 
 Planned: publishing to NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)).
 

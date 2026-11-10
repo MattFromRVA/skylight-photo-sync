@@ -11,9 +11,11 @@ namespace SkylightPhotoSync.Tests;
 /// <summary>
 /// Pins the Audible-style device login (issue #30): the PKCE sign-in URL, the pasted
 /// <c>/ap/maplanding</c> URL, <c>/auth/register</c>, <c>/ap/exchangetoken/cookies</c>,
-/// <c>/auth/token</c> and <c>/auth/deregister</c>. Responses are the hand-written placeholders
-/// under <c>Fixtures/AmazonAuth</c> (documented shapes, awaiting live verification); every token
-/// value in them is fake and must never reach an exception message.
+/// <c>/auth/token</c> and <c>/auth/deregister</c>. The exchange response is the redacted live
+/// recording <c>Fixtures/Amazon/exchange_cookies.json</c> (2026-11-10); the others are the
+/// hand-written placeholders under <c>Fixtures/AmazonAuth</c> (the register step cannot be
+/// re-recorded, its code being single use). Every token value is fake and must never reach an
+/// exception message.
 /// </summary>
 public sealed class AmazonDeviceAuthTests
 {
@@ -202,12 +204,48 @@ public sealed class AmazonDeviceAuthTests
         Assert.Equal("3.56.2", form["app_version"]);
         Assert.Null(request.Headers.TryGetValues("Cookie", out _) ? "has cookies" : null);
 
+        // As recorded live on 2026-11-10: this order; x-main, at-main and sess-at-main wrapped in
+        // quotes that are not part of the cookie; Expires with an unpadded day, twenty years out
+        // for the ids and one year for the tokens.
         Assert.Equal(
-            ["session-id", "ubid-main", "at-main", "sess-at-main", "x-main", "session-token"],
+            ["session-id", "ubid-main", "session-token", "x-main", "at-main", "sess-at-main"],
             cookies.Select(c => c.Name).ToArray());
-        Assert.Equal("133-0000000-4444444", cookies[0].Value);
-        Assert.Equal("placeholder-x-main-from-exchange", cookies.Single(c => c.Name == "x-main").Value);
-        Assert.Equal(new DateTimeOffset(2026, 12, 6, 12, 0, 0, TimeSpan.Zero), cookies[0].Expires);
+        Assert.Equal("000-0000000-0000003", cookies[0].Value);
+        Assert.Equal("000-0000000-0000004", cookies.Single(c => c.Name == "ubid-main").Value);
+        Assert.Equal("redacted_0005", cookies.Single(c => c.Name == "session-token").Value);
+        Assert.Equal("redacted_0006", cookies.Single(c => c.Name == "x-main").Value);
+        Assert.Equal("Atza|redacted_0007", cookies.Single(c => c.Name == "at-main").Value);
+        Assert.Equal("redacted_0008", cookies.Single(c => c.Name == "sess-at-main").Value);
+        Assert.DoesNotContain(cookies, c => c.Value.Contains('"'));
+        Assert.Equal(new DateTimeOffset(2046, 11, 5, 13, 9, 3, TimeSpan.Zero), cookies[0].Expires);
+        Assert.Equal(new DateTimeOffset(2027, 11, 10, 13, 9, 3, TimeSpan.Zero), cookies.Single(c => c.Name == "at-main").Expires);
+    }
+
+    [Fact]
+    public void Recorded_exchange_fixture_is_redacted_and_keeps_the_live_shape()
+    {
+        var text = File.ReadAllText(Fixtures.Amazon("exchange_cookies.json"));
+        using var doc = JsonDocument.Parse(text);
+        var root = doc.RootElement;
+
+        Assert.Contains("record-fixtures --auth", root.GetProperty("_recorded").GetString());
+        Assert.False(root.TryGetProperty("_placeholder", out _));
+        Assert.DoesNotContain("Atza|", text.Replace("Atza|redacted_", ""));
+        Assert.DoesNotContain("amzn1.", text);
+
+        // The live body keys the cookies by domain and carries fields the parser ignores.
+        var tokens = root.GetProperty("response").GetProperty("tokens");
+        Assert.Equal(2592000, tokens.GetProperty("ttl").GetInt32());
+        var cookies = tokens.GetProperty("cookies").GetProperty(".amazon.com");
+        Assert.Equal(6, cookies.GetArrayLength());
+        Assert.All(cookies.EnumerateArray(), c =>
+        {
+            Assert.Equal(JsonValueKind.True, c.GetProperty("Secure").ValueKind);
+            Assert.True(c.GetProperty("HttpOnly").ValueKind is JsonValueKind.True or JsonValueKind.False);
+            Assert.Matches(@"^(redacted_\d{4}|000-0000000-\d{7}|""(Atza\|)?redacted_\d{4}"")$", c.GetProperty("Value").GetString());
+        });
+        Assert.StartsWith("redacted_", root.GetProperty("secureSessionToken").GetString());
+        Assert.StartsWith("redacted_", root.GetProperty("request_id").GetString());
     }
 
     [Fact]

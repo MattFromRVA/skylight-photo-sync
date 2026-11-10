@@ -71,7 +71,7 @@ public sealed class ScriptedHandler : HttpMessageHandler
     /// </summary>
     public ScriptedHandler WithDeviceAuthDefaults() =>
         On("/auth/register", _ => AuthJson("placeholder_auth_register.json"))
-        .On("/ap/exchangetoken/cookies", _ => AuthJson("placeholder_exchange_cookies.json"))
+        .On("/ap/exchangetoken/cookies", _ => Json("exchange_cookies.json"))
         .On("/auth/token", _ => AuthJson("placeholder_auth_token.json"))
         .On("/auth/deregister", _ => AuthJson("placeholder_auth_deregister.json"));
 

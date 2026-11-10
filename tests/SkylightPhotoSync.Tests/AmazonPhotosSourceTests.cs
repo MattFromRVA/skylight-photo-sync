@@ -362,9 +362,9 @@ public sealed class AmazonPhotosSourceTests
     private const string _serial = "ABCDEFGHIJ0123456789KLMNOPQRST0123456789";
     private static readonly Secrets _deviceSecrets = new(null, null, null, null, AmazonRefreshToken: _refresh, AmazonDeviceSerial: _serial);
 
-    /// <summary>The session-id and at-main of the placeholder exchange response.</summary>
-    private const string _exchangedSessionId = "133-0000000-4444444";
-    private const string _exchangedAt = "placeholder-at-main-from-exchange";
+    /// <summary>The session-id and at-main of the recorded exchange response (<c>Fixtures/Amazon/exchange_cookies.json</c>).</summary>
+    private const string _exchangedSessionId = "000-0000000-0000003";
+    private const string _exchangedAt = "Atza|redacted_0007";
 
     private AmazonPhotosSource DeviceSource() =>
         new(_deviceSecrets, _handler, "com", (pause, _) =>
@@ -392,9 +392,8 @@ public sealed class AmazonPhotosSourceTests
         var cookieHeader = _handler.CookieHeaders[_handler.Requests.IndexOf(account)]!;
         foreach (var expected in new[]
         {
-            $"session-id={_exchangedSessionId}", "ubid-main=130-0000000-5555555", $"at-main={_exchangedAt}",
-            "sess-at-main=placeholder-sess-at-main-from-exchange", "x-main=placeholder-x-main-from-exchange",
-            "session-token=placeholder-session-token-from-exchange",
+            $"session-id={_exchangedSessionId}", "ubid-main=000-0000000-0000004", $"at-main={_exchangedAt}",
+            "sess-at-main=redacted_0008", "x-main=redacted_0006", "session-token=redacted_0005",
         })
         {
             Assert.Contains(expected, cookieHeader);
@@ -404,7 +403,9 @@ public sealed class AmazonPhotosSourceTests
         var usage = Assert.Single(_handler.RequestsTo("/drive/v1/account/usage"));
         Assert.Equal("cdws.us-east-1.amazonaws.com", usage.RequestUri!.Host);
         Assert.Contains($"at-main={_exchangedAt}", _handler.CookieHeaders[_handler.Requests.IndexOf(usage)]);
-        Assert.Contains("x-main=placeholder-x-main-from-exchange", _handler.CookieHeaders[_handler.Requests.IndexOf(usage)]);
+        Assert.Contains("x-main=redacted_0006", _handler.CookieHeaders[_handler.Requests.IndexOf(usage)]);
+        // The quotes Amazon wraps x-main, at-main and sess-at-main in never reach the Cookie header.
+        Assert.DoesNotContain('"', _handler.CookieHeaders[_handler.Requests.IndexOf(usage)]!);
     }
 
     [Fact]
@@ -423,7 +424,7 @@ public sealed class AmazonPhotosSourceTests
     {
         var exchanges = 0;
         _handler.On("/ap/exchangetoken/cookies", _ => ++exchanges == 1
-            ? ScriptedHandler.AuthJson("placeholder_exchange_cookies.json")
+            ? ScriptedHandler.Json("exchange_cookies.json")
             : ScriptedHandler.JsonBody("""{"response":{"tokens":{"cookies":{".amazon.com":[{"Name":"session-id","Value":"133-0000000-6666666"},{"Name":"ubid-main","Value":"130-0000000-7777777"},{"Name":"at-main","Value":"placeholder-at-main-second"}]}}}}"""));
         var usageCalls = 0;
         _handler.On("/drive/v1/account/usage", _ => ++usageCalls == 1 ? ScriptedHandler.Status(HttpStatusCode.Unauthorized) : ScriptedHandler.Json("usage.json"));

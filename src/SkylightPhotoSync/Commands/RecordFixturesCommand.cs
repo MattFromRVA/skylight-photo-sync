@@ -2,16 +2,22 @@ using System.CommandLine;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Recording;
 using SkylightPhotoSync.Sources;
+using SkylightPhotoSync.Sources.Amazon;
 
 namespace SkylightPhotoSync.Commands;
 
 /// <summary>
 /// <c>record-fixtures [--out DIR]</c>: records redacted Amazon Photos responses for the saved login
 /// and the configured <c>[source] album_name</c> into <c>DIR</c> (Task 12 Step 2).
+/// <c>record-fixtures --auth [--out DIR]</c> records only the device login's cookie exchange
+/// (issue #30) as <c>exchange_cookies.json</c>, every cookie value replaced.
 /// </summary>
 public static class RecordFixturesCommand
 {
     public const string DefaultOutDir = "tests/SkylightPhotoSync.Tests/Fixtures/Amazon";
+
+    public const string AuthNeedsDeviceLoginMessage =
+        "record-fixtures --auth failed: no device login is saved; run 'skylight-sync login' first.";
 
     public static Command Create()
     {
@@ -20,13 +26,21 @@ public static class RecordFixturesCommand
             Description = $"Directory for the recorded files. Default: {DefaultOutDir} under the current directory.",
         };
 
+        var auth = new Option<bool>("--auth")
+        {
+            Description = $"Record only the device login's cookie exchange as {FixtureRecorder.ExchangeFixtureName}, every cookie value replaced. Needs 'skylight-sync login' (device login).",
+            Arity = ArgumentArity.Zero,
+        };
+
         var command = new Command(
             "record-fixtures",
             "Record redacted Amazon Photos API responses as test fixtures, using the saved login and the configured album.");
         command.Options.Add(outDir);
+        command.Options.Add(auth);
 
         command.SetAction((parseResult, ct) => ExecuteAsync(
             parseResult.GetValue(outDir) ?? Path.Combine(Directory.GetCurrentDirectory(), DefaultOutDir),
+            parseResult.GetValue(auth),
             parseResult.InvocationConfiguration.Output,
             parseResult.InvocationConfiguration.Error,
             ct));
@@ -34,11 +48,27 @@ public static class RecordFixturesCommand
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(string outDir, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+    private static async Task<int> ExecuteAsync(string outDir, bool authOnly, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         try
         {
             var paths = AppPaths.Resolve();
+            var secrets = CommandSupport.LoadSecretsIfPresent(paths);
+            if (authOnly)
+            {
+                if (!CommandSupport.HasDeviceLogin(secrets))
+                {
+                    stderr.WriteLine(AuthNeedsDeviceLoginMessage);
+                    return 1;
+                }
+
+                using var deviceAuth = CommandSupport.CreateDeviceAuth();
+                var exchange = await FixtureRecorder.RecordExchangeAsync(deviceAuth, secrets.AmazonRefreshToken!, outDir, ct);
+                stdout.WriteLine(exchange);
+                stdout.WriteLine($"Wrote 1 redacted file to {outDir}. Review it for leaks before committing.");
+                return 0;
+            }
+
             var cfg = ConfigLoader.LoadConfig(paths.ConfigFile);
             if (string.IsNullOrWhiteSpace(cfg.Source.AlbumName))
             {
@@ -46,7 +76,6 @@ public static class RecordFixturesCommand
                 return 1;
             }
 
-            var secrets = CommandSupport.LoadSecretsIfPresent(paths);
             if (!CommandSupport.HasAmazonAuth(secrets))
             {
                 stderr.WriteLine($"record-fixtures failed: {CommandSupport.NotLoggedInMessage}");
@@ -63,7 +92,7 @@ public static class RecordFixturesCommand
             stdout.WriteLine($"Wrote {written.Count} redacted files to {outDir}. Review every file for leaks before committing.");
             return 0;
         }
-        catch (AuthExpiredException ex)
+        catch (Exception ex) when (ex is AuthExpiredException or DeviceAuthException)
         {
             stderr.WriteLine($"record-fixtures failed: {ex.Message}");
             return 1;

@@ -77,13 +77,42 @@ fixtures under `tests/SkylightPhotoSync.Tests/Fixtures/Amazon/` and `AmazonEndpo
   within about fifteen minutes on 2026-11-06, so `at-main` can rotate quickly; refresh with
   `skylight-sync login` and record right away.
 
-## Device login (issue #30): documented, awaiting live verification
+## Device login (issue #30): verified live 2026-11-10
 
-Implemented 2026-11-06 from the sources below, **not yet exercised against a live Amazon
-account**. The placeholder fixtures under `tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/`
-(`placeholder_*.json`, each with a top-level `_placeholder`) are hand-written from these shapes
-and must be replaced by redacted recordings once the first live `login` has run. Points marked
-**(check)** are the ones the live pass should confirm first.
+Implemented 2026-11-06 from the sources below and run against a live amazon.com account on
+2026-11-10, where it worked unchanged. What the live pass confirmed:
+
+- **Sign-in.** The URL from `BuildSignInUrl` was accepted as built, with the retail
+  `marketPlaceId=ATVPDKIKX0DER`. After the two-factor prompt the browser landed on the
+  `/ap/maplanding` "page not found" with `openid.oa2.authorization_code=` in the address, the
+  full address was shown and the pasted code registered. No device-consent page appeared.
+- **Register.** `POST https://api.amazon.com/auth/register` answered with
+  `response.success.tokens.bearer.{refresh_token,access_token}` and
+  `extensions.customer_info.name`; `login` printed `Amazon Photos: connected as <name>, 52067
+  items` (the name is `customer_info.name`, since the Drive root node has none) and `Device
+  registered as "Skylight Photo Sync"`. This step runs once per login with a single-use code and
+  cannot be replayed to record, so `tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/placeholder_auth_register.json`
+  stays hand-written and labelled `_placeholder`, with its cookie entries aligned to the
+  serialisation seen in the exchange.
+- **Cookie exchange**, recorded by `skylight-sync record-fixtures --auth` as
+  `tests/SkylightPhotoSync.Tests/Fixtures/Amazon/exchange_cookies.json` (every value replaced by
+  a placeholder of the same shape): the cookies are keyed `response.tokens.cookies[".amazon.com"]`,
+  in the order `session-id`, `ubid-main`, `session-token`, `x-main`, `at-main`, `sess-at-main`;
+  `Secure`/`HttpOnly` are JSON booleans, not strings; `x-main`, `at-main` **and** `sess-at-main`
+  arrive wrapped in quotes, which the parser strips; `Expires` looks like
+  `5 Nov 2046 13:09:03 GMT` (unpadded day; twenty years for the ids and `x-main`, one year for
+  the tokens). The body also carries `response.tokens.ttl` (2592000, thirty days),
+  `response.age_classification`, a top-level `secureSessionToken` and `request_id`, all ignored.
+  The parser needed no change.
+- **Drive v1 with minted cookies.** `run --dry-run --limit 3` printed
+  `found 595, sent 3, skipped 24, batches 1 (dry run)`, exit 0, the same as the pasted-cookie pass
+  of 2026-11-06; `status` shows `needs_login: no` and `auth: device login`. Repeated the same day
+  from a worktree build with a second minted set.
+- **Not exercised live:** `logout` (`/auth/token`, `/auth/deregister`) and a second `login` over
+  an existing device login (the deregister-previous path). Their fixtures remain hand-written
+  placeholders.
+
+The documented shapes, as implemented:
 
 - **Flow** (mkb79/Audible "external login", also Apollon77/alexa-cookie since v2 and
   airbone42/immich-amazon-sync PR #2): PKCE sign-in in the user's browser → authorization code on
@@ -98,14 +127,14 @@ and must be replaced by redacted recordings once the first live `login` has run.
   `openid.identity`/`openid.claimed_id=http://specs.openid.net/auth/2.0/identifier_select`,
   `openid.mode=checkid_setup`, `openid.ns`, `openid.ns.oa2`, `openid.ns.pape`,
   `openid.pape.max_auth_age=0`, `accountStatusPolicy=P1`, `forceMobileLayout=true`,
-  `marketPlaceId`. **(check)** `marketPlaceId`: the tool sends the retail marketplace
-  (`ATVPDKIKX0DER` for `.com`, per issue #30); the Audible app sends Audible's own
-  (`AF2M0KC94RCEA` for the US). If the sign-in page refuses or loops, try the Audible id.
+  `marketPlaceId`: the retail marketplace (`ATVPDKIKX0DER` for `.com`, per issue #30),
+  accepted live; the Audible app sends Audible's own (`AF2M0KC94RCEA` for the US), the value to
+  try if another storefront refuses or loops.
   Serial: 40 random uppercase alphanumerics (alexa-cookie style; Audible uses 32 hex).
 - **Landing page.** After 2FA the browser lands on an error page at
   `https://www.amazon.{tld}/ap/maplanding?...&openid.oa2.authorization_code=...`. The code is
-  single-use and short-lived. **(check)** that Safari/Chrome show the full address (not a
-  shortened one) and that the code survives copy/paste.
+  single-use and short-lived. Confirmed live: the browser showed the full address and the
+  pasted code registered.
 - **Register.** `POST https://api.amazon.{tld}/auth/register` (JSON): `requested_token_type:
   ["bearer","mac_dms","website_cookies"]`, `cookies: {website_cookies: [], domain: ".amazon.{tld}"}`,
   `registration_data: {domain: "Device", app_version: "3.56.2", device_serial, device_type:
@@ -115,21 +144,23 @@ and must be replaced by redacted recordings once the first live `login` has run.
   code_algorithm: "SHA-256", client_domain: "DeviceLegacy"}`, `requested_extensions:
   ["device_info","customer_info"]`. Response: `response.success.tokens.bearer.{refresh_token
   (Atnr|…), access_token (Atna|…), expires_in ("3600")}`, `tokens.website_cookies[]`
-  (`Name`/`Value`/`Expires`…; `x-main` arrives quoted), `tokens.mac_dms` (unused),
-  `extensions.customer_info.name` (used for "connected as"). Errors: non-200 with
-  `response.error.{code,message}`. **(check)** the host: Audible uses `api.amazon.{tld}`;
-  alexa-cookie always `api.amazon.com`. Identical for `.com`.
+  (`Name`/`Value`/`Expires`/`Path`/`Secure`/`HttpOnly`; `x-main`, `at-main` and `sess-at-main`
+  arrive quoted, going by the exchange), `tokens.mac_dms` (unused),
+  `extensions.customer_info.name` (used for "connected as", confirmed live). Errors: non-200
+  with `response.error.{code,message}`. Host: `api.amazon.{tld}` (Audible; alexa-cookie always
+  uses `api.amazon.com`, identical for `.com`), worked live.
 - **Cookie exchange.** `POST https://www.amazon.{tld}/ap/exchangetoken/cookies` (form):
   `app_name=Audible`, `app_version=3.56.2`, `source_token=<refresh>`,
   `source_token_type=refresh_token`, `requested_token_type=auth_cookies`, `domain=.amazon.{tld}`;
   header `x-amzn-identity-auth-domain: api.amazon.{tld}`. Response:
   `response.tokens.cookies[".amazon.{tld}"][]` with `Name`, `Value`, `Expires`
-  ("06 Dec 2026 12:00:00 GMT"), `Path`, `Secure`, `HttpOnly`: `session-id`, `ubid-main`,
-  `at-main`, `sess-at-main`, `x-main`, `session-token`. alexa-cookie reports them good for ~14
-  days; the tool re-mints at the start of every run and once more on the first 401 of a run.
-  401/403, or a body without cookies, → `AuthExpiredException` → `needs_login`, one alert.
-  **(check)** that the Drive v1 endpoints accept these cookies together with the
-  `x-amzn-sessionid` header taken from the minted `session-id` (the pasted-cookie path needed it).
+  (`5 Nov 2046 13:09:03 GMT`), `Path`, `Secure`, `HttpOnly` (booleans), beside `tokens.ttl`
+  (2592000): `session-id`, `ubid-main`, `session-token`, `x-main`, `at-main`, `sess-at-main`, in
+  that order, the last three quoted. alexa-cookie reports them good for ~14 days and the `ttl`
+  says thirty; the tool re-mints at the start of every run and once more on the first 401 of a
+  run. 401/403, or a body without cookies, → `AuthExpiredException` → `needs_login`, one alert.
+  Confirmed: the Drive v1 endpoints accept these cookies together with the `x-amzn-sessionid`
+  header taken from the minted `session-id` (the pasted-cookie path needed it too).
 - **Access token and deregister.** `POST https://api.amazon.{tld}/auth/token` (form:
   `app_name`, `app_version`, `source_token=<refresh>`, `source_token_type=refresh_token`,
   `requested_token_type=access_token`) → `{access_token, token_type: "bearer", expires_in}`.
