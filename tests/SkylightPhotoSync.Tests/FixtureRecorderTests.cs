@@ -2,6 +2,7 @@ using System.Text.Json;
 using SkiaSharp;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Recording;
+using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.Sources.Amazon;
 using SkylightPhotoSync.Tests.TestSupport;
 
@@ -54,14 +55,18 @@ public sealed class FixtureRecorderTests
                            "contentProperties":{"size":2345678,"md5":"22222222222222222222222222222222","contentType":"image/heic","extension":"heic","contentDate":"2026-11-02T18:30:00.000Z"}}]}
                         """))
             .On("/drive/v1/search", _ => ScriptedHandler.JsonBody(
-                """
+                // The recorder searches the last seven days, so these dates must stay recent.
+                $$$$"""
                 {"count":2,"data":[
-                  {"id":"NODERAW0011","name":"recent.jpg","kind":"FILE","ownerId":"OWNERRAW0001","createdDate":"2026-11-02T12:00:00.000Z",
-                   "contentProperties":{"size":200000,"md5":"bbbb0000000000000000000000000000","contentType":"image/jpeg","contentDate":"2026-11-02T12:00:00.000Z"}},
-                  {"id":"NODERAW0012","name":"clip.mp4","kind":"FILE","ownerId":"OWNERRAW0001","createdDate":"2026-11-03T12:00:00.000Z",
-                   "contentProperties":{"size":9000000,"md5":"cccc0000000000000000000000000000","contentType":"video/mp4","contentDate":"2026-11-03T12:00:00.000Z","video":{"duration":12.5}}}]}
+                  {"id":"NODERAW0011","name":"recent.jpg","kind":"FILE","ownerId":"OWNERRAW0001","createdDate":"{{{{RecentDate(2)}}}}",
+                   "contentProperties":{"size":200000,"md5":"bbbb0000000000000000000000000000","contentType":"image/jpeg","contentDate":"{{{{RecentDate(2)}}}}"}},
+                  {"id":"NODERAW0012","name":"clip.mp4","kind":"FILE","ownerId":"OWNERRAW0001","createdDate":"{{{{RecentDate(1)}}}}",
+                   "contentProperties":{"size":9000000,"md5":"cccc0000000000000000000000000000","contentType":"video/mp4","contentDate":"{{{{RecentDate(1)}}}}","video":{"duration":12.5}}}]}
                 """))
             .On("/content", _ => ScriptedHandler.Bytes(File.ReadAllBytes(Fixtures.Image("tiny.jpg")), "image/jpeg"));
+
+    private static string RecentDate(int daysAgo) =>
+        DateTimeOffset.UtcNow.AddDays(-daysAgo).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
 
     [Fact]
     public async Task Record_writes_redacted_fixtures()
@@ -247,5 +252,94 @@ public sealed class FixtureRecorderTests
         using var search = JsonDocument.Parse(File.ReadAllText(Path.Combine(outDir.Path, "search.json")));
         Assert.Equal(0, search.RootElement.GetProperty("count").GetInt32());
         Assert.Empty(search.RootElement.GetProperty("data").EnumerateArray());
+    }
+
+    /// <summary>
+    /// A raw cookie-exchange body with recognisable fake values: every cookie value, the request
+    /// id and a stray account id must be gone after recording, while names, order, flags,
+    /// <c>Expires</c>, the domain key and the quoting of <c>x-main</c> survive.
+    /// </summary>
+    private const string _rawExchangeBody = """
+        {"response":{"tokens":{"cookies":{".amazon.com":[
+          {"Path":"/","Secure":"false","Value":"133-7654321-1234567","Expires":"10 Dec 2026 13:05:17 GMT","Name":"session-id","HttpOnly":"false"},
+          {"Path":"/","Secure":"false","Value":"130-1234567-7654321","Expires":"10 Dec 2026 13:05:17 GMT","Name":"ubid-main","HttpOnly":"false"},
+          {"Path":"/","Secure":"true","Value":"Atza|RAWATMAINVALUE0001","Expires":"10 Dec 2026 13:05:17 GMT","Name":"at-main","HttpOnly":"true"},
+          {"Path":"/","Secure":"true","Value":"Atza|RAWSESSATMAINVALUE0002","Expires":"10 Dec 2026 13:05:17 GMT","Name":"sess-at-main","HttpOnly":"true"},
+          {"Path":"/","Secure":"true","Value":"\"RAWXMAINVALUE0003\"","Expires":"10 Dec 2026 13:05:17 GMT","Name":"x-main","HttpOnly":"false"},
+          {"Path":"/","Secure":"true","Value":"RAWSESSIONTOKENVALUE0004","Expires":"10 Dec 2026 13:05:17 GMT","Name":"session-token","HttpOnly":"true"}
+        ]},"customer_id":"RAWCUSTOMERID0005"}},"request_id":"raw-request-id-0006"}
+        """;
+
+    [Fact]
+    public async Task RecordExchange_writes_redacted_cookie_file()
+    {
+        using var outDir = new TempDir();
+        var handler = new ScriptedHandler().On("/ap/exchangetoken/cookies", _ => ScriptedHandler.JsonBody(_rawExchangeBody));
+        using var auth = new AmazonDeviceAuth(handler);
+
+        var path = await FixtureRecorder.RecordExchangeAsync(auth, "Atnr|RAWREFRESHTOKEN", outDir.Path, CancellationToken.None);
+
+        Assert.Equal(Path.Combine(outDir.Path, FixtureRecorder.ExchangeFixtureName), path);
+        Assert.Equal("exchange_cookies.json", FixtureRecorder.ExchangeFixtureName);
+        var text = File.ReadAllText(path);
+        Assert.DoesNotContain("RAW", text);
+        Assert.DoesNotContain("raw-request-id", text);
+        Assert.DoesNotContain("7654321", text);
+        Assert.DoesNotContain("_placeholder", text);
+
+        using var doc = JsonDocument.Parse(text);
+        var root = doc.RootElement;
+        Assert.Contains("record-fixtures --auth", root.GetProperty("_recorded").GetString());
+        Assert.Equal("exchange_cookies", root.GetProperty("_endpoint").GetString());
+        var cookies = root.GetProperty("response").GetProperty("tokens").GetProperty("cookies").GetProperty(".amazon.com");
+        Assert.Equal(
+            ["session-id", "ubid-main", "at-main", "sess-at-main", "x-main", "session-token"],
+            cookies.EnumerateArray().Select(c => c.GetProperty("Name").GetString()!).ToArray());
+        Assert.All(cookies.EnumerateArray(), c => Assert.Equal("10 Dec 2026 13:05:17 GMT", c.GetProperty("Expires").GetString()));
+        Assert.Equal("true", cookies[2].GetProperty("HttpOnly").GetString());
+        Assert.Equal("false", cookies[0].GetProperty("Secure").GetString());
+        Assert.Equal("/", cookies[0].GetProperty("Path").GetString());
+
+        // Placeholders keep the shape of the real value: session ids stay three dash-separated
+        // digit groups, Atza| tokens keep their prefix, and a quoted value stays quoted.
+        Assert.Matches(@"^\d{3}-\d{7}-\d{7}$", cookies[0].GetProperty("Value").GetString());
+        Assert.Matches(@"^\d{3}-\d{7}-\d{7}$", cookies[1].GetProperty("Value").GetString());
+        Assert.NotEqual(cookies[0].GetProperty("Value").GetString(), cookies[1].GetProperty("Value").GetString());
+        Assert.StartsWith("Atza|redacted_", cookies[2].GetProperty("Value").GetString());
+        Assert.StartsWith("Atza|redacted_", cookies[3].GetProperty("Value").GetString());
+        Assert.NotEqual(cookies[2].GetProperty("Value").GetString(), cookies[3].GetProperty("Value").GetString());
+        Assert.Matches("^\"redacted_\\d{4}\"$", cookies[4].GetProperty("Value").GetString());
+        Assert.StartsWith("redacted_", cookies[5].GetProperty("Value").GetString());
+        Assert.StartsWith("redacted", root.GetProperty("response").GetProperty("tokens").GetProperty("customer_id").GetString());
+        Assert.StartsWith("redacted", root.GetProperty("request_id").GetString());
+
+        // Only Amazon's own token prefixes survive; any other text before a '|' is part of the secret.
+        var prefixes = FixtureRecorder.RedactExchange("""
+            {"response":{"tokens":{"cookies":{".amazon.com":[
+              {"Name":"x-main","Value":"AB12cd34|secret"},
+              {"Name":"at-main","Value":"Atza|secret"}
+            ]}}}}
+            """)["response"]!["tokens"]!["cookies"]![".amazon.com"]!.AsArray();
+        Assert.Matches(@"^redacted_\d{4}$", prefixes[0]!["Value"]!.GetValue<string>());
+        Assert.Matches(@"^Atza\|redacted_\d{4}$", prefixes[1]!["Value"]!.GetValue<string>());
+
+        // The recorded file still drives the parser the same way the live body did.
+        var parsed = await new AmazonDeviceAuth(new ScriptedHandler().On("/ap/exchangetoken/cookies", _ => ScriptedHandler.JsonBody(text)))
+            .ExchangeCookiesAsync("Atnr|RAWREFRESHTOKEN", CancellationToken.None);
+        Assert.Equal(6, parsed.Count);
+        Assert.DoesNotContain(parsed, c => c.Value.Contains('"'));
+        Assert.Equal(new DateTimeOffset(2026, 12, 10, 13, 5, 17, TimeSpan.Zero), parsed[0].Expires);
+    }
+
+    [Fact]
+    public async Task RecordExchange_does_not_write_when_amazon_refuses()
+    {
+        using var outDir = new TempDir();
+        var handler = new ScriptedHandler().On("/ap/exchangetoken/cookies", _ => ScriptedHandler.Status(System.Net.HttpStatusCode.Unauthorized));
+        using var auth = new AmazonDeviceAuth(handler);
+
+        await Assert.ThrowsAsync<AuthExpiredException>(() => FixtureRecorder.RecordExchangeAsync(auth, "Atnr|RAWREFRESHTOKEN", outDir.Path, CancellationToken.None));
+
+        Assert.Empty(Directory.GetFiles(outDir.Path));
     }
 }

@@ -27,3 +27,6 @@ obj/
 
 # Agent worktrees
 .claude/worktrees/
+
+# Local tool packages (README: dotnet pack ... -o ./artifacts)
+artifacts/

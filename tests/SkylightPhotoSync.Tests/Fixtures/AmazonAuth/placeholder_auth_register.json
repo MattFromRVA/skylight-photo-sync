@@ -1,5 +1,5 @@
 {
-  "_placeholder": "Hand-written from mkb79/Audible register.py and issue #30; NOT a recorded response. Token values are fake. Replace with a redacted recording once the live pass has run.",
+  "_placeholder": "Hand-written from mkb79/Audible register.py and issue #30; NOT a recorded response (the register step runs once per login with a single-use code, so it cannot be replayed to record). Token values are fake. The live login on 2026-11-10 proved response.success.tokens.bearer.{refresh_token,access_token} and extensions.customer_info.name (printed as 'connected as <name>'); the cookie entries follow the serialisation seen live in the cookie exchange (boolean Secure/HttpOnly; x-main, at-main and sess-at-main wrapped in quotes).",
   "response": {
     "success": {
       "extensions": {
@@ -18,12 +18,12 @@
       },
       "tokens": {
         "website_cookies": [
-          { "Path": "/", "Secure": "true", "Value": "\"placeholder-x-main-from-register\"", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "x-main", "HttpOnly": "false" },
-          { "Path": "/", "Secure": "true", "Value": "placeholder-at-main-from-register", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "at-main", "HttpOnly": "true" },
-          { "Path": "/", "Secure": "true", "Value": "placeholder-sess-at-main-from-register", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "sess-at-main", "HttpOnly": "true" },
-          { "Path": "/", "Secure": "false", "Value": "130-0000000-2222222", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "ubid-main", "HttpOnly": "false" },
-          { "Path": "/", "Secure": "false", "Value": "133-0000000-3333333", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "session-id", "HttpOnly": "false" },
-          { "Path": "/", "Secure": "true", "Value": "placeholder-session-token-from-register", "Expires": "05 Nov 2027 12:00:00 GMT", "Name": "session-token", "HttpOnly": "true" }
+          { "Path": "/", "Secure": true, "Value": "\"placeholder-x-main-from-register\"", "Expires": "5 Nov 2027 12:00:00 GMT", "HttpOnly": false, "Name": "x-main" },
+          { "Path": "/", "Secure": true, "Value": "\"placeholder-at-main-from-register\"", "Expires": "5 Nov 2027 12:00:00 GMT", "HttpOnly": true, "Name": "at-main" },
+          { "Path": "/", "Secure": true, "Value": "\"placeholder-sess-at-main-from-register\"", "Expires": "5 Nov 2027 12:00:00 GMT", "HttpOnly": true, "Name": "sess-at-main" },
+          { "Path": "/", "Secure": true, "Value": "130-0000000-2222222", "Expires": "5 Nov 2046 12:00:00 GMT", "HttpOnly": false, "Name": "ubid-main" },
+          { "Path": "/", "Secure": true, "Value": "133-0000000-3333333", "Expires": "5 Nov 2046 12:00:00 GMT", "HttpOnly": false, "Name": "session-id" },
+          { "Path": "/", "Secure": true, "Value": "placeholder-session-token-from-register", "Expires": "5 Nov 2027 12:00:00 GMT", "HttpOnly": true, "Name": "session-token" }
         ],
         "mac_dms": {
           "device_private_key": "PLACEHOLDER-PRIVATE-KEY-NOT-REAL",

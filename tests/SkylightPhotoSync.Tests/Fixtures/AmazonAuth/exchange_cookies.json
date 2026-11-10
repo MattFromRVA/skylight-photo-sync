@@ -1,0 +1,64 @@
+{
+  "_recorded": "2026-11-10T13:09:03Z by skylight-sync record-fixtures --auth; every cookie value and id replaced by a placeholder of the same shape",
+  "_endpoint": "exchange_cookies",
+  "secureSessionToken": "redacted_0001",
+  "response": {
+    "age_classification": "redacted_0002",
+    "tokens": {
+      "ttl": 2592000,
+      "cookies": {
+        ".amazon.com": [
+          {
+            "Path": "/",
+            "Secure": true,
+            "Value": "000-0000000-0000003",
+            "Expires": "5 Nov 2046 13:09:03 GMT",
+            "HttpOnly": false,
+            "Name": "session-id"
+          },
+          {
+            "Path": "/",
+            "Secure": true,
+            "Value": "000-0000000-0000004",
+            "Expires": "5 Nov 2046 13:09:03 GMT",
+            "HttpOnly": false,
+            "Name": "ubid-main"
+          },
+          {
+            "Path": "/",
+            "Secure": true,
+            "Value": "redacted_0005",
+            "Expires": "10 Nov 2027 13:09:03 GMT",
+            "HttpOnly": false,
+            "Name": "session-token"
+          },
+          {
+            "Path": "/",
+            "Secure": true,
+            "Value": "\"redacted_0006\"",
+            "Expires": "5 Nov 2046 13:09:03 GMT",
+            "HttpOnly": false,
+            "Name": "x-main"
+          },
+          {
+            "Path": "/",
+            "Secure": true,
+            "Value": "\"Atza|redacted_0007\"",
+            "Expires": "10 Nov 2027 13:09:03 GMT",
+            "HttpOnly": true,
+            "Name": "at-main"
+          },
+          {
+            "Path": "/",
+            "Secure": true,
+            "Value": "\"redacted_0008\"",
+            "Expires": "10 Nov 2027 13:09:03 GMT",
+            "HttpOnly": true,
+            "Name": "sess-at-main"
+          }
+        ]
+      }
+    }
+  },
+  "request_id": "redacted_0009"
+}

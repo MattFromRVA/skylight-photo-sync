@@ -6,10 +6,9 @@ album and one Skylight address, prove the email path works, send one photo, then
 
 > **Status (2026-11).** Everything on this page is implemented. The Amazon Photos client was
 > verified against a live Amazon session on 2026-11-06 (`run --dry-run` end to end; see the
-> README's status section). The one-time device login (`skylight-sync login`) is implemented
-> against the documented flow and awaiting its first live verification; `login --cookies` is the
-> verified fallback. Everything from `test-email` onward can also be exercised with
-> `run --source local:PATH`.
+> README's status section) and the one-time device login (`skylight-sync login`) on 2026-11-10
+> (`login`, `run --dry-run`, `status`); `login --cookies` is the fallback. Everything from
+> `test-email` onward can also be exercised with `run --source local:PATH`.
 
 ## 1. Prerequisites
 
@@ -170,7 +169,7 @@ skylight-sync login
 On success:
 
 ```
-Amazon Photos: connected as Matt Chaulklin, 12345 items
+Amazon Photos: connected as <your name>, 12345 items
 Device registered as "Skylight Photo Sync"; remove it under Manage Your Content and Devices to revoke.
 Saved. Run 'skylight-sync run --dry-run' to verify.
 Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you pasted contains a single-use sign-in code.
