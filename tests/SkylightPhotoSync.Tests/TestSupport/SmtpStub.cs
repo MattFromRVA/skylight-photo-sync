@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using MimeKit;
 using SmtpServer;
+using SmtpServer.Authentication;
 using SmtpServer.ComponentModel;
 using SmtpServer.Protocol;
 using SmtpServer.Storage;
@@ -21,16 +22,24 @@ public sealed class SmtpStub : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _run;
 
-    private SmtpStub(int port, int maxMessageSize)
+    private SmtpStub(int port, int maxMessageSize, bool rejectCredentials)
     {
         Port = port;
         var options = new SmtpServerOptionsBuilder()
             .ServerName("localhost")
             .MaxMessageSize(maxMessageSize)
-            .Endpoint(e => e.Endpoint(new IPEndPoint(IPAddress.Loopback, port)).IsSecure(false))
+            .Endpoint(e => e
+                .Endpoint(new IPEndPoint(IPAddress.Loopback, port))
+                .IsSecure(false)
+                .AllowUnsecureAuthentication(rejectCredentials)
+                .AuthenticationRequired(rejectCredentials))
             .Build();
         var services = new ServiceProvider();
         services.Add(new CapturingStore(Received));
+        if (rejectCredentials)
+        {
+            services.Add(new RejectingAuthenticator());
+        }
         _server = new SmtpServer.SmtpServer(options, services);
         _run = _server.StartAsync(_cts.Token);
     }
@@ -43,11 +52,13 @@ public sealed class SmtpStub : IAsyncDisposable
 
     /// <summary>
     /// Starts a stub and returns once it accepts connections. Messages larger than
-    /// <paramref name="maxMessageSize"/> bytes (0: no limit) are rejected.
+    /// <paramref name="maxMessageSize"/> bytes (0: no limit) are rejected. With
+    /// <paramref name="rejectCredentials"/> the stub demands AUTH and refuses every password,
+    /// so clients see a 535 like a wrong Gmail app password produces.
     /// </summary>
-    public static async Task<SmtpStub> StartAsync(int maxMessageSize = 0)
+    public static async Task<SmtpStub> StartAsync(int maxMessageSize = 0, bool rejectCredentials = false)
     {
-        var stub = new SmtpStub(FreePort(), maxMessageSize);
+        var stub = new SmtpStub(FreePort(), maxMessageSize, rejectCredentials);
         await stub.WaitUntilReadyAsync();
         return stub;
     }
@@ -99,6 +110,13 @@ public sealed class SmtpStub : IAsyncDisposable
                 await Task.Delay(20);
             }
         }
+    }
+
+    private sealed class RejectingAuthenticator : UserAuthenticator
+    {
+        public override Task<bool> AuthenticateAsync(
+            ISessionContext context, string user, string password, CancellationToken cancellationToken) =>
+            Task.FromResult(false);
     }
 
     private sealed class CapturingStore(List<MimeMessage> received) : MessageStore

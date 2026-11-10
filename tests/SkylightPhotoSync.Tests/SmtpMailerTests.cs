@@ -32,6 +32,19 @@ public class SmtpMailerTests
         Assert.NotNull(ex.InnerException);
     }
 
+    [Fact]
+    public async Task Rejected_credentials_throw_SendFailed()
+    {
+        await using var stub = await SmtpStub.StartAsync(rejectCredentials: true);
+        var mailer = new SmtpMailer(new SmtpConfig("127.0.0.1", stub.Port, "user"), password: "wrong-app-password", useStartTls: false);
+
+        var ex = await Assert.ThrowsAsync<SendFailedException>(
+            () => mailer.SendAsync(Message("never sent"), CancellationToken.None));
+
+        Assert.IsType<MailKit.Security.AuthenticationException>(ex.InnerException);
+        Assert.Empty(stub.Received);
+    }
+
     private static MimeMessage Message(string subject)
     {
         var message = new MimeMessage();
