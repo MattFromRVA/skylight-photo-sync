@@ -300,6 +300,9 @@ skylight-sync status
 # launchd: installed, next run 2026-11-06 15:02:11 -05:00
 ```
 
+If your shell needs `DOTNET_ROOT` for `skylight-sync` to start (two .NET installs on the Mac), run
+`install-launchd` with that variable exported; it is forwarded into the agent and the command says so.
+
 `install-launchd` writes a per-user LaunchAgent labelled `com.mattfromrva.skylight-photo-sync`
 that runs `skylight-sync run` every `[schedule] interval_minutes` minutes (`StartInterval`) and
 once at login (`RunAtLoad`), appending the tool's output to the log file. It loads the agent with
