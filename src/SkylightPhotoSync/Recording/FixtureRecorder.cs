@@ -230,8 +230,9 @@ public static partial class FixtureRecorder
     /// Redacts a <c>/ap/exchangetoken/cookies</c> body. Inside <c>cookies</c> every cookie keeps its
     /// <c>Name</c>, <c>Path</c>, <c>Secure</c>, <c>HttpOnly</c> and <c>Expires</c> and gets a
     /// <c>Value</c> of the same shape: a session or ubid id stays three digit groups
-    /// (<c>000-0000000-0000001</c>), a <c>Atza|…</c> token keeps its prefix (<c>Atza|redacted_0001</c>),
-    /// a quoted value stays quoted. Every other string anywhere in the body (request id, customer
+    /// (<c>000-0000000-0000001</c>), an Amazon token (<c>Atza|…</c>, <c>Atna|…</c>, <c>Atnr|…</c>) keeps only that prefix
+    /// (<c>Atza|redacted_0001</c>), any other value becomes <c>redacted_0001</c>, and a quoted value
+    /// stays quoted. Every other string anywhere in the body (request id, customer
     /// id, anything new) becomes <c>redacted_0001…</c>; the domain keys under <c>cookies</c> stay.
     /// </summary>
     internal static JsonObject RedactExchange(string body)
@@ -299,8 +300,7 @@ public static partial class FixtureRecorder
         }
         else
         {
-            var bar = core.IndexOf('|');
-            var prefix = bar > 0 && bar <= 8 && core[..bar].All(char.IsAsciiLetterOrDigit) ? core[..(bar + 1)] : "";
+            var prefix = TokenPrefixPattern().Match(core) is { Success: true } match ? match.Value : "";
             placeholder = string.Format(CultureInfo.InvariantCulture, "{0}redacted_{1:D4}", prefix, number);
         }
 
@@ -309,6 +309,9 @@ public static partial class FixtureRecorder
 
     [GeneratedRegex(@"^\d{3}-\d{7}-\d{7}$")]
     private static partial Regex SessionIdPattern();
+
+    [GeneratedRegex(@"^At[a-z]{2}\|")]
+    private static partial Regex TokenPrefixPattern();
 
     /// <summary>
     /// Keeps the first <see cref="NodesKeptPerPage"/> elements of <c>data</c> on an item page and

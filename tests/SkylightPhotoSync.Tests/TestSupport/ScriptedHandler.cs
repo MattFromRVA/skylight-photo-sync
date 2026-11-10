@@ -65,13 +65,13 @@ public sealed class ScriptedHandler : HttpMessageHandler
         .On("/content", _ => Bytes(File.ReadAllBytes(Fixtures.Image("tiny.jpg")), "image/jpeg"));
 
     /// <summary>
-    /// The device-login endpoints answered from the hand-written placeholders under
-    /// <c>Fixtures/AmazonAuth</c> (shapes documented in issue #30; not recorded): registration,
-    /// cookie exchange, access-token refresh and deregistration.
+    /// The device-login endpoints answered from <c>Fixtures/AmazonAuth</c>: the cookie exchange
+    /// from the redacted recording <c>exchange_cookies.json</c>; registration, access-token refresh
+    /// and deregistration from the hand-written placeholders (shapes documented in issue #30).
     /// </summary>
     public ScriptedHandler WithDeviceAuthDefaults() =>
         On("/auth/register", _ => AuthJson("placeholder_auth_register.json"))
-        .On("/ap/exchangetoken/cookies", _ => Json("exchange_cookies.json"))
+        .On("/ap/exchangetoken/cookies", _ => AuthJson("exchange_cookies.json"))
         .On("/auth/token", _ => AuthJson("placeholder_auth_token.json"))
         .On("/auth/deregister", _ => AuthJson("placeholder_auth_deregister.json"));
 

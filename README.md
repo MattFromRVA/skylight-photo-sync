@@ -123,7 +123,7 @@ Amazon account and refreshes its own session before every run
 ([issue #30](https://github.com/MattFromRVA/skylight-photo-sync/issues/30)). On a live account
 `login`, `run --dry-run` and `status` worked as documented, and the per-run cookie exchange is
 tested against a redacted recording made by `skylight-sync record-fixtures --auth`
-(`tests/SkylightPhotoSync.Tests/Fixtures/Amazon/exchange_cookies.json`). `login --cookies`
+(`tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/exchange_cookies.json`). `login --cookies`
 remains as the fallback.
 
 Planned: publishing to NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)).

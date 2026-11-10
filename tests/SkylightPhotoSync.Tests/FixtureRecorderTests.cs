@@ -309,6 +309,16 @@ public sealed class FixtureRecorderTests
         Assert.StartsWith("redacted", root.GetProperty("response").GetProperty("tokens").GetProperty("customer_id").GetString());
         Assert.StartsWith("redacted", root.GetProperty("request_id").GetString());
 
+        // Only Amazon's own token prefixes survive; any other text before a '|' is part of the secret.
+        var prefixes = FixtureRecorder.RedactExchange("""
+            {"response":{"tokens":{"cookies":{".amazon.com":[
+              {"Name":"x-main","Value":"AB12cd34|secret"},
+              {"Name":"at-main","Value":"Atza|secret"}
+            ]}}}}
+            """)["response"]!["tokens"]!["cookies"]![".amazon.com"]!.AsArray();
+        Assert.Matches(@"^redacted_\d{4}$", prefixes[0]!["Value"]!.GetValue<string>());
+        Assert.Matches(@"^Atza\|redacted_\d{4}$", prefixes[1]!["Value"]!.GetValue<string>());
+
         // The recorded file still drives the parser the same way the live body did.
         var parsed = await new AmazonDeviceAuth(new ScriptedHandler().On("/ap/exchangetoken/cookies", _ => ScriptedHandler.JsonBody(text)))
             .ExchangeCookiesAsync("Atnr|RAWREFRESHTOKEN", CancellationToken.None);

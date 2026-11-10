@@ -95,7 +95,7 @@ Implemented 2026-11-06 from the sources below and run against a live amazon.com 
   stays hand-written and labelled `_placeholder`, with its cookie entries aligned to the
   serialisation seen in the exchange.
 - **Cookie exchange**, recorded by `skylight-sync record-fixtures --auth` as
-  `tests/SkylightPhotoSync.Tests/Fixtures/Amazon/exchange_cookies.json` (every value replaced by
+  `tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/exchange_cookies.json` (every value replaced by
   a placeholder of the same shape): the cookies are keyed `response.tokens.cookies[".amazon.com"]`,
   in the order `session-id`, `ubid-main`, `session-token`, `x-main`, `at-main`, `sess-at-main`;
   `Secure`/`HttpOnly` are JSON booleans, not strings; `x-main`, `at-main` **and** `sess-at-main`

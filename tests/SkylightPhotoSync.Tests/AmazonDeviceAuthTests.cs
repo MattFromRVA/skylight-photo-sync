@@ -12,8 +12,8 @@ namespace SkylightPhotoSync.Tests;
 /// Pins the Audible-style device login (issue #30): the PKCE sign-in URL, the pasted
 /// <c>/ap/maplanding</c> URL, <c>/auth/register</c>, <c>/ap/exchangetoken/cookies</c>,
 /// <c>/auth/token</c> and <c>/auth/deregister</c>. The exchange response is the redacted live
-/// recording <c>Fixtures/Amazon/exchange_cookies.json</c> (2026-11-10); the others are the
-/// hand-written placeholders under <c>Fixtures/AmazonAuth</c> (the register step cannot be
+/// recording <c>Fixtures/AmazonAuth/exchange_cookies.json</c> (2026-11-10); the others are the
+/// hand-written <c>placeholder_*.json</c> beside it (the register step cannot be
 /// re-recorded, its code being single use). Every token value is fake and must never reach an
 /// exception message.
 /// </summary>
@@ -224,7 +224,7 @@ public sealed class AmazonDeviceAuthTests
     [Fact]
     public void Recorded_exchange_fixture_is_redacted_and_keeps_the_live_shape()
     {
-        var text = File.ReadAllText(Fixtures.Amazon("exchange_cookies.json"));
+        var text = File.ReadAllText(Fixtures.AmazonAuth("exchange_cookies.json"));
         using var doc = JsonDocument.Parse(text);
         var root = doc.RootElement;
 
@@ -352,13 +352,16 @@ public sealed class AmazonDeviceAuthTests
     {
         var files = Directory.GetFiles(Path.GetDirectoryName(Fixtures.AmazonAuth("placeholder_auth_register.json"))!, "*.json");
 
-        Assert.NotEmpty(files);
+        Assert.Contains(files, file => Path.GetFileName(file) == "exchange_cookies.json");
+        Assert.Contains(files, file => Path.GetFileName(file).StartsWith("placeholder_", StringComparison.Ordinal));
         foreach (var file in files)
         {
-            Assert.StartsWith("placeholder_", Path.GetFileName(file));
+            var name = Path.GetFileName(file);
+            var recorded = name == "exchange_cookies.json";
+            Assert.True(recorded || name.StartsWith("placeholder_", StringComparison.Ordinal), $"{name} is neither the recording nor a placeholder");
             using var doc = JsonDocument.Parse(File.ReadAllText(file));
-            Assert.True(doc.RootElement.TryGetProperty("_placeholder", out _), $"{Path.GetFileName(file)} lacks _placeholder");
-            Assert.False(doc.RootElement.TryGetProperty("_recorded", out _), $"{Path.GetFileName(file)} claims to be recorded");
+            Assert.Equal(!recorded, doc.RootElement.TryGetProperty("_placeholder", out _));
+            Assert.Equal(recorded, doc.RootElement.TryGetProperty("_recorded", out _));
         }
     }
 
