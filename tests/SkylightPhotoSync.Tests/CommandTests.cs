@@ -436,6 +436,25 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Login_cookies_keeps_skylight_credentials()
+    {
+        var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
+        ConfigLoader.WriteSecrets(
+            secretsPath,
+            new Secrets(null, null, null, "app-password", SkylightEmail: "me@example.com", SkylightPassword: "skylight-placeholder"));
+        Console.SetIn(new StringReader($"{_sessionId}\n{_ubid}\n{_at}\n"));
+
+        var (code, _, _) = await Run("login", "--cookies");
+
+        Assert.Equal(0, code);
+        var saved = ConfigLoader.LoadSecrets(secretsPath);
+        Assert.Equal(_sessionId, saved.AmazonSessionId);
+        Assert.Equal("app-password", saved.SmtpPassword);
+        Assert.Equal("me@example.com", saved.SkylightEmail);
+        Assert.Equal("skylight-placeholder", saved.SkylightPassword);
+    }
+
+    [Fact]
     public async Task Login_when_previous_device_cannot_be_removed_still_succeeds_with_warning()
     {
         var secretsPath = Path.Combine(_home.Dir, "secrets.toml");
