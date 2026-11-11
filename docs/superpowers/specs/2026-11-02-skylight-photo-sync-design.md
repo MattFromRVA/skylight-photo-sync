@@ -130,6 +130,7 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 - An item is marked sent only after the SMTP server accepts the message.
 - Switching `mode` or `lookback_days` does not reset state; already-sent items stay sent.
 - `skylight-sync reset --yes` clears sent and skipped state deliberately.
+  `skylight-sync reset --skipped` clears only the skipped state (issue #47).
 
 ### 6.4 Image processing
 
@@ -247,6 +248,7 @@ skylight-sync test-email [--size-probe]   # one small test image; probe sends gr
 skylight-sync install-launchd  # writes and loads the LaunchAgent plist
 skylight-sync uninstall-launchd
 skylight-sync reset --yes
+skylight-sync reset --skipped  # only the skipped items; no --yes needed (issue #47)
 ```
 
 ### 6.10 Repository and quality

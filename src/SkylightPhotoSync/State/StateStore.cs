@@ -292,6 +292,13 @@ public sealed class StateStore : IDisposable
         return removed;
     }
 
+    /// <summary>
+    /// Forgets every skipped item so permanently skipped ones are tried again; sent items are kept.
+    /// Returns the number of skipped-item rows removed.
+    /// </summary>
+    public int ResetSkipped() =>
+        Execute("DELETE FROM skipped_items");
+
     public void Dispose() => _connection.Dispose();
 
     private static string Format(DateTimeOffset at) =>

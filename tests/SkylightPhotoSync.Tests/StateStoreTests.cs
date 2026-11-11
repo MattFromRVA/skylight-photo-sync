@@ -406,6 +406,25 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void ResetSkipped_clears_skipped_items_only_and_returns_their_count()
+    {
+        _store.MarkSent([MakeItem("a", "m1"), MakeItem("b", "m2")], "frame@example.com", "batch-1", _sentAt);
+        _store.MarkSkipped("c", SkipReason.Oversize, "too big");
+        _store.MarkSkipped("d", SkipReason.UnsupportedType, "not a photo");
+        _store.MarkSkipped("e", SkipReason.DownloadFailed, "timeout");
+
+        var removed = _store.ResetSkipped();
+
+        Assert.Equal(3, removed);
+        Assert.Equal(0L, Scalar("SELECT COUNT(*) FROM skipped_items"));
+        Assert.False(_store.IsSkipped("c"));
+        Assert.Equal(2L, Scalar("SELECT COUNT(*) FROM sent_items"));
+        Assert.True(_store.IsSent("a", "frame@example.com"));
+        Assert.True(_store.IsMd5Sent("m2", "frame@example.com"));
+        Assert.Equal(0, _store.ResetSkipped());
+    }
+
+    [Fact]
     public void Dispose_releases_the_database_file()
     {
         _store.MarkSent([MakeItem("a")], "frame@example.com", "batch-1", _sentAt);

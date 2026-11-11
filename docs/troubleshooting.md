@@ -272,7 +272,7 @@ why the Mac is the supported platform: on Linux there is no `sips`, and every HE
 with this error (JPEG and PNG still work). On a Mac, this error for a single file usually means
 the download is corrupt or the file is not really HEIC. The item is recorded in `skipped_items`
 as `UnsupportedType` with this message as the detail, the run continues with the next item, and
-the item is not retried unless you `reset --yes`.
+the item is not retried unless you `reset --skipped`.
 
 ## Resending everything: `reset --yes`
 
@@ -285,10 +285,24 @@ skylight-sync reset --yes
 window as new: it emails everything again and retries anything it had given up on. Use it after
 wiping the frame, switching to a different Skylight address, or fixing whatever caused a batch of
 skips. Without `--yes` it refuses and explains. It does not touch `needs_login`, the run history,
-the config, or the secrets.
+the config, or the secrets. If you only want the skipped items tried again, use
+[`reset --skipped`](#retrying-skipped-items-reset---skipped) instead: it resends nothing.
 
 To resend a smaller set, lower `lookback_days` first, or use `run --limit N` after the reset so
 the backlog goes out a few photos per run.
+
+## Retrying skipped items: `reset --skipped`
+
+```bash
+skylight-sync reset --skipped
+# Cleared 27 skipped items; the next run tries them again. Sent items were kept.
+```
+
+Items skipped as `Oversize` or `UnsupportedType` are never retried on their own. After fixing the
+cause (raising a size cap, say), `reset --skipped` empties `skipped_items` and leaves `sent_items`
+alone, so the next run tries those items again and resends nothing. For that reason it needs no
+`--yes`. `reset --skipped --yes` does exactly the same: `--skipped` limits the reset to the
+skipped items and `--yes` does not widen it.
 
 ## launchd runs fail with "You must install or update .NET"
 
