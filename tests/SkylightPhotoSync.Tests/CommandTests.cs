@@ -41,6 +41,8 @@ public sealed class CommandTests : IDisposable
     public void Dispose()
     {
         CommandSupport.AmazonHandlerFactory = null;
+        CommandSupport.SkylightHandlerFactory = null;
+        CommandSupport.RotationDelay = null;
         Console.SetIn(_originalStdin);
         _root.Dispose();
         _home.Dispose();
@@ -864,6 +866,106 @@ public sealed class CommandTests : IDisposable
         Assert.NotNull(image);
     }
 
+    [Fact]
+    public async Task Run_with_rotation_but_no_skylight_sign_in_fails_clearly()
+    {
+        WriteConfig(rotation: true);
+
+        var (code, _, err) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.Equal(1, code);
+        Assert.Contains("[skylight] email and password", err);
+    }
+
+    [Fact]
+    public async Task Run_with_rotation_reports_recycled_and_pruned()
+    {
+        WriteConfig(rotation: true);
+        WriteSkylightSecrets();
+        CommandSupport.SkylightHandlerFactory = () => SkylightAccount(ourPhotos: 33);
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+
+        var (code, out_, err) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("found 1, sent 1, skipped 0, batches 1, recycled 0, pruned 3 (dry run)", out_);
+        Assert.DoesNotContain("skylight-placeholder", out_ + err);
+    }
+
+    [Fact]
+    public async Task Prune_dry_run_lists_what_it_would_delete_per_frame()
+    {
+        WriteConfig();   // rotation off: prune works anyway, so it can be checked before turning rotation on
+        WriteSkylightSecrets();
+        var account = SkylightAccount(ourPhotos: 31);
+        CommandSupport.SkylightHandlerFactory = () => account;
+
+        var (code, out_, err) = await Run("prune", "--dry-run");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("frame \"Kitchen\": 31 photos from sync@example.com, would delete 1 (keep 30)", out_);
+        Assert.Contains("left alone: 1 from grandma@example.com", out_);
+        Assert.DoesNotContain(account.Requests, r => r.Method == HttpMethod.Delete);
+    }
+
+    [Fact]
+    public async Task Prune_deletes_and_status_counts_it()
+    {
+        WriteConfig(rotation: true);
+        WriteSkylightSecrets();
+        var account = SkylightAccount(ourPhotos: 32);
+        CommandSupport.SkylightHandlerFactory = () => account;
+
+        var (code, out_, err) = await Run("prune");
+        var (_, status, _) = await Run("status");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("deleted 2 (keep 30)", out_);
+        Assert.Equal(2, account.Requests.Count(r => r.Method == HttpMethod.Delete));
+        Assert.Contains("rotation: on, keep 30 per frame, 2 pruned so far", status);
+    }
+
+    [Fact]
+    public async Task Prune_without_skylight_sign_in_fails()
+    {
+        WriteConfig();
+
+        var (code, _, err) = await Run("prune", "--dry-run");
+
+        Assert.Equal(1, code);
+        Assert.Contains("[skylight] email and password", err);
+    }
+
+    private void WriteSkylightSecrets()
+    {
+        ConfigLoader.WriteSecrets(
+            Path.Combine(_home.Dir, "secrets.toml"),
+            new Secrets(null, null, null, null, SkylightEmail: "me@example.com", SkylightPassword: "skylight-placeholder"));
+
+        // A cached, unexpired token (placeholder) so the commands skip the sign-in dance.
+        File.WriteAllText(
+            Path.Combine(_home.Dir, "skylight-token.json"),
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                access_token = "placeholder-access",
+                refresh_token = "placeholder-refresh",
+                expires_at = DateTime.UtcNow.AddHours(1).ToString("O"),
+            }));
+    }
+
+    /// <summary>HAND-WRITTEN PLACEHOLDER Skylight account: one frame, <paramref name="ourPhotos"/> from us and one from grandma.</summary>
+    private static ScriptedHandler SkylightAccount(int ourPhotos)
+    {
+        var messages = Enumerable.Range(1, ourPhotos)
+            .Select(i => (object)new { id = $"{i}", attributes = new { created_at = DateTime.UtcNow.AddMinutes(i - ourPhotos - 60), from_email = "sync@example.com" } })
+            .Append(new { id = "g1", attributes = new { created_at = DateTime.UtcNow.AddDays(-2), from_email = "grandma@example.com" } });
+        var page = System.Text.Json.JsonSerializer.Serialize(new { data = messages, meta = new { current_page = 1, num_pages = 1 } });
+        return new ScriptedHandler()
+            .On("/api/frames", _ => ScriptedHandler.JsonBody("""{"data":[{"id":"1","attributes":{"name":"Kitchen"}}]}"""))
+            .On("/api/frames/1/messages", _ => ScriptedHandler.JsonBody(page))
+            .On(r => r.Method == HttpMethod.Delete, _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+    }
+
     private static async Task<(int Code, string Out, string Err)> Run(params string[] args)
     {
         var out_ = new StringWriter();
@@ -880,7 +982,7 @@ public sealed class CommandTests : IDisposable
     private void WriteAmazonSecrets() =>
         ConfigLoader.WriteSecrets(Path.Combine(_home.Dir, "secrets.toml"), new Secrets(_sessionId, _ubid, _at, null));
 
-    private void WriteConfig(int smtpPort = 25) =>
+    private void WriteConfig(int smtpPort = 25, bool rotation = false) =>
         File.WriteAllText(
             Path.Combine(_home.Dir, "config.toml"),
             $"""
@@ -896,6 +998,10 @@ public sealed class CommandTests : IDisposable
             host = "127.0.0.1"
             port = {smtpPort}
             username = "user"
+
+            [rotation]
+            enabled = {(rotation ? "true" : "false")}
+            arrival_wait_minutes = 0
             """);
 
     /// <summary>No fake token, cookie or authorization code may ever reach output or logs.</summary>

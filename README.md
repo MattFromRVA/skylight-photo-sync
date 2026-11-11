@@ -21,6 +21,9 @@ Every hour (configurable) it:
    photos.
 4. Remembers what it sent so nothing is sent twice.
 5. Tells you, once and clearly, if its Amazon login stops working and needs a new sign-in.
+6. Optionally **rotates** the frame: it keeps only the newest N photos it sent (say 30), deletes
+   older ones, and resends old favourites once the album runs dry. Deleting uses Skylight's
+   unofficial app API; see [setup step 13](docs/setup.md#13-optional-rotate-photos-on-the-frame).
 
 ## Quick start
 

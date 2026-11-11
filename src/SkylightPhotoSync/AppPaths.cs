@@ -10,6 +10,10 @@ public sealed record AppPaths(string ConfigFile, string SecretsFile, string Stat
 
     private const string _appDirName = "skylight-photo-sync";
 
+    /// <summary>The cached Skylight API tokens (mode 0600), next to <see cref="StateDb"/>.</summary>
+    public string SkylightTokenFile =>
+        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(StateDb)) ?? ".", "skylight-token.json");
+
     public static AppPaths Resolve()
     {
         var overrideHome = Environment.GetEnvironmentVariable(HomeEnvVar);

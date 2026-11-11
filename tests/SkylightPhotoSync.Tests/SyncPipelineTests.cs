@@ -5,6 +5,7 @@ using SkylightPhotoSync.Imaging;
 using SkylightPhotoSync.Mail;
 using SkylightPhotoSync.Models;
 using SkylightPhotoSync.Pipeline;
+using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.State;
 using SkylightPhotoSync.Tests.TestSupport;
@@ -33,7 +34,7 @@ public sealed class SyncPipelineTests : IDisposable
     private readonly StateStore _store;
     private readonly FakeNotifier _notifier = new();
     private readonly string _lockPath;
-    private readonly DateTimeOffset _now = _t0;
+    private DateTimeOffset _now = _t0;
 
     public SyncPipelineTests()
     {
@@ -409,6 +410,112 @@ public sealed class SyncPipelineTests : IDisposable
         Assert.Equal(before, Directory.GetDirectories(SyncPipeline.TempRoot).Length);
     }
 
+    [Fact]
+    public async Task Rotation_recycles_the_longest_ago_sent_once_nothing_is_new()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        _root.AddFixture("tiny_rot6.heic", $"{_album}/c.heic", DaysAgo(1));
+        var pipeline = Pipeline(Rotating(keep: 1, maxPerRun: 1), Source(), Mailer(stub));
+
+        var sent = new List<(int Sent, int Recycled)>();
+        for (var hour = 0; hour < 5; hour++)
+        {
+            _now = _t0.AddHours(hour);
+            var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+            Assert.Null(result.Error);
+            sent.Add((result.Sent, result.Recycled));
+        }
+
+        // a, b, c are new; then a (sent longest ago), then b. c, the newest send, is never resent while "on the frame".
+        Assert.Equal([(1, 0), (1, 0), (1, 0), (1, 1), (1, 1)], sent);
+        Assert.Equal(5, stub.Received.Count);
+        Assert.Equal(AttachmentNames(stub.Received[0]), AttachmentNames(stub.Received[3]));
+        Assert.Equal(AttachmentNames(stub.Received[1]), AttachmentNames(stub.Received[4]));
+        Assert.Equal(1, _store.LastSentTimes().Count(pair => pair.Value == _t0.AddHours(3)));
+    }
+
+    [Fact]
+    public async Task Rotation_tops_up_a_short_run_with_recycled_items()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var cfg = Rotating(keep: 1, maxPerRun: 2);
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub));
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);   // a, b
+        _now = _t0.AddHours(1);
+        _root.AddFixture("tiny_rot6.heic", $"{_album}/c.heic", DaysAgo(1));
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((1, 2, 1), (result.Found, result.Sent, result.Recycled));   // c is new, a is recycled
+    }
+
+    [Fact]
+    public async Task Without_rotation_nothing_is_recycled()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var cfg = Rotating(keep: 1, maxPerRun: 25) with { Rotation = RotationConfig.Disabled };
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub));
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((0, 0), (result.Sent, result.Recycled));
+    }
+
+    [Fact]
+    public async Task Rotation_prunes_the_frame_after_sending()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var cfg = Rotating(keep: 2, maxPerRun: 25);
+        var client = new FakeSkylightClient().Add(cfg.Email.From, 5, _t0.AddHours(-1)).Add("someone@example.com", 3, _t0.AddDays(-3));
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client));
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((1, 3, (string?)null), (result.Sent, result.Pruned, result.Error));
+        Assert.Equal(["m1", "m2", "m3"], client.Deleted.Select(d => d.MessageId));
+    }
+
+    [Fact]
+    public async Task Rotation_dry_run_counts_but_deletes_nothing()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var cfg = Rotating(keep: 2, maxPerRun: 25);
+        var client = new FakeSkylightClient().Add(cfg.Email.From, 5, _t0);
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client));
+
+        var result = await pipeline.RunAsync(dryRun: true, limit: null, CancellationToken.None);
+
+        Assert.Equal(3, result.Pruned);
+        Assert.Empty(client.Deleted);
+    }
+
+    [Fact]
+    public async Task Prune_failure_is_reported_but_sent_items_stay_sent()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var cfg = Rotating(keep: 1, maxPerRun: 25);
+        var client = new FakeSkylightClient { FailDeletesWith = new SkylightApiException("Skylight answered HTTP 500") }
+            .Add(cfg.Email.From, 3, _t0);
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client));
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal("prune_failed: Skylight answered HTTP 500", result.Error);
+        Assert.True(_store.IsSent($"{_album}/a.png", _frame));
+        Assert.Equal(result.Error, _store.LastRun()!.Error);
+    }
+
     public void Dispose()
     {
         _store.Dispose();
@@ -431,12 +538,23 @@ public sealed class SyncPipelineTests : IDisposable
         new(new LocalFolderSource(_root.Path), failAfterDownloads);
 
     private SyncPipeline Pipeline(
-        AppConfig cfg, IPhotoSource source, IMailer mailer, IMailer? alertMailer = null, long videoCapBytes = 22_000_000)
+        AppConfig cfg, IPhotoSource source, IMailer mailer, IMailer? alertMailer = null, long videoCapBytes = 22_000_000,
+        FrameRotator? rotator = null)
     {
         var normalizer = new ImageNormalizer(new FakeHeicConverter(), cfg.Image, videoCapBytes);
         var alerter = new Alerter(_store, alertMailer, cfg.Alerts.Email, cfg.Email.From, _notifier, () => _now);
-        return new SyncPipeline(cfg, source, _store, normalizer, mailer, alerter, () => _now, _lockPath);
+        return new SyncPipeline(cfg, source, _store, normalizer, mailer, alerter, () => _now, _lockPath, rotator);
     }
+
+    private static AppConfig Rotating(int keep, int maxPerRun) =>
+        _baseConfig with
+        {
+            Limits = new LimitsConfig(maxPerRun),
+            Rotation = new RotationConfig(Enabled: true, keep, MaxDeletesPerRun: 100, FrameName: null, ArrivalWaitMinutes: 0),
+        };
+
+    private FrameRotator Rotator(AppConfig cfg, ISkylightClient client) =>
+        new(cfg.Rotation, cfg.Email.From, client, _store, () => _now, (_, _) => Task.CompletedTask);
 
     /// <summary>
     /// Wraps a source, counting calls, and throws <see cref="AuthExpiredException"/> on the download after

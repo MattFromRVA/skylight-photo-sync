@@ -24,6 +24,7 @@ public static class StatusCommand
                 using var store = new StateStore(paths.StateDb);
                 stdout.WriteLine($"last run: {DescribeLastRun(store.LastRun())}");
                 stdout.WriteLine($"total sent: {store.TotalSent()}");
+                stdout.WriteLine($"rotation: {DescribeRotation(paths, store)}");
                 stdout.WriteLine($"needs_login: {(store.NeedsLogin() ? "yes" : "no")}");
                 stdout.WriteLine($"auth: {DescribeAuth(paths)}");
                 stdout.WriteLine($"launchd: {await DescribeLaunchdAsync(ct)}");
@@ -48,6 +49,22 @@ public static class StatusCommand
         try
         {
             return CommandSupport.DescribeAmazonAuth(CommandSupport.LoadSecretsIfPresent(paths));
+        }
+        catch (ConfigException ex)
+        {
+            return $"unknown ({ex.Message})";
+        }
+    }
+
+    /// <summary><c>off</c>, or the keep count and how many photos rotation has deleted so far.</summary>
+    private static string DescribeRotation(AppPaths paths, StateStore store)
+    {
+        try
+        {
+            var rotation = ConfigLoader.LoadConfig(paths.ConfigFile).Rotation;
+            return rotation.Enabled
+                ? $"on, keep {rotation.Keep} per frame, {store.TotalPruned()} pruned so far"
+                : "off";
         }
         catch (ConfigException ex)
         {

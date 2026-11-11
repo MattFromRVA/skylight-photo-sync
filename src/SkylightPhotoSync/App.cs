@@ -44,6 +44,7 @@ public static class App
         root.Subcommands.Add(LoginCommand.Create());
         root.Subcommands.Add(LogoutCommand.Create());
         root.Subcommands.Add(RunCommand.Create());
+        root.Subcommands.Add(PruneCommand.Create());
         root.Subcommands.Add(StatusCommand.Create());
         root.Subcommands.Add(TestEmailCommand.Create());
         root.Subcommands.Add(InstallLaunchdCommand.Create());

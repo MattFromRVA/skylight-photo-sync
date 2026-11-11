@@ -4,6 +4,7 @@ using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Imaging;
 using SkylightPhotoSync.Mail;
 using SkylightPhotoSync.Models;
+using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.State;
 
@@ -13,6 +14,8 @@ namespace SkylightPhotoSync.Pipeline;
 /// One sync run (spec §6.3, §6.5, §6.7): list candidates, drop what was already sent or permanently
 /// skipped, download and normalize the oldest ones into a temp directory, pack them into emails and send
 /// one email per batch per recipient, marking items sent only after the SMTP server accepts the message.
+/// With <c>[rotation]</c> enabled, a run that runs out of new items tops up with the items sent longest
+/// ago, and <paramref name="rotator"/> (when given) then prunes the frame down to the newest photos.
 /// </summary>
 public sealed class SyncPipeline(
     AppConfig cfg,
@@ -22,7 +25,8 @@ public sealed class SyncPipeline(
     IMailer mailer,
     Alerter alerter,
     Func<DateTimeOffset> now,
-    string lockPath)
+    string lockPath,
+    FrameRotator? rotator = null)
 {
     /// <summary><see cref="RunResult.Error"/> when the run skipped the source because a login is needed.</summary>
     internal const string NeedsLoginError = "needs_login";
@@ -32,6 +36,9 @@ public sealed class SyncPipeline(
 
     /// <summary>Prefix of <see cref="RunResult.Error"/> when the SMTP server did not accept a batch.</summary>
     internal const string SendFailedErrorPrefix = "send_failed: ";
+
+    /// <summary>Prefix of <see cref="RunResult.Error"/> when everything was sent but rotation failed.</summary>
+    internal const string PruneFailedErrorPrefix = "prune_failed: ";
 
     internal const string AuthExpiredTitle = "Amazon login expired";
     internal const string RepeatedFailureTitle = "Sync failing";
@@ -58,10 +65,12 @@ public sealed class SyncPipeline(
         var runId = store.StartRun(cfg.Source.Mode);
         var counts = new Counts();
         var workDir = Path.Combine(TempRoot, $"run-{Guid.NewGuid():N}");
+        var startedAt = now();
         try
         {
             await ProcessAsync(dryRun, limit, workDir, counts, ct);
-            return await FinishAsync(runId, dryRun, counts, error: null, ct);
+            var pruneError = await PruneAsync(dryRun, startedAt, counts, ct);
+            return await FinishAsync(runId, dryRun, counts, pruneError, ct);
         }
         catch (AuthExpiredException)
         {
@@ -118,11 +127,23 @@ public sealed class SyncPipeline(
             }
         }
 
-        var take = Math.Min(limit ?? cfg.Limits.MaxItemsPerRun, queue.Count);
+        var max = limit ?? cfg.Limits.MaxItemsPerRun;
+        var take = Math.Min(max, queue.Count);
+        var picked = queue.Take(take).ToList();
+        var recycled = new HashSet<string>(StringComparer.Ordinal);
+        if (cfg.Rotation.Enabled && picked.Count < max)
+        {
+            foreach (var item in Recyclable(candidates, fresh).Take(max - picked.Count))
+            {
+                picked.Add(item);
+                recycled.Add(item.Id);
+            }
+        }
+
         var downloadDir = Path.Combine(workDir, "downloads");
         var attachmentDir = Path.Combine(workDir, "attachments");
-        var prepared = new List<(Item Item, string File)>(take);
-        foreach (var item in queue.Take(take))
+        var prepared = new List<(Item Item, string File)>(picked.Count);
+        foreach (var item in picked)
         {
             ct.ThrowIfCancellationRequested();
             if (await PrepareAsync(item, downloadDir, attachmentDir, counts, ct) is { } file)
@@ -133,7 +154,7 @@ public sealed class SyncPipeline(
 
         foreach (var recipient in cfg.Email.To)
         {
-            var pending = prepared.Where(p => !AlreadySent(p.Item, recipient)).ToList();
+            var pending = prepared.Where(p => recycled.Contains(p.Item.Id) || !AlreadySent(p.Item, recipient)).ToList();
             var pack = BatchPacker.Pack(pending, cfg.Email.MaxAttachments, cfg.Email.MaxTotalBytes);
             foreach (var (item, reason) in pack.Skipped)
             {
@@ -154,7 +175,61 @@ public sealed class SyncPipeline(
 
                 counts.Batches++;
                 counts.Sent += batch.Items.Count;
+                foreach (var item in batch.Items)
+                {
+                    counts.SentIds.Add(item.Id);
+                    if (recycled.Contains(item.Id) && counts.RecycledIds.Add(item.Id))
+                    {
+                        counts.Recycled++;
+                    }
+                }
             }
+        }
+    }
+
+    /// <summary>
+    /// Rotation's top-up when nothing new is left: candidates that were already sent, longest-ago send
+    /// first, leaving out the <see cref="RotationConfig.Keep"/> most recently sent (they are presumably
+    /// still on the frame). Byte-identical copies that were never sent under their own id stay out.
+    /// </summary>
+    private IEnumerable<Item> Recyclable(IReadOnlyList<Item> candidates, IReadOnlyList<Item> fresh)
+    {
+        var lastSent = store.LastSentTimes();
+        var freshIds = fresh.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+        var sent = candidates
+            .Where(item => !freshIds.Contains(item.Id)
+                && lastSent.ContainsKey(item.Id)
+                && seenIds.Add(item.Id)
+                && !store.IsSkipped(item.Id)
+                && (item.Kind != ItemKind.Video || cfg.Source.IncludeVideos))
+            .OrderBy(item => lastSent[item.Id])
+            .ThenBy(item => item.CapturedAt)
+            .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .ToList();
+        return sent.Take(Math.Max(0, sent.Count - cfg.Rotation.Keep));
+    }
+
+    /// <summary>
+    /// Runs rotation after a successful send. Returns <see langword="null"/> when it worked (or there is
+    /// no rotator), otherwise the run's error. A failure here never un-marks anything that was sent.
+    /// </summary>
+    private async Task<string?> PruneAsync(bool dryRun, DateTimeOffset startedAt, Counts counts, CancellationToken ct)
+    {
+        if (rotator is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var result = await rotator.PruneAsync(dryRun, counts.SentIds.Count, startedAt, ct);
+            counts.Pruned = dryRun ? result.WouldDelete : result.Deleted;
+            return null;
+        }
+        catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
+        {
+            return PruneFailedErrorPrefix + ex.Message;
         }
     }
 
@@ -231,7 +306,7 @@ public sealed class SyncPipeline(
             }
         }
 
-        return new RunResult(counts.Found, counts.Sent, counts.Skipped, counts.Batches, dryRun, error);
+        return new RunResult(counts.Found, counts.Sent, counts.Skipped, counts.Batches, dryRun, error, counts.Recycled, counts.Pruned);
     }
 
     /// <summary>Closes the run's row. A dry run records zero sent, because nothing was.</summary>
@@ -284,6 +359,14 @@ public sealed class SyncPipeline(
         public int Skipped { get; set; }
 
         public int Batches { get; set; }
+
+        public int Recycled { get; set; }
+
+        public int Pruned { get; set; }
+
+        public HashSet<string> SentIds { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> RecycledIds { get; } = new(StringComparer.Ordinal);
 
         public HashSet<string> SkippedIds { get; } = new(StringComparer.Ordinal);
     }

@@ -5,7 +5,8 @@ namespace SkylightPhotoSync.Config;
 /// (<see cref="AmazonRefreshToken"/>, with the serial the device was registered under) or, as the
 /// fallback, by the three pasted browser cookies. Any value may be absent (for example before the
 /// user has logged in); a file with neither is only an error when Amazon is actually needed.
-/// Never log these: the refresh token is as powerful as the cookies.
+/// <see cref="SkylightEmail"/> and <see cref="SkylightPassword"/> sign in to the Skylight app API for
+/// <c>[rotation]</c>. Never log these: the refresh token is as powerful as the cookies.
 /// </summary>
 public sealed record Secrets(
     string? AmazonSessionId,
@@ -13,4 +14,6 @@ public sealed record Secrets(
     string? AmazonAt,
     string? SmtpPassword,
     string? AmazonRefreshToken = null,
-    string? AmazonDeviceSerial = null);
+    string? AmazonDeviceSerial = null,
+    string? SkylightEmail = null,
+    string? SkylightPassword = null);

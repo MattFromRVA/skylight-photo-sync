@@ -1,7 +1,24 @@
 # Spike: hourly photo rotation on the Skylight frame
 
-Date: 2026-11-10. Status: research only, no code. Nothing below has been tested against a live
-Skylight account yet. Items marked **(verify)** need a live check before anyone builds on them.
+Date: 2026-11-10. Status: **implemented on 2026-11-11** as the optional `[rotation]` feature
+(setup guide step 13), with Matt's answers below. The live check at the end has still not been
+run: every Skylight response in the tests is a hand-written placeholder. Items marked
+**(verify)** are still unverified.
+
+Decisions (Matt, 2026-11-11): recycle once the album is out of new photos (question 1, yes);
+30 in and 30 out each hour (`max_items_per_run = 30`, `keep = 30`); storing the Skylight password in
+secrets.toml is fine.
+
+As built, the design below differs in a few places:
+
+- `frame_name` blank means every frame on the account. Only this tool's photos are deleted anywhere,
+  so that is safe, and it covers more than one Skylight address in `[email] to`.
+- Each run waits up to `arrival_wait_minutes` (default 10) for the photos it just emailed to show up
+  before pruning. Otherwise the prune would see last hour's photos as the newest and keep them.
+- Deletions go to a `pruned_messages` table. A resend updates `sent_items.sent_at`, and recycling
+  picks the longest-ago send first.
+- `skylight-sync prune [--dry-run]` runs the clean-up on its own and works with rotation off, so it
+  doubles as the live check below.
 
 ## Question
 
@@ -65,16 +82,19 @@ This doesn't require mapping our Amazon item ids to Skylight message ids. `from_
 Note that the newest photos *sent* aren't necessarily the newest *taken*: the sync sends oldest
 first, so the frame holds whatever went out most recently.
 
-### Proposed config (off by default)
+### Config as built (off by default)
 
 ```toml
 [rotation]
 enabled = false
-keep = 30                  # photos from this tool to keep on the frame
-max_deletes_per_run = 50   # safety brake
-frame_name = ""            # blank = the account's only/primary frame
-dry_run = false            # log what would be deleted, delete nothing
+keep = 30                  # photos from this tool to keep on each frame
+max_deletes_per_run = 100  # safety brake, per frame per run
+frame_name = ""            # blank = every frame on the account
+arrival_wait_minutes = 10  # wait for just-sent photos before pruning
 ```
+
+There is no `dry_run` key; `skylight-sync run --dry-run` and `skylight-sync prune --dry-run`
+cover it.
 
 `secrets.toml` gains `skylight_email` and `skylight_password`. They would be stored like the
 SMTP password (0600, never committed).

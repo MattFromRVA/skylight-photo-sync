@@ -8,6 +8,9 @@ namespace SkylightPhotoSync.Pipeline;
 /// <param name="DryRun">True when nothing was sent or marked because <c>--dry-run</c> was given.</param>
 /// <param name="Error">
 /// <see langword="null"/> on success; otherwise <c>needs_login</c> (the run never touched the source),
-/// <c>auth_expired</c> (the source rejected the credentials during the run) or <c>send_failed: …</c>.
+/// <c>auth_expired</c> (the source rejected the credentials during the run), <c>send_failed: …</c>
+/// or <c>prune_failed: …</c> (everything was sent, but rotation could not clean up the frame).
 /// </param>
-public sealed record RunResult(int Found, int Sent, int Skipped, int Batches, bool DryRun, string? Error);
+/// <param name="Recycled">With <c>[rotation]</c>: already-sent items sent again because nothing new was left. Included in <see cref="Sent"/>.</param>
+/// <param name="Pruned">With <c>[rotation]</c>: photos deleted from the frame; in a dry run, the photos that would have been.</param>
+public sealed record RunResult(int Found, int Sent, int Skipped, int Batches, bool DryRun, string? Error, int Recycled = 0, int Pruned = 0);
