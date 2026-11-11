@@ -96,7 +96,7 @@ arrival_wait_minutes = 10  # wait for just-sent photos before pruning
 There is no `dry_run` key; `skylight-sync run --dry-run` and `skylight-sync prune --dry-run`
 cover it.
 
-`secrets.toml` gains `skylight_email` and `skylight_password`. They would be stored like the
+`secrets.toml` gains a `[skylight]` table with `email` and `password`. They would be stored like the
 SMTP password (0600, never committed).
 
 ## Design questions for Matt

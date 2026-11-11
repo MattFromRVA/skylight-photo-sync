@@ -305,6 +305,7 @@ skylight-sync install-launchd
 skylight-sync status
 # last run: 2026-11-06 14:02:11 -05:00 ok (found 25, sent 25, skipped 0)
 # total sent: 26
+# rotation: off
 # needs_login: no
 # auth: device login
 # launchd: installed, next run 2026-11-06 15:02:11 -05:00
@@ -339,8 +340,9 @@ it wakes. Two overlapping runs cannot happen: the second exits at once with exit
 | LaunchAgent plist | `~/Library/LaunchAgents/com.mattfromrva.skylight-photo-sync.plist` |
 | Scratch downloads (deleted after each run) | `$TMPDIR/skylight-photo-sync/run-<id>/` |
 
-Setting the environment variable `SKYLIGHT_SYNC_HOME` puts all of the first five in one directory
-instead (`config.toml`, `secrets.toml`, `state.db`, `run.lock`, `sync.log` directly under it).
+Setting the environment variable `SKYLIGHT_SYNC_HOME` puts all of the first six in one directory
+instead (`config.toml`, `secrets.toml`, `skylight-token.json`, `state.db`, `run.lock`, `sync.log`
+directly under it).
 That is how the tests isolate themselves and is handy for trying a second configuration.
 
 The log records each run's start (mode, album, lookback, limit, source), its summary line and any
