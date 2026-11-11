@@ -20,11 +20,21 @@ public sealed class FakeSkylightClient : ISkylightClient
 
     public Exception? FailDeletesWith { get; set; }
 
-    public Task<IReadOnlyList<SkylightFrame>> ListFramesAsync(CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<SkylightFrame>>(Frames.ToList());
+    /// <summary>When set, every call fails with this, the way a refused sign-in fails whatever is asked.</summary>
+    public Exception? FailEverythingWith { get; set; }
+
+    /// <summary>How many calls of any kind reached the account, failed ones included.</summary>
+    public int Calls { get; private set; }
+
+    public Task<IReadOnlyList<SkylightFrame>> ListFramesAsync(CancellationToken ct)
+    {
+        Arrive();
+        return Task.FromResult<IReadOnlyList<SkylightFrame>>(Frames.ToList());
+    }
 
     public Task<IReadOnlyList<SkylightMessage>> ListMessagesAsync(string frameId, CancellationToken ct)
     {
+        Arrive();
         Listings++;
         BeforeListing?.Invoke(Listings);
         return Task.FromResult<IReadOnlyList<SkylightMessage>>(Messages.TryGetValue(frameId, out var list) ? list.ToList() : []);
@@ -32,6 +42,7 @@ public sealed class FakeSkylightClient : ISkylightClient
 
     public Task DeleteMessageAsync(string frameId, string messageId, CancellationToken ct)
     {
+        Arrive();
         if (FailDeletesWith is not null)
         {
             throw FailDeletesWith;
@@ -40,6 +51,15 @@ public sealed class FakeSkylightClient : ISkylightClient
         Deleted.Add((frameId, messageId));
         Messages[frameId].RemoveAll(m => m.Id == messageId);
         return Task.CompletedTask;
+    }
+
+    private void Arrive()
+    {
+        Calls++;
+        if (FailEverythingWith is not null)
+        {
+            throw FailEverythingWith;
+        }
     }
 
     /// <summary>Adds <paramref name="count"/> photos from <paramref name="from"/>, one minute apart, ending at <paramref name="newest"/>.</summary>

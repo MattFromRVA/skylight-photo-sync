@@ -46,6 +46,37 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void Skylight_sign_in_failure_round_trips_and_clears()
+    {
+        Assert.Null(_store.SkylightSignInFailure());
+
+        _store.SetSkylightSignInFailure("first reason", "v1:a:b", _sentAt);
+        _store.SetSkylightSignInFailure("second reason", "v1:c:d", _sentAt.AddHours(1));
+
+        Assert.Equal(new SkylightSignInFailure(_sentAt.AddHours(1), "second reason", "v1:c:d"), _store.SkylightSignInFailure());
+        using (var reopened = new StateStore(_dbPath))
+        {
+            Assert.Equal("second reason", reopened.SkylightSignInFailure()!.Reason);
+        }
+
+        _store.ClearSkylightSignInFailure();
+
+        Assert.Null(_store.SkylightSignInFailure());
+    }
+
+    [Fact]
+    public void Clear_alert_forgets_only_that_kind()
+    {
+        _store.RecordAlert("SkylightSignIn", _sentAt);
+        _store.RecordAlert("SmtpDown", _sentAt);
+
+        _store.ClearAlert("SkylightSignIn");
+
+        Assert.Null(_store.LastAlertAt("SkylightSignIn"));
+        Assert.Equal(_sentAt, _store.LastAlertAt("SmtpDown"));
+    }
+
+    [Fact]
     public void Open_creates_schema_and_parent_directory_in_wal_mode()
     {
         Assert.True(File.Exists(_dbPath));

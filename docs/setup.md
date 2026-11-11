@@ -306,6 +306,7 @@ skylight-sync status
 # last run: 2026-11-06 14:02:11 -05:00 ok (found 25, sent 25, skipped 0)
 # total sent: 26
 # rotation: off
+# skylight_needs_login: no
 # needs_login: no
 # auth: device login
 # launchd: installed, next run 2026-11-06 15:02:11 -05:00
@@ -361,7 +362,7 @@ sqlite3 ~/Library/Application\ Support/skylight-photo-sync/state.db \
 
 ## 11. Alerts and how to recover
 
-Two things raise an alert. An alert is a macOS notification plus an email to `[alerts] email`,
+Three things raise an alert. An alert is a macOS notification plus an email to `[alerts] email`,
 rate-limited to one per kind per 24 hours.
 
 **Amazon login expired** (subject `Skylight Photo Sync: Amazon login expired`). Amazon no longer
@@ -378,10 +379,21 @@ triggers this alert: the run stops before it is recorded, so the error only show
 carries the last error; `skylight-sync status` and the log have the rest. Nothing is paused: the
 next run tries again. See [troubleshooting.md](troubleshooting.md).
 
+**Skylight sign-in failed** (subject `Skylight Photo Sync: Skylight sign-in failed`). Only with
+`[rotation]`: Skylight refused the email and password in `secrets.toml`, asked for a CAPTCHA, or
+rate-limited the sign-in. That run exits 1 with `skylight_sign_in_failed: …`, sends this one
+alert, and pruning is paused: later runs keep emailing photos but make no Skylight sign-in
+attempt at all, so a wrong password is never retried every hour (which could lock the account).
+`status` shows `skylight_needs_login: yes`. To recover, confirm the sign-in works in the Skylight
+app, fix `[skylight]` in `secrets.toml` if needed, and run `skylight-sync prune --dry-run`; a
+sign-in that works there lifts the pause. Changing `[skylight] email` or `password` also makes
+the next scheduled run try once more. See
+[troubleshooting.md](troubleshooting.md#skylight-sign-in-failed-pruning-paused).
+
 ## 12. Everyday commands
 
 ```bash
-skylight-sync status             # last run, totals, needs_login, login kind, next launchd run
+skylight-sync status             # last run, totals, both needs_login flags, login kind, next launchd run
 skylight-sync run                # one run now, same as the schedule
 skylight-sync run --dry-run      # preview
 skylight-sync prune --dry-run    # [rotation]: what would be deleted from the frame
@@ -438,6 +450,9 @@ The tool signs in once and caches the tokens in `skylight-token.json` (mode 0600
 them as they expire, so it does not sign in with your password every hour. The cache records
 which account it belongs to; if you change `[skylight] email`, the old tokens are ignored and the
 next run signs in to the new account. `login` keeps this table when it rewrites `secrets.toml`.
+
+If Skylight refuses the sign-in, the tool does not keep trying: it alerts once and pauses pruning
+until you fix it (step 11, "Skylight sign-in failed").
 
 **Check before you turn it on.** `prune --dry-run` works whether or not rotation is enabled, signs
 in, and prints what it would do without deleting anything:

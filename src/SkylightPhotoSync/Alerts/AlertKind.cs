@@ -14,4 +14,7 @@ public enum AlertKind
 
     /// <summary>The SMTP server could not be reached, so only a notification is possible.</summary>
     SmtpDown,
+
+    /// <summary>Skylight refused the saved sign-in; rotation's pruning is paused until it is fixed.</summary>
+    SkylightSignIn,
 }

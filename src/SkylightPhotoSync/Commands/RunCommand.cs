@@ -205,7 +205,8 @@ public static class RunCommand
         var rotator = skylight is null
             ? null
             : new FrameRotator(cfg.Rotation, cfg.Email.From, skylight, store, now, CommandSupport.RotationDelay);
-        var pipeline = new SyncPipeline(cfg, source, store, normalizer, mailer, alerter, now, paths.LockFile, rotator);
+        var signInGate = skylight is null ? null : CommandSupport.CreateSkylightSignInGate(secrets, store);
+        var pipeline = new SyncPipeline(cfg, source, store, normalizer, mailer, alerter, now, paths.LockFile, rotator, signInGate);
 
         log.Information(
             "run started: mode={Mode} album={Album} lookbackDays={LookbackDays} limit={Limit} dryRun={DryRun} source={Source} rotation={Rotation}",
@@ -216,8 +217,14 @@ public static class RunCommand
 
         var summary = $"found {result.Found}, sent {result.Sent}, skipped {result.Skipped}, batches {result.Batches}"
             + (cfg.Rotation.Enabled ? $", recycled {result.Recycled}, pruned {result.Pruned}" : "")
+            + (result.PrunePaused ? ", pruning paused (Skylight sign-in needed)" : "")
             + (result.DryRun ? " (dry run)" : "");
         stdout.WriteLine(summary);
+        if (result.PrunePaused)
+        {
+            log.Warning("pruning paused: an earlier Skylight sign-in was refused and [skylight] has not changed");
+            stderr.WriteLine(CommandSupport.SkylightPausedHint);
+        }
 
         if (result.Error is null)
         {
@@ -227,6 +234,11 @@ public static class RunCommand
 
         log.Error("run failed: {Error} ({Summary})", result.Error, summary);
         stderr.WriteLine($"run failed: {result.Error}");
+        if (result.Error.StartsWith(SyncPipeline.SkylightSignInFailedErrorPrefix, StringComparison.Ordinal))
+        {
+            stderr.WriteLine(CommandSupport.SkylightPausedHint);
+        }
+
         return result.Error is SyncPipeline.NeedsLoginError or SyncPipeline.AuthExpiredError
             ? ExitNeedsLogin
             : ExitError;

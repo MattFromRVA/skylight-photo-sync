@@ -29,7 +29,8 @@ foreground, with the log lines echoed to stderr.
 | 4 | Lock held: another run is still going | Wait, or see [below](#lock-held-exit-code-4) |
 
 Under launchd nobody sees the exit code, so the same facts arrive as `status` output, log lines,
-and (for 3 and for three consecutive failures) an alert email and a macOS notification.
+and (for 3, for a refused Skylight sign-in and for three consecutive failures) an alert email and
+a macOS notification.
 
 ## needs_login (exit code 3)
 
@@ -119,6 +120,43 @@ Usually the next hourly run succeeds on its own. If it keeps happening:
 - Do not run `skylight-sync run` by hand at the same time as the schedule.
 - Three failed runs in a row produce one `Skylight Photo Sync: Sync failing` alert; it stops
   on its own once a run succeeds.
+
+## Skylight sign-in failed (pruning paused)
+
+Only with `[rotation]`. Symptoms: an alert titled `Skylight sign-in failed`, one run that ended
+with `run failed: skylight_sign_in_failed: …`, `status` showing
+`skylight_needs_login: yes, pruning paused since …`, later runs ending in
+`pruning paused (Skylight sign-in needed)`, and photos piling up on the frame again.
+
+Skylight refused the sign-in the prune step uses. The reason is in the alert and in `status`:
+
+- **"did not accept the sign-in"**: wrong `[skylight] email` or `password` in `secrets.toml`, or
+  the account is locked.
+- **"asked for a CAPTCHA"**: Skylight wants a human; the tool cannot answer it.
+- **"rate-limiting sign-in attempts (HTTP 429)"**: too many attempts; wait before trying again.
+- **"Could not find the Skylight sign-in form"** or a redirect message: Skylight changed its
+  sign-in page (it is an unofficial API). Retrying will not help; open an issue.
+
+After the first refusal the tool makes **no further sign-in attempts on its own**: scheduled runs
+keep emailing photos and skip pruning without contacting Skylight, and no second alert is sent.
+Repeating a refused password every hour is how accounts get locked.
+
+To recover:
+
+1. Sign in once in the Skylight app or at <https://app.ourskylight.com> with the same email and
+   password. This confirms them and clears a CAPTCHA or lockout.
+2. Correct `[skylight]` in `~/.config/skylight-photo-sync/secrets.toml` if it was wrong.
+3. Run `skylight-sync prune --dry-run`. Run by hand, `prune` always tries the sign-in. When it
+   works it prints `Skylight sign-in works again` and scheduled runs prune again; when it does
+   not, it says why and the pause stays. Each manual run is one real sign-in attempt, so do not
+   repeat it blindly.
+
+Changing `[skylight] email` or `password` also lifts the pause: the next scheduled run tries the
+new credentials once, and alerts again if they are refused too. `state.db` remembers which
+credentials failed as a salted hash, never the password itself.
+
+A Skylight outage (HTTP 5xx) or a network error is different: it shows as `prune_failed: …`,
+nothing is paused, and the next run tries again.
 
 ## Photos not appearing on the frame
 

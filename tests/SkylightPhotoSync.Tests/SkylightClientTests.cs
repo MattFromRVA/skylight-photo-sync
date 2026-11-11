@@ -167,11 +167,90 @@ public sealed class SkylightClientTests : IDisposable
         var handler = SignInRoutes(acceptPassword: false);
         using var client = Client(handler);
 
-        var ex = await Assert.ThrowsAsync<SkylightApiException>(() => client.ListFramesAsync(CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<SkylightSignInException>(() => client.ListFramesAsync(CancellationToken.None));
 
         Assert.Contains("[skylight] email and password", ex.Message);
         Assert.DoesNotContain(_password, ex.Message);
         Assert.False(File.Exists(_tokenFile));
+    }
+
+    [Fact]
+    public async Task Captcha_after_the_password_is_a_sign_in_failure_that_names_it()
+    {
+        // HAND-WRITTEN PLACEHOLDER: what a CAPTCHA challenge page really looks like has not been recorded.
+        var handler = SignInRoutes().On(r => r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath == "/auth/session", _ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html><div class=\"g-recaptcha\"></div></html>") });
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightSignInException>(() => client.ListFramesAsync(CancellationToken.None));
+
+        Assert.Contains("CAPTCHA", ex.Message);
+        Assert.DoesNotContain(_password, ex.Message);
+    }
+
+    [Fact]
+    public async Task Missing_sign_in_form_is_a_sign_in_failure()
+    {
+        var handler = SignInRoutes().On("/auth/session/new", _ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>redesigned</html>") });
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightSignInException>(() => client.ListFramesAsync(CancellationToken.None));
+
+        Assert.Contains("sign-in form", ex.Message);
+        Assert.DoesNotContain(handler.Requests, r => r.Method == HttpMethod.Post);
+    }
+
+    [Fact]
+    public async Task Rate_limited_sign_in_is_a_sign_in_failure()
+    {
+        var handler = SignInRoutes().On(r => r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath == "/auth/session", _ =>
+            ScriptedHandler.Status(HttpStatusCode.TooManyRequests));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightSignInException>(() => client.ListFramesAsync(CancellationToken.None));
+
+        Assert.Contains("429", ex.Message);
+    }
+
+    [Fact]
+    public async Task Outage_during_sign_in_is_not_a_sign_in_failure()
+    {
+        var handler = SignInRoutes().On("/oauth/authorize", _ => ScriptedHandler.Status(HttpStatusCode.ServiceUnavailable));
+        using var client = Client(handler);
+
+        // ThrowsAsync wants the exact type: an outage must not be the kind of failure that pauses pruning.
+        var ex = await Assert.ThrowsAsync<SkylightApiException>(() => client.ListFramesAsync(CancellationToken.None));
+
+        Assert.Contains("503", ex.Message);
+    }
+
+    [Fact]
+    public async Task Rate_limited_refresh_is_a_sign_in_failure_that_never_sends_the_password()
+    {
+        WriteTokenFile(expiresAt: _t0.AddMinutes(-1));
+        var handler = SignInRoutes().On("/oauth/token", _ => ScriptedHandler.Status(HttpStatusCode.TooManyRequests));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightSignInException>(() => client.ListFramesAsync(CancellationToken.None));
+
+        Assert.Contains("429", ex.Message);
+        Assert.Empty(handler.RequestsTo("/auth/session"));
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Outage_during_refresh_does_not_fall_back_to_the_password()
+    {
+        WriteTokenFile(expiresAt: _t0.AddMinutes(-1));
+        var handler = SignInRoutes().On("/oauth/token", _ => ScriptedHandler.Status(HttpStatusCode.BadGateway));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightApiException>(() => client.ListFramesAsync(CancellationToken.None));
+
+        Assert.Contains("502", ex.Message);
+        Assert.Empty(handler.RequestsTo("/auth/session"));
+        Assert.True(File.Exists(_tokenFile));
     }
 
     [Fact]

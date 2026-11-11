@@ -7,7 +7,7 @@ using SkylightPhotoSync.State;
 
 namespace SkylightPhotoSync.Commands;
 
-/// <summary><c>status</c>: last run, totals, the <c>needs_login</c> flag, how Amazon is authenticated, and the launchd schedule.</summary>
+/// <summary><c>status</c>: last run, totals, rotation, the Skylight and Amazon <c>needs_login</c> flags, how Amazon is authenticated, and the launchd schedule.</summary>
 public static class StatusCommand
 {
     public static Command Create()
@@ -25,6 +25,7 @@ public static class StatusCommand
                 stdout.WriteLine($"last run: {DescribeLastRun(store.LastRun())}");
                 stdout.WriteLine($"total sent: {store.TotalSent()}");
                 stdout.WriteLine($"rotation: {DescribeRotation(paths, store)}");
+                stdout.WriteLine($"skylight_needs_login: {DescribeSkylightSignIn(store)}");
                 stdout.WriteLine($"needs_login: {(store.NeedsLogin() ? "yes" : "no")}");
                 stdout.WriteLine($"auth: {DescribeAuth(paths)}");
                 stdout.WriteLine($"launchd: {await DescribeLaunchdAsync(ct)}");
@@ -71,6 +72,12 @@ public static class StatusCommand
             return $"unknown ({ex.Message})";
         }
     }
+
+    /// <summary><c>no</c>, or since when rotation's pruning has been paused by a refused Skylight sign-in and why.</summary>
+    private static string DescribeSkylightSignIn(StateStore store) =>
+        store.SkylightSignInFailure() is { } failure
+            ? $"yes, pruning paused since {Format(failure.FailedAt)} ({failure.Reason})"
+            : "no";
 
     internal static string DescribeLastRun(RunRecord? run)
     {

@@ -24,4 +24,27 @@ public static class AlertTexts
 
         Syncing resumes on the next scheduled run after the login succeeds.
         """;
+
+    /// <summary>Recovery steps sent once when Skylight refuses the sign-in rotation uses.</summary>
+    public static string SkylightSignInBody(string reason) =>
+        $"""
+        Skylight did not accept the saved sign-in, so removing old photos from the frame is paused.
+        New photos are still being emailed to the frame; they will pile up until this is fixed.
+
+        What Skylight said: {reason}
+
+        The tool will not try this email and password again on its own, so the account cannot be
+        locked by repeated attempts. To fix it, on the Mac that runs the sync:
+
+        1. Sign in once in the Skylight app or at https://app.ourskylight.com to confirm the
+           email and password work (and to clear any CAPTCHA or lockout).
+        2. Check [skylight] email and password in
+           ~/.config/skylight-photo-sync/secrets.toml.
+        3. In Terminal, run:
+
+               skylight-sync prune --dry-run
+
+        When that command signs in successfully, pruning resumes on the next scheduled run.
+        Changing [skylight] email or password also makes the next run try again.
+        """;
 }
