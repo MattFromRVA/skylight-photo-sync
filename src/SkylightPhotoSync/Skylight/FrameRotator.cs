@@ -52,9 +52,11 @@ public sealed class FrameRotator(
     /// <summary>
     /// Prunes every target frame. <paramref name="expectedNew"/> photos were emailed at
     /// <paramref name="sentSince"/> or later; when it is positive (and this is not a dry run) the
-    /// rotator first waits for that many of this tool's photos newer than <paramref name="sentSince"/>
-    /// to appear, so the frame is never pruned down to photos that are about to be replaced anyway.
-    /// It prunes after the wait whether or not they all arrived.
+    /// rotator first waits until every target frame shows that many of this tool's photos newer than
+    /// <paramref name="sentSince"/> (each frame is emailed the same photos, so the count is per frame,
+    /// not a total), so no frame is pruned down to photos that are about to be replaced anyway. It
+    /// prunes after the wait whether or not they all arrived; a target frame that was not emailed
+    /// therefore costs the full wait, which <see cref="RotationConfig.FrameName"/> avoids.
     /// </summary>
     public async Task<PruneResult> PruneAsync(bool dryRun, int expectedNew, DateTimeOffset sentSince, CancellationToken ct)
     {
@@ -64,7 +66,7 @@ public sealed class FrameRotator(
         if (!dryRun && expectedNew > 0 && cfg.ArrivalWaitMinutes > 0)
         {
             var polls = (int)Math.Ceiling(TimeSpan.FromMinutes(cfg.ArrivalWaitMinutes) / PollInterval);
-            for (var poll = 0; poll < polls && Arrived(listings, sentSince) < expectedNew; poll++)
+            for (var poll = 0; poll < polls && !AllArrived(listings, expectedNew, sentSince); poll++)
             {
                 await _delay(PollInterval, ct);
                 listings = await ListAsync(frames, ct);
@@ -102,8 +104,9 @@ public sealed class FrameRotator(
     private bool IsOurs(SkylightMessage message) =>
         !message.Destroyed && NormalizeEmail(message.FromEmail) == _sender;
 
-    private int Arrived(IReadOnlyList<(SkylightFrame Frame, IReadOnlyList<SkylightMessage> Messages)> listings, DateTimeOffset sentSince) =>
-        listings.Sum(listing => listing.Messages.Count(m => IsOurs(m) && m.CreatedAt >= sentSince - ClockSkew));
+    private bool AllArrived(
+        IReadOnlyList<(SkylightFrame Frame, IReadOnlyList<SkylightMessage> Messages)> listings, int expectedNew, DateTimeOffset sentSince) =>
+        listings.All(listing => listing.Messages.Count(m => IsOurs(m) && m.CreatedAt >= sentSince - ClockSkew) >= expectedNew);
 
     private async Task<FramePruneResult> PruneFrameAsync(
         SkylightFrame frame, IReadOnlyList<SkylightMessage> messages, bool dryRun, CancellationToken ct)

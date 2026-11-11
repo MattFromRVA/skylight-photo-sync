@@ -496,6 +496,16 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
 
             using var document = JsonDocument.Parse(File.ReadAllText(_tokenFile));
             var root = document.RootElement;
+
+            // Tokens belong to one account: after [skylight] email changes they must not keep
+            // working (and pruning) the previous account's frames. A cache without an account
+            // predates this check, so it costs one fresh sign-in too.
+            var account = root.TryGetProperty("email", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
+            if (!SameAccount(account, _email))
+            {
+                return null;
+            }
+
             var access = root.GetProperty("access_token").GetString();
             var refresh = root.TryGetProperty("refresh_token", out var r) ? r.GetString() : null;
             var expiresAt = DateTimeOffset.Parse(root.GetProperty("expires_at").GetString()!, CultureInfo.InvariantCulture);
@@ -508,11 +518,15 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         }
     }
 
+    private static bool SameAccount(string? cached, string configured) =>
+        cached is not null && string.Equals(cached.Trim(), configured.Trim(), StringComparison.OrdinalIgnoreCase);
+
     private void SaveTokens(Tokens tokens)
     {
         _tokens = tokens;
         var json = JsonSerializer.Serialize(new Dictionary<string, string?>
         {
+            ["email"] = _email.Trim(),
             ["access_token"] = tokens.AccessToken,
             ["refresh_token"] = tokens.RefreshToken,
             ["expires_at"] = tokens.ExpiresAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),

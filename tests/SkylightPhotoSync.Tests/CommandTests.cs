@@ -947,6 +947,7 @@ public sealed class CommandTests : IDisposable
             Path.Combine(_home.Dir, "skylight-token.json"),
             System.Text.Json.JsonSerializer.Serialize(new
             {
+                email = "me@example.com",
                 access_token = "placeholder-access",
                 refresh_token = "placeholder-refresh",
                 expires_at = DateTime.UtcNow.AddHours(1).ToString("O"),

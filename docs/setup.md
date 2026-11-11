@@ -401,7 +401,9 @@ remove them. With `[rotation]` turned on, every run:
 1. Sends up to `[limits] max_items_per_run` photos, as usual. Once the album has nothing new
    left, it fills the run with photos it sent longest ago, so the frame keeps changing. The `keep`
    most recently sent photos are never resent, since they are presumably still on the frame.
-2. Waits, up to `arrival_wait_minutes`, for the photos it just emailed to show up on the frame.
+2. Waits, up to `arrival_wait_minutes`, for the photos it just emailed to show up on every frame
+   it rotates. If you set no `frame_name` and the account has a frame this tool doesn't email,
+   that frame never receives them, so each run waits the full time; set `frame_name` to avoid it.
 3. Deletes this tool's older photos from each frame, oldest first, keeping the newest `keep`.
    **Only photos emailed from `[email] from` are ever deleted**; photos anyone added from the
    Skylight app or their own email are left alone.
@@ -431,8 +433,9 @@ password = "your-skylight-password"
 ```
 
 The tool signs in once and caches the tokens in `skylight-token.json` (mode 0600), refreshing
-them as they expire, so it does not sign in with your password every hour. `login` keeps this
-table when it rewrites `secrets.toml`.
+them as they expire, so it does not sign in with your password every hour. The cache records
+which account it belongs to; if you change `[skylight] email`, the old tokens are ignored and the
+next run signs in to the new account. `login` keeps this table when it rewrites `secrets.toml`.
 
 **Check before you turn it on.** `prune --dry-run` works whether or not rotation is enabled, signs
 in, and prints what it would do without deleting anything:

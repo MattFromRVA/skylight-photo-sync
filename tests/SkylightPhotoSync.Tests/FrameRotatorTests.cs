@@ -113,6 +113,33 @@ public sealed class FrameRotatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Waits_for_the_new_photos_on_every_frame_not_a_total_across_frames()
+    {
+        // The same 30 photos go to both frames. Listing calls run frame 100 then frame 200, so
+        // calls 3-4 are the first poll and 5-6 the second.
+        _client.Frames.Add(new SkylightFrame("200", "Living Room"));
+        _client.Add(_us, 30, _t0.AddHours(-1), idPrefix: "old").Add(_us, 30, _t0.AddHours(-1), frameId: "200", idPrefix: "old");
+        _client.BeforeListing = listing =>
+        {
+            if (listing == 3)
+            {
+                _client.Add(_us, 30, _t0.AddMinutes(30), idPrefix: "new");
+            }
+            else if (listing == 6)
+            {
+                _client.Add(_us, 30, _t0.AddMinutes(30), frameId: "200", idPrefix: "new");
+            }
+        };
+
+        var result = await Rotator(keep: 30).PruneAsync(dryRun: false, expectedNew: 30, _t0, CancellationToken.None);
+
+        Assert.Equal(2, _delays.Count);
+        Assert.Equal(60, result.Deleted);
+        Assert.All(_client.Messages["100"], m => Assert.StartsWith("new", m.Id, StringComparison.Ordinal));
+        Assert.All(_client.Messages["200"], m => Assert.StartsWith("new", m.Id, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Gives_up_waiting_and_prunes_anyway()
     {
         _client.Add(_us, 35, _t0.AddHours(-1));

@@ -80,6 +80,45 @@ public sealed class SkylightClientTests : IDisposable
     }
 
     [Fact]
+    public async Task Cached_tokens_for_a_different_account_are_discarded()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1), account: "previous@example.com");
+        var handler = SignInRoutes().On("/api/frames", _ => ScriptedHandler.JsonBody(_framesJson));
+        using var client = Client(handler);
+
+        await client.ListFramesAsync(CancellationToken.None);
+
+        Assert.Contains("grant_type=authorization_code", handler.BodyOf(Assert.Single(handler.RequestsTo("/oauth/token"))));
+        Assert.All(handler.RequestsTo("/api/frames"), r => Assert.Equal($"Bearer {_access}", r.Headers.Authorization!.ToString()));
+        using var saved = JsonDocument.Parse(File.ReadAllText(_tokenFile));
+        Assert.Equal(_email, saved.RootElement.GetProperty("email").GetString());
+    }
+
+    [Fact]
+    public async Task Cached_tokens_without_an_account_are_discarded()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1), account: null);
+        var handler = SignInRoutes().On("/api/frames", _ => ScriptedHandler.JsonBody(_framesJson));
+        using var client = Client(handler);
+
+        await client.ListFramesAsync(CancellationToken.None);
+
+        Assert.Contains("grant_type=authorization_code", handler.BodyOf(Assert.Single(handler.RequestsTo("/oauth/token"))));
+    }
+
+    [Fact]
+    public async Task Cached_tokens_match_the_account_ignoring_case_and_spaces()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1), account: " ME@Example.com ");
+        var handler = new ScriptedHandler().On("/api/frames", _ => ScriptedHandler.JsonBody(_framesJson));
+        using var client = Client(handler);
+
+        await client.ListFramesAsync(CancellationToken.None);
+
+        Assert.Equal("Bearer cached-access", Assert.Single(handler.Requests).Headers.Authorization!.ToString());
+    }
+
+    [Fact]
     public async Task Expired_access_token_is_refreshed()
     {
         WriteTokenFile(expiresAt: _t0.AddMinutes(-1));
@@ -205,13 +244,14 @@ public sealed class SkylightClientTests : IDisposable
 
     private SkylightClient Client(ScriptedHandler handler) => new(_email, _password, _tokenFile, handler, () => _now);
 
-    private void WriteTokenFile(DateTimeOffset expiresAt) =>
-        File.WriteAllText(_tokenFile, JsonSerializer.Serialize(new
+    private void WriteTokenFile(DateTimeOffset expiresAt, string? account = _email) =>
+        File.WriteAllText(_tokenFile, JsonSerializer.Serialize(new Dictionary<string, string?>
         {
-            access_token = "cached-access",
-            refresh_token = _refresh,
-            expires_at = expiresAt.UtcDateTime.ToString("O"),
-        }));
+            ["email"] = account,
+            ["access_token"] = "cached-access",
+            ["refresh_token"] = _refresh,
+            ["expires_at"] = expiresAt.UtcDateTime.ToString("O"),
+        }.Where(pair => pair.Value is not null).ToDictionary()));
 
     /// <summary>
     /// The sign-in dance: authorize → sign-in page (sets the session cookie) → POST credentials →
