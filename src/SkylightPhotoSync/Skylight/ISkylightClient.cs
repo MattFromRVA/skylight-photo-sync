@@ -37,8 +37,8 @@ public class SkylightApiException : Exception
 
 /// <summary>
 /// Skylight did not let the saved email and password in: wrong credentials, a locked account, a
-/// CAPTCHA or other challenge, or a sign-in page the client no longer understands. Trying the same
-/// password again will not help and may lock the account, so callers pause instead of retrying
-/// (see <see cref="SkylightSignInGate"/>). A Skylight outage (HTTP 5xx) or a network error is not this.
+/// CAPTCHA or other challenge, rate-limited sign-in attempts (HTTP 429), or a sign-in page the client
+/// no longer understands. Trying the same password again will not help and may lock the account,
+/// so callers pause instead of retrying (see <see cref="SkylightSignInGate"/>). A Skylight outage (HTTP 5xx) or a network error is not this.
 /// </summary>
 public sealed class SkylightSignInException(string message) : SkylightApiException(message);
