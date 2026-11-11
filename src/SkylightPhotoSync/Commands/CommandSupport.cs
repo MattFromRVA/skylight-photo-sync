@@ -1,6 +1,7 @@
 using System.Net;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Mail;
+using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.Sources.Amazon;
 
@@ -14,6 +15,23 @@ internal static class CommandSupport
     /// instead of the network. Tests run serially, so a static is safe.
     /// </summary>
     internal static Func<HttpMessageHandler>? AmazonHandlerFactory { get; set; }
+
+    /// <summary>Test hook: the handler every <see cref="SkylightClient"/> a command builds uses instead of the network.</summary>
+    internal static Func<HttpMessageHandler>? SkylightHandlerFactory { get; set; }
+
+    /// <summary>Test hook: replaces the pause between "have the new photos arrived?" checks.</summary>
+    internal static Func<TimeSpan, CancellationToken, Task>? RotationDelay { get; set; }
+
+    public const string SkylightLoginMissingMessage =
+        "[rotation] is enabled but secrets.toml has no [skylight] email and password; add them or set [rotation] enabled = false.";
+
+    /// <summary>True when the Skylight app sign-in rotation needs is saved.</summary>
+    public static bool HasSkylightLogin(Secrets secrets) =>
+        !string.IsNullOrWhiteSpace(secrets.SkylightEmail) && !string.IsNullOrWhiteSpace(secrets.SkylightPassword);
+
+    /// <summary>A <see cref="SkylightClient"/> for the saved sign-in (see <see cref="HasSkylightLogin"/>).</summary>
+    public static SkylightClient CreateSkylightClient(Secrets secrets, AppPaths paths) =>
+        new(secrets.SkylightEmail!, secrets.SkylightPassword!, paths.SkylightTokenFile, SkylightHandlerFactory?.Invoke());
 
     /// <summary>
     /// The secrets file when it exists, otherwise all-empty secrets: a dry run against a local folder

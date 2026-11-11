@@ -37,6 +37,7 @@ public static class ConfigLoader
         var smtp = Table(root, "smtp");
         var alerts = Table(root, "alerts");
         var schedule = Table(root, "schedule");
+        var rotation = ReadRotation(Table(root, "rotation"));
 
         // Spec 6.7: alerts go to the SMTP username unless [alerts] email says otherwise.
         var smtpUsername = RequireString(smtp, "smtp", "username");
@@ -61,7 +62,10 @@ public static class ConfigLoader
             Alerts: new AlertsConfig(
                 Email: string.IsNullOrWhiteSpace(alertEmail) ? smtpUsername : alertEmail),
             Schedule: new ScheduleConfig(
-                IntervalMinutes: GetInt(schedule, "schedule", "interval_minutes") ?? 60));
+                IntervalMinutes: GetInt(schedule, "schedule", "interval_minutes") ?? 60))
+        {
+            Rotation = rotation,
+        };
     }
 
     public static Secrets LoadSecrets(string path)
@@ -84,6 +88,7 @@ public static class ConfigLoader
         var root = ParseFile(path);
         var amazon = Table(root, "amazon");
         var smtp = Table(root, "smtp");
+        var skylight = Table(root, "skylight");
 
         return new Secrets(
             AmazonSessionId: GetStringEither(amazon, "amazon", "session_id", "session-id"),
@@ -91,7 +96,9 @@ public static class ConfigLoader
             AmazonAt: GetStringEither(amazon, "amazon", "at_main", "at-main"),
             SmtpPassword: GetString(smtp, "smtp", "password"),
             AmazonRefreshToken: GetString(amazon, "amazon", "refresh_token"),
-            AmazonDeviceSerial: GetString(amazon, "amazon", "device_serial"));
+            AmazonDeviceSerial: GetString(amazon, "amazon", "device_serial"),
+            SkylightEmail: GetString(skylight, "skylight", "email"),
+            SkylightPassword: GetString(skylight, "skylight", "password"));
     }
 
     public static void WriteSecrets(string path, Secrets s)
@@ -114,6 +121,14 @@ public static class ConfigLoader
         if (smtp.Count > 0)
         {
             root["smtp"] = smtp;
+        }
+
+        var skylight = new TomlTable();
+        AddIfPresent(skylight, "email", s.SkylightEmail);
+        AddIfPresent(skylight, "password", s.SkylightPassword);
+        if (skylight.Count > 0)
+        {
+            root["skylight"] = skylight;
         }
 
         var text = TomlSerializer.Serialize(root);
@@ -234,6 +249,36 @@ public static class ConfigLoader
         var includeVideos = GetBool(source, "source", "include_videos") ?? false;
 
         return new SourceConfig(mode, albumName, lookbackDays, includeVideos);
+    }
+
+    private static RotationConfig ReadRotation(TomlTable? rotation)
+    {
+        var defaults = RotationConfig.Disabled;
+        var keep = GetInt(rotation, "rotation", "keep") ?? defaults.Keep;
+        if (keep < 1)
+        {
+            throw new ConfigException("[rotation] keep must be at least 1.");
+        }
+
+        var maxDeletes = GetInt(rotation, "rotation", "max_deletes_per_run") ?? defaults.MaxDeletesPerRun;
+        if (maxDeletes < 1)
+        {
+            throw new ConfigException("[rotation] max_deletes_per_run must be at least 1.");
+        }
+
+        var wait = GetInt(rotation, "rotation", "arrival_wait_minutes") ?? defaults.ArrivalWaitMinutes;
+        if (wait < 0)
+        {
+            throw new ConfigException("[rotation] arrival_wait_minutes must not be negative.");
+        }
+
+        var frameName = GetString(rotation, "rotation", "frame_name");
+        return new RotationConfig(
+            Enabled: GetBool(rotation, "rotation", "enabled") ?? false,
+            Keep: keep,
+            MaxDeletesPerRun: maxDeletes,
+            FrameName: string.IsNullOrWhiteSpace(frameName) ? null : frameName.Trim(),
+            ArrivalWaitMinutes: wait);
     }
 
     private static TomlTable? Table(TomlTable root, string name)

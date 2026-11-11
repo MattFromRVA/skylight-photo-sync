@@ -406,6 +406,77 @@ public class ConfigLoaderTests
         Assert.Equal("smtp-placeholder", loaded.SmtpPassword);
     }
 
+    [Fact]
+    public void Rotation_is_off_by_default()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, """
+            [source]
+            album_name = "Skylight"
+            """);
+
+        Assert.Equal(RotationConfig.Disabled, ConfigLoader.LoadConfig(path).Rotation);
+        Assert.Equal((false, 30, 100, null, 10), (
+            RotationConfig.Disabled.Enabled,
+            RotationConfig.Disabled.Keep,
+            RotationConfig.Disabled.MaxDeletesPerRun,
+            RotationConfig.Disabled.FrameName,
+            RotationConfig.Disabled.ArrivalWaitMinutes));
+    }
+
+    [Fact]
+    public void Rotation_reads_every_key()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, """
+            [source]
+            album_name = "Skylight"
+
+            [rotation]
+            enabled = true
+            keep = 12
+            max_deletes_per_run = 40
+            frame_name = " Kitchen "
+            arrival_wait_minutes = 0
+            """);
+
+        Assert.Equal(new RotationConfig(true, 12, 40, "Kitchen", 0), ConfigLoader.LoadConfig(path).Rotation);
+    }
+
+    [Theory]
+    [InlineData("keep = 0", "[rotation] keep must be at least 1.")]
+    [InlineData("max_deletes_per_run = 0", "[rotation] max_deletes_per_run must be at least 1.")]
+    [InlineData("arrival_wait_minutes = -1", "[rotation] arrival_wait_minutes must not be negative.")]
+    [InlineData("enabled = \"yes\"", "[rotation] enabled must be true or false.")]
+    public void Rotation_rejects_bad_values(string line, string message)
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, $"""
+            [source]
+            album_name = "Skylight"
+
+            [rotation]
+            {line}
+            """);
+
+        Assert.Equal(message, Assert.Throws<ConfigException>(() => ConfigLoader.LoadConfig(path)).Message);
+    }
+
+    [Fact]
+    public void Skylight_sign_in_round_trips_through_secrets()
+    {
+        using var home = new TestHome();
+        var path = Path.Combine(home.Dir, "secrets.toml");
+        var secrets = new Secrets(
+            null, null, null, "smtp-placeholder", AmazonRefreshToken: "refresh-placeholder",
+            SkylightEmail: "me@example.com", SkylightPassword: "skylight-placeholder");
+
+        ConfigLoader.WriteSecrets(path, secrets);
+
+        Assert.Equal(secrets, ConfigLoader.LoadSecrets(path));
+        Assert.Contains("[skylight]", File.ReadAllText(path));
+    }
+
     private static string WriteConfig(TestHome home, string sourceSection, bool appendRest = true)
     {
         var path = Path.Combine(home.Dir, "config.toml");

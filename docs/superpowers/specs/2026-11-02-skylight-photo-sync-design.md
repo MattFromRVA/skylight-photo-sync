@@ -52,6 +52,9 @@ Full notes with sources: [`docs/research-notes.md`](../../research-notes.md).
 ## 4. Non-goals (v1)
 
 - Removing photos from Skylight, or mirroring album deletions. Email is one-way.
+  (Superseded after v1 by the optional `[rotation]` feature, which deletes the tool's own older
+  photos through Skylight's unofficial app API; see `2026-11-10-skylight-rotation-spike.md`.
+  Mirroring album deletions is still out of scope.)
 - Using Skylight's private API. The sender is behind an interface so it could be added.
 - Windows or Linux support. It will likely work, but the Mac is the target and only
   launchd scheduling is provided.

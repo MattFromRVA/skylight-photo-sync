@@ -5,6 +5,7 @@ using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Imaging;
 using SkylightPhotoSync.Infrastructure;
 using SkylightPhotoSync.Pipeline;
+using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.Sources;
 using SkylightPhotoSync.State;
 
@@ -187,6 +188,13 @@ public static class RunCommand
         }
 
         using var disposableSource = source as IDisposable;
+        if (cfg.Rotation.Enabled && !CommandSupport.HasSkylightLogin(secrets))
+        {
+            stderr.WriteLine($"run failed: {CommandSupport.SkylightLoginMissingMessage}");
+            return ExitError;
+        }
+
+        using var skylight = cfg.Rotation.Enabled ? CommandSupport.CreateSkylightClient(secrets, paths) : null;
         var runner = new ProcessRunner();
         var now = () => DateTimeOffset.UtcNow;
 
@@ -194,15 +202,20 @@ public static class RunCommand
         var normalizer = new ImageNormalizer(new SipsHeicConverter(runner), cfg.Image);
         var mailer = CommandSupport.CreateMailer(cfg.Smtp, secrets);
         var alerter = new Alerter(store, mailer, cfg.Alerts.Email, cfg.Email.From, new OsascriptNotifier(runner), now);
-        var pipeline = new SyncPipeline(cfg, source, store, normalizer, mailer, alerter, now, paths.LockFile);
+        var rotator = skylight is null
+            ? null
+            : new FrameRotator(cfg.Rotation, cfg.Email.From, skylight, store, now, CommandSupport.RotationDelay);
+        var pipeline = new SyncPipeline(cfg, source, store, normalizer, mailer, alerter, now, paths.LockFile, rotator);
 
         log.Information(
-            "run started: mode={Mode} album={Album} lookbackDays={LookbackDays} limit={Limit} dryRun={DryRun} source={Source}",
-            cfg.Source.Mode, cfg.Source.AlbumName, cfg.Source.LookbackDays, options.Limit, options.DryRun, sourceLabel);
+            "run started: mode={Mode} album={Album} lookbackDays={LookbackDays} limit={Limit} dryRun={DryRun} source={Source} rotation={Rotation}",
+            cfg.Source.Mode, cfg.Source.AlbumName, cfg.Source.LookbackDays, options.Limit, options.DryRun, sourceLabel,
+            cfg.Rotation.Enabled ? $"keep {cfg.Rotation.Keep}" : "off");
 
         var result = await pipeline.RunAsync(options.DryRun, options.Limit, ct);
 
         var summary = $"found {result.Found}, sent {result.Sent}, skipped {result.Skipped}, batches {result.Batches}"
+            + (cfg.Rotation.Enabled ? $", recycled {result.Recycled}, pruned {result.Pruned}" : "")
             + (result.DryRun ? " (dry run)" : "");
         stdout.WriteLine(summary);
 

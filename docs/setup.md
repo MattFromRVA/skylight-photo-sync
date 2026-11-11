@@ -132,6 +132,16 @@ email = "you@gmail.com"
 [schedule]
 # How often launchd runs `skylight-sync run` once installed (step 9).
 interval_minutes = 60          # default 60
+
+[rotation]
+# Optional, off by default: keep only the newest photos this tool sent on the frame, deleting
+# older ones after each run, and resend old photos once the album has nothing new. Needs
+# [skylight] email and password in secrets.toml. See step 13 before turning it on.
+enabled = false                # default false
+keep = 30                      # default 30; photos from this tool kept on each frame
+max_deletes_per_run = 100      # default 100; safety brake per frame per run
+frame_name = ""                # default "" = every frame on the Skylight account
+arrival_wait_minutes = 10      # default 10; wait this long for just-sent photos to appear
 ```
 
 Config mistakes are reported as `run failed: [section] key ...` with the exact problem, for
@@ -295,6 +305,7 @@ skylight-sync install-launchd
 skylight-sync status
 # last run: 2026-11-06 14:02:11 -05:00 ok (found 25, sent 25, skipped 0)
 # total sent: 26
+# rotation: off
 # needs_login: no
 # auth: device login
 # launchd: installed, next run 2026-11-06 15:02:11 -05:00
@@ -322,14 +333,16 @@ it wakes. Two overlapping runs cannot happen: the second exits at once with exit
 |---|---|
 | Config | `~/.config/skylight-photo-sync/config.toml` |
 | Secrets (mode 0600) | `~/.config/skylight-photo-sync/secrets.toml` |
+| Skylight API tokens, for `[rotation]` (mode 0600) | `~/Library/Application Support/skylight-photo-sync/skylight-token.json` |
 | Sent-state database (SQLite) | `~/Library/Application Support/skylight-photo-sync/state.db` |
 | Run lock | `~/Library/Application Support/skylight-photo-sync/run.lock` |
 | Log (rolls at 5 MB, keeps 5) | `~/Library/Logs/skylight-photo-sync/sync.log` |
 | LaunchAgent plist | `~/Library/LaunchAgents/com.mattfromrva.skylight-photo-sync.plist` |
 | Scratch downloads (deleted after each run) | `$TMPDIR/skylight-photo-sync/run-<id>/` |
 
-Setting the environment variable `SKYLIGHT_SYNC_HOME` puts all of the first five in one directory
-instead (`config.toml`, `secrets.toml`, `state.db`, `run.lock`, `sync.log` directly under it).
+Setting the environment variable `SKYLIGHT_SYNC_HOME` puts all of the first six in one directory
+instead (`config.toml`, `secrets.toml`, `skylight-token.json`, `state.db`, `run.lock`, `sync.log`
+directly under it).
 That is how the tests isolate themselves and is handy for trying a second configuration.
 
 The log records each run's start (mode, album, lookback, limit, source), its summary line and any
@@ -371,6 +384,7 @@ next run tries again. See [troubleshooting.md](troubleshooting.md).
 skylight-sync status             # last run, totals, needs_login, login kind, next launchd run
 skylight-sync run                # one run now, same as the schedule
 skylight-sync run --dry-run      # preview
+skylight-sync prune --dry-run    # [rotation]: what would be deleted from the frame
 skylight-sync login              # sign in again (device login); login --cookies for pasted cookies
 skylight-sync logout             # remove the device from your Amazon account and forget the login
 skylight-sync reset --yes        # forget everything sent and skipped; next run resends the whole window
@@ -380,3 +394,62 @@ skylight-sync uninstall-launchd  # stop the schedule
 `reset` without `--yes` refuses and explains what it would do. `record-fixtures` is for
 contributors: it records redacted Amazon API responses as test fixtures and is not part of
 normal use.
+
+## 13. Optional: rotate photos on the frame
+
+By default photos only ever pile up on the frame: email can add photos to Skylight but never
+remove them. With `[rotation]` turned on, every run:
+
+1. Sends up to `[limits] max_items_per_run` photos, as usual. Once the album has nothing new
+   left, it fills the run with photos it sent longest ago, so the frame keeps changing. The `keep`
+   most recently sent photos are never resent, since they are presumably still on the frame.
+2. Waits, up to `arrival_wait_minutes`, for the photos it just emailed to show up on every frame
+   it rotates. If you set no `frame_name` and the account has a frame this tool doesn't email,
+   that frame never receives them, so each run waits the full time; set `frame_name` to avoid it.
+3. Deletes this tool's older photos from each frame, oldest first, keeping the newest `keep`.
+   **Only photos emailed from `[email] from` are ever deleted**; photos anyone added from the
+   Skylight app or their own email are left alone.
+
+For "30 new photos every hour, the old 30 removed", set:
+
+```toml
+[limits]
+max_items_per_run = 30
+
+[rotation]
+enabled = true
+keep = 30
+```
+
+> **Unofficial API.** Deleting photos uses the same private API the Skylight apps use. Skylight
+> does not publish or support it, so it can change without notice. If it breaks, the prune step
+> fails (`prune_failed: …` in `status` and the log, and the "Sync failing" alert after three
+> runs), but sending keeps working.
+
+**Sign-in.** Add your Skylight account's email and password to `secrets.toml`:
+
+```toml
+[skylight]
+email = "you@example.com"
+password = "your-skylight-password"
+```
+
+The tool signs in once and caches the tokens in `skylight-token.json` (mode 0600), refreshing
+them as they expire, so it does not sign in with your password every hour. The cache records
+which account it belongs to; if you change `[skylight] email`, the old tokens are ignored and the
+next run signs in to the new account. `login` keeps this table when it rewrites `secrets.toml`.
+
+**Check before you turn it on.** `prune --dry-run` works whether or not rotation is enabled, signs
+in, and prints what it would do without deleting anything:
+
+```text
+$ skylight-sync prune --dry-run
+frame "Kitchen": 214 photos from you@gmail.com, would delete 184 (keep 30)
+  left alone: 12 from grandma@example.com
+```
+
+If the count "from you@gmail.com" is 0 even though the frame shows the tool's photos, Skylight
+records a different sender address than `[email] from`; don't enable rotation, and open an issue
+with the "left alone" lines. The first real run with rotation on deletes at most
+`max_deletes_per_run` per frame, so a large backlog is cleared over a few runs. Run
+`skylight-sync prune` (without `--dry-run`) to clear it right away.

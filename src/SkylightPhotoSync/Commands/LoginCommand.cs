@@ -308,7 +308,13 @@ public static partial class LoginCommand
             var existing = CommandSupport.LoadSecretsIfPresent(paths);
 
             // Pasted cookies replace a device login, whose device is removed from the account.
-            var secrets = new Secrets(cookies.SessionId, cookies.Ubid, cookies.At, existing.SmtpPassword);
+            var secrets = new Secrets(
+                cookies.SessionId,
+                cookies.Ubid,
+                cookies.At,
+                existing.SmtpPassword,
+                SkylightEmail: existing.SkylightEmail,
+                SkylightPassword: existing.SkylightPassword);
             ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
             await DeregisterPreviousDeviceAsync(existing, stderr, ct);
 

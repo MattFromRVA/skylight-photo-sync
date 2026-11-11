@@ -50,6 +50,10 @@ public sealed class StateStore : IDisposable
             ("$md5", md5),
             ("$recipient", recipient)) is not null;
 
+    /// <summary>
+    /// Records the items as sent to <paramref name="recipient"/>. Sending an item again (rotation's
+    /// recycling) keeps one row and moves its <c>sent_at</c> and <c>batch_id</c> to the latest send.
+    /// </summary>
     public void MarkSent(IReadOnlyList<Item> items, string recipient, string batchId, DateTimeOffset sentAt)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -58,8 +62,11 @@ public sealed class StateStore : IDisposable
         command.Transaction = transaction;
         command.CommandText =
             """
-            INSERT OR IGNORE INTO sent_items (item_id, recipient, md5, batch_id, sent_at)
+            INSERT INTO sent_items (item_id, recipient, md5, batch_id, sent_at)
             VALUES ($itemId, $recipient, $md5, $batchId, $sentAt)
+            ON CONFLICT(item_id, recipient) DO UPDATE SET
+                batch_id = excluded.batch_id,
+                sent_at = excluded.sent_at
             """;
         var itemIdParam = command.Parameters.Add("$itemId", SqliteType.Text);
         var md5Param = command.Parameters.Add("$md5", SqliteType.Text);
@@ -171,6 +178,38 @@ public sealed class StateStore : IDisposable
             ("$kind", kind),
             ("$at", Format(at)));
 
+    /// <summary>Each sent item's most recent send time over all recipients, keyed by item id.</summary>
+    public IReadOnlyDictionary<string, DateTimeOffset> LastSentTimes()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT item_id, MAX(sent_at) FROM sent_items GROUP BY item_id";
+        using var reader = command.ExecuteReader();
+        var result = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        while (reader.Read())
+        {
+            result[reader.GetString(0)] = Parse(reader.GetString(1));
+        }
+
+        return result;
+    }
+
+    /// <summary>Records that rotation deleted Skylight photo <paramref name="messageId"/> from a frame.</summary>
+    public void MarkPruned(string frameId, string messageId, DateTimeOffset createdAt, DateTimeOffset prunedAt) =>
+        Execute(
+            """
+            INSERT INTO pruned_messages (frame_id, message_id, created_at, pruned_at)
+            VALUES ($frameId, $messageId, $createdAt, $prunedAt)
+            ON CONFLICT(frame_id, message_id) DO UPDATE SET pruned_at = excluded.pruned_at
+            """,
+            ("$frameId", frameId),
+            ("$messageId", messageId),
+            ("$createdAt", Format(createdAt)),
+            ("$prunedAt", Format(prunedAt)));
+
+    /// <summary>Number of Skylight photos rotation has deleted, over all runs.</summary>
+    public int TotalPruned() =>
+        (int)(long)Scalar("SELECT COUNT(*) FROM pruned_messages")!;
+
     /// <summary>Number of (item, recipient) deliveries recorded as sent, over all runs.</summary>
     public int TotalSent() =>
         (int)(long)Scalar("SELECT COUNT(*) FROM sent_items")!;
@@ -261,6 +300,13 @@ public sealed class StateStore : IDisposable
             CREATE TABLE IF NOT EXISTS alerts (
                 kind    TEXT PRIMARY KEY,
                 last_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS pruned_messages (
+                frame_id   TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                pruned_at  TEXT NOT NULL,
+                PRIMARY KEY (frame_id, message_id)
             );
             """);
 

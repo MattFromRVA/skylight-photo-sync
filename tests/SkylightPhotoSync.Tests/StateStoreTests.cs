@@ -386,4 +386,38 @@ public sealed class StateStoreTests : IDisposable
         Assert.False(File.Exists(_dbPath + "-shm"));
         Assert.True(File.Exists(_dbPath));
     }
+
+    [Fact]
+    public void Sending_again_moves_sent_at_to_the_latest_send()
+    {
+        _store.MarkSent([MakeItem("a")], "frame@example.com", "batch-1", _sentAt);
+        _store.MarkSent([MakeItem("a")], "frame@example.com", "batch-2", _sentAt.AddHours(1));
+
+        Assert.Equal("batch-2", Scalar("SELECT batch_id FROM sent_items"));
+        Assert.Equal(_sentAt.AddHours(1), _store.LastSentTimes()["a"]);
+    }
+
+    [Fact]
+    public void LastSentTimes_takes_the_latest_recipient()
+    {
+        _store.MarkSent([MakeItem("a"), MakeItem("b")], "frame@example.com", "batch-1", _sentAt);
+        _store.MarkSent([MakeItem("a")], "calendar@example.com", "batch-2", _sentAt.AddHours(2));
+
+        var times = _store.LastSentTimes();
+
+        Assert.Equal(2, times.Count);
+        Assert.Equal(_sentAt.AddHours(2), times["a"]);
+        Assert.Equal(_sentAt, times["b"]);
+    }
+
+    [Fact]
+    public void Pruned_photos_are_counted_once_each()
+    {
+        _store.MarkPruned("frame-1", "m1", _sentAt, _sentAt.AddHours(1));
+        _store.MarkPruned("frame-1", "m1", _sentAt, _sentAt.AddHours(2));
+        _store.MarkPruned("frame-1", "m2", _sentAt, _sentAt.AddHours(1));
+        _store.MarkPruned("frame-2", "m1", _sentAt, _sentAt.AddHours(1));
+
+        Assert.Equal(3, _store.TotalPruned());
+    }
 }
