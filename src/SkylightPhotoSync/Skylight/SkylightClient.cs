@@ -26,6 +26,9 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
     /// <summary>Stop paging after this many pages (30 photos each) in case the server never says "last page".</summary>
     internal const int MaxPages = 1000;
 
+    internal const string CaptchaMessage =
+        "Skylight asked for a CAPTCHA, which this tool cannot answer. Sign in once in the Skylight app or at app.ourskylight.com, then try again.";
+
     private const int _maxRedirects = 10;
     private static readonly TimeSpan _expiryMargin = TimeSpan.FromMinutes(5);
 
@@ -324,7 +327,9 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
             var csrf = page is null ? null : FindCsrfToken(page);
             if (csrf is null)
             {
-                throw new SkylightApiException("Could not find the Skylight sign-in form; the unofficial API may have changed.");
+                throw new SkylightSignInException(MentionsCaptcha(page)
+                    ? CaptchaMessage
+                    : "Could not find the Skylight sign-in form; the unofficial API may have changed.");
             }
 
             var post = new HttpRequestMessage(HttpMethod.Post, BaseUrl + "/auth/session")
@@ -336,16 +341,17 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
                     ["password"] = _password,
                 }),
             };
-            (page, code) = await WalkAsync(post, state, ct);
+            (var answer, code) = await WalkAsync(post, state, ct);
             if (code is null)
             {
-                (page, code) = await WalkAsync(new HttpRequestMessage(HttpMethod.Get, authorizeUrl), state, ct);
+                (_, code) = await WalkAsync(new HttpRequestMessage(HttpMethod.Get, authorizeUrl), state, ct);
             }
 
             if (code is null)
             {
-                throw new SkylightApiException(
-                    "Skylight did not accept the sign-in. Check [skylight] email and password in secrets.toml.");
+                throw new SkylightSignInException(MentionsCaptcha(answer)
+                    ? CaptchaMessage
+                    : "Skylight did not accept the sign-in. Check [skylight] email and password in secrets.toml.");
             }
         }
 
@@ -359,7 +365,7 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
                     ["code_verifier"] = verifier,
                 },
                 ct)
-            ?? throw new SkylightApiException("Skylight did not hand out a token after signing in.");
+            ?? throw new SkylightSignInException("Skylight did not hand out a token after signing in.");
     }
 
     /// <summary>
@@ -377,6 +383,18 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
             using var response = await _http.SendAsync(request, ct);
             StoreCookies(request.RequestUri!, response);
             var status = (int)response.StatusCode;
+            if (status >= 500)
+            {
+                // An outage, not a verdict on the password: the next run may simply try again.
+                throw new SkylightApiException($"Skylight answered HTTP {status} during sign-in.");
+            }
+
+            if (status == (int)HttpStatusCode.TooManyRequests)
+            {
+                throw new SkylightSignInException(
+                    "Skylight is rate-limiting sign-in attempts (HTTP 429). Wait a while before trying again.");
+            }
+
             if (status is not (>= 300 and < 400) || response.Headers.Location is not { } location)
             {
                 return (await response.Content.ReadAsStringAsync(ct), null);
@@ -388,7 +406,7 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
                 var query = ParseQuery(target.Query);
                 if (query.TryGetValue("state", out var returnedState) && returnedState != state)
                 {
-                    throw new SkylightApiException("Skylight's sign-in answered with a mismatched state.");
+                    throw new SkylightSignInException("Skylight's sign-in answered with a mismatched state.");
                 }
 
                 return (null, query.TryGetValue("code", out var code) && code.Length > 0 ? code : null);
@@ -396,13 +414,13 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
 
             if (!string.Equals(target.Host, new Uri(BaseUrl).Host, StringComparison.OrdinalIgnoreCase))
             {
-                throw new SkylightApiException($"Skylight's sign-in redirected somewhere unexpected ({target.Host}).");
+                throw new SkylightSignInException($"Skylight's sign-in redirected somewhere unexpected ({target.Host}).");
             }
 
             next = new HttpRequestMessage(HttpMethod.Get, target);
         }
 
-        throw new SkylightApiException("Skylight's sign-in redirected too many times.");
+        throw new SkylightSignInException("Skylight's sign-in redirected too many times.");
     }
 
     private async Task<Tokens?> TryTokenRequestAsync(Dictionary<string, string> form, CancellationToken ct)
@@ -413,6 +431,12 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         };
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         using var response = await _http.SendAsync(request, ct);
+        if ((int)response.StatusCode >= 500)
+        {
+            // An outage says nothing about the tokens or the password, so neither is given up on.
+            throw new SkylightApiException($"Skylight answered HTTP {(int)response.StatusCode} when asked for a token.");
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return null;
@@ -467,6 +491,10 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
             }
         }
     }
+
+    /// <summary>True when the page Skylight answered with looks like a CAPTCHA or similar challenge.</summary>
+    private static bool MentionsCaptcha(string? page) =>
+        page is not null && page.Contains("captcha", StringComparison.OrdinalIgnoreCase);
 
     private static string FormQuery(Dictionary<string, string> values) =>
         string.Join("&", values.Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));

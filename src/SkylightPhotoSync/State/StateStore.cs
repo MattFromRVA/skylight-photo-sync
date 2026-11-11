@@ -7,7 +7,7 @@ namespace SkylightPhotoSync.State;
 
 /// <summary>
 /// The SQLite state behind <c>state.db</c>: what was sent to whom, what was skipped, run history,
-/// the <c>needs_login</c> flag and the last alert time per kind. Opening the store creates the
+/// the <c>needs_login</c> flag, a Skylight sign-in failure and the last alert time per kind. Opening the store creates the
 /// schema when needed and switches the file to WAL mode. Timestamps are stored as ISO-8601 UTC text.
 /// </summary>
 public sealed class StateStore : IDisposable
@@ -178,6 +178,42 @@ public sealed class StateStore : IDisposable
             ("$kind", kind),
             ("$at", Format(at)));
 
+    /// <summary>Forgets the last alert of <paramref name="kind"/>, so the next one is not rate-limited away.</summary>
+    public void ClearAlert(string kind) =>
+        Execute("DELETE FROM alerts WHERE kind = $kind", ("$kind", kind));
+
+    /// <summary>
+    /// Records that Skylight refused the sign-in, which pauses rotation's pruning. <paramref name="fingerprint"/>
+    /// identifies the credentials that failed without containing them (see <c>SkylightSignInGate</c>).
+    /// </summary>
+    public void SetSkylightSignInFailure(string reason, string fingerprint, DateTimeOffset at) =>
+        Execute(
+            """
+            INSERT INTO skylight_auth_state (id, failed_at, reason, fingerprint)
+            VALUES (1, $at, $reason, $fingerprint)
+            ON CONFLICT(id) DO UPDATE SET
+                failed_at = excluded.failed_at,
+                reason = excluded.reason,
+                fingerprint = excluded.fingerprint
+            """,
+            ("$at", Format(at)),
+            ("$reason", reason),
+            ("$fingerprint", fingerprint));
+
+    public void ClearSkylightSignInFailure() =>
+        Execute("DELETE FROM skylight_auth_state");
+
+    /// <summary>The recorded Skylight sign-in failure, or <see langword="null"/> when pruning is not paused.</summary>
+    public SkylightSignInFailure? SkylightSignInFailure()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT failed_at, reason, fingerprint FROM skylight_auth_state WHERE id = 1";
+        using var reader = command.ExecuteReader();
+        return reader.Read()
+            ? new SkylightSignInFailure(Parse(reader.GetString(0)), reader.GetString(1), reader.GetString(2))
+            : null;
+    }
+
     /// <summary>Each sent item's most recent send time over all recipients, keyed by item id.</summary>
     public IReadOnlyDictionary<string, DateTimeOffset> LastSentTimes()
     {
@@ -300,6 +336,12 @@ public sealed class StateStore : IDisposable
             CREATE TABLE IF NOT EXISTS alerts (
                 kind    TEXT PRIMARY KEY,
                 last_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS skylight_auth_state (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                failed_at   TEXT NOT NULL,
+                reason      TEXT NOT NULL,
+                fingerprint TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS pruned_messages (
                 frame_id   TEXT NOT NULL,

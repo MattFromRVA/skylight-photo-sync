@@ -516,6 +516,118 @@ public sealed class SyncPipelineTests : IDisposable
         Assert.Equal(result.Error, _store.LastRun()!.Error);
     }
 
+    [Fact]
+    public async Task Refused_skylight_sign_in_pauses_pruning_and_alerts_once()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var cfg = Rotating(keep: 1, maxPerRun: 1);
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email.From, 3, _t0);
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client), gate: Gate());
+
+        var first = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.StartsWith("skylight_sign_in_failed: Skylight did not accept the sign-in", first.Error);
+        Assert.False(first.PrunePaused);
+        Assert.True(_store.IsSent($"{_album}/a.png", _frame));
+        var failure = Assert.IsType<SkylightSignInFailure>(_store.SkylightSignInFailure());
+        Assert.Equal((_t0, Refused().Message), (failure.FailedAt, failure.Reason));
+        var call = Assert.Single(_notifier.Calls);
+        Assert.Equal(("Skylight sign-in failed", AlertTexts.SkylightSignInBody(Refused().Message)), call);
+        Assert.Contains("skylight-sync prune --dry-run", call.Body);
+        Assert.Contains("secrets.toml", call.Body);
+        Assert.Equal(1, client.Calls);
+    }
+
+    [Fact]
+    public async Task While_paused_runs_keep_sending_without_touching_skylight_or_alerting_again()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        _root.AddFixture("tiny_rot6.heic", $"{_album}/c.heic", DaysAgo(1));
+        var cfg = Rotating(keep: 1, maxPerRun: 1);
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email.From, 3, _t0);
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client), gate: Gate());
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        var later = new List<RunResult>();
+        for (var hour = 1; hour <= 30; hour++)   // more than a day of hourly runs: past the alert rate limit
+        {
+            _now = _t0.AddHours(hour);
+            later.Add(await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None));
+        }
+
+        Assert.All(later, run => Assert.Equal((null, true, 1, 0), (run.Error, run.PrunePaused, run.Sent, run.Pruned)));
+        Assert.Equal(1, client.Calls);
+        Assert.Single(_notifier.Calls);
+        Assert.Equal(0, _store.ConsecutiveFailures());
+        Assert.Empty(client.Deleted);
+    }
+
+    [Fact]
+    public async Task Changed_credentials_are_tried_again_and_success_lifts_the_pause()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var cfg = Rotating(keep: 1, maxPerRun: 1);
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email.From, 3, _t0.AddHours(-1));
+        var rotator = Rotator(cfg, client);
+        await Pipeline(cfg, Source(), Mailer(stub), rotator: rotator, gate: Gate())
+            .RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);
+        client.FailEverythingWith = null;
+
+        var result = await Pipeline(cfg, Source(), Mailer(stub), rotator: rotator, gate: Gate("placeholder-corrected-password"))
+            .RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((null, false, 2), (result.Error, result.PrunePaused, result.Pruned));
+        Assert.Null(_store.SkylightSignInFailure());
+        Assert.Single(_notifier.Calls);
+    }
+
+    [Fact]
+    public async Task Changed_credentials_that_are_refused_too_alert_again_right_away()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var cfg = Rotating(keep: 1, maxPerRun: 1);
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() };
+        var rotator = Rotator(cfg, client);
+        await Pipeline(cfg, Source(), Mailer(stub), rotator: rotator, gate: Gate())
+            .RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);   // well inside the alert rate limit
+
+        var second = Pipeline(cfg, Source(), Mailer(stub), rotator: rotator, gate: Gate("placeholder-another-wrong-password"));
+        var result = await second.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        var paused = await second.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.StartsWith("skylight_sign_in_failed: ", result.Error);
+        Assert.True(paused.PrunePaused);
+        Assert.Equal(2, client.Calls);
+        Assert.Equal(2, _notifier.Calls.Count);
+        Assert.Equal(_t0.AddHours(1), _store.SkylightSignInFailure()!.FailedAt);
+    }
+
+    [Fact]
+    public async Task A_skylight_outage_does_not_pause_pruning()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var cfg = Rotating(keep: 1, maxPerRun: 1);
+        var client = new FakeSkylightClient { FailEverythingWith = new SkylightApiException("Skylight answered HTTP 503 during sign-in.") };
+        var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client), gate: Gate());
+
+        var first = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        var second = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal("prune_failed: Skylight answered HTTP 503 during sign-in.", first.Error);
+        Assert.False(second.PrunePaused);
+        Assert.Equal(2, client.Calls);
+        Assert.Null(_store.SkylightSignInFailure());
+        Assert.Empty(_notifier.Calls);
+    }
+
     public void Dispose()
     {
         _store.Dispose();
@@ -539,12 +651,18 @@ public sealed class SyncPipelineTests : IDisposable
 
     private SyncPipeline Pipeline(
         AppConfig cfg, IPhotoSource source, IMailer mailer, IMailer? alertMailer = null, long videoCapBytes = 22_000_000,
-        FrameRotator? rotator = null)
+        FrameRotator? rotator = null, SkylightSignInGate? gate = null)
     {
         var normalizer = new ImageNormalizer(new FakeHeicConverter(), cfg.Image, videoCapBytes);
         var alerter = new Alerter(_store, alertMailer, cfg.Alerts.Email, cfg.Email.From, _notifier, () => _now);
-        return new SyncPipeline(cfg, source, _store, normalizer, mailer, alerter, () => _now, _lockPath, rotator);
+        return new SyncPipeline(cfg, source, _store, normalizer, mailer, alerter, () => _now, _lockPath, rotator, gate);
     }
+
+    private SkylightSignInGate Gate(string password = "placeholder-password-not-real") =>
+        new(_store, "me@example.com", password, () => _now);
+
+    private static SkylightSignInException Refused() =>
+        new("Skylight did not accept the sign-in. Check [skylight] email and password in secrets.toml.");
 
     private static AppConfig Rotating(int keep, int maxPerRun) =>
         _baseConfig with

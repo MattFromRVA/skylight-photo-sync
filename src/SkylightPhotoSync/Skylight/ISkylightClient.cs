@@ -22,7 +22,7 @@ public interface ISkylightClient
 }
 
 /// <summary>Skylight refused the request or answered something the client cannot read; the message is user-facing.</summary>
-public sealed class SkylightApiException : Exception
+public class SkylightApiException : Exception
 {
     public SkylightApiException(string message)
         : base(message)
@@ -34,3 +34,11 @@ public sealed class SkylightApiException : Exception
     {
     }
 }
+
+/// <summary>
+/// Skylight did not let the saved email and password in: wrong credentials, a locked account, a
+/// CAPTCHA or other challenge, or a sign-in page the client no longer understands. Trying the same
+/// password again will not help and may lock the account, so callers pause instead of retrying
+/// (see <see cref="SkylightSignInGate"/>). A Skylight outage (HTTP 5xx) or a network error is not this.
+/// </summary>
+public sealed class SkylightSignInException(string message) : SkylightApiException(message);

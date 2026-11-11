@@ -9,6 +9,8 @@ namespace SkylightPhotoSync.Commands;
 /// <c>prune [--dry-run]</c>: rotation's clean-up on its own, without sending anything. Works whether or
 /// not <c>[rotation] enabled</c> is set, so <c>prune --dry-run</c> can check what would be deleted before
 /// rotation is turned on. Uses <c>[rotation]</c> keep, max_deletes_per_run and frame_name.
+/// Run by hand it always tries to sign in, even while scheduled runs have pruning paused after a
+/// refused sign-in: a sign-in that works here is what lifts the pause.
 /// </summary>
 public static class PruneCommand
 {
@@ -58,8 +60,26 @@ public static class PruneCommand
             {
                 using var store = new StateStore(paths.StateDb);
                 using var client = CommandSupport.CreateSkylightClient(secrets, paths);
+                var gate = CommandSupport.CreateSkylightSignInGate(secrets, store);
                 var rotator = new FrameRotator(cfg.Rotation, cfg.Email.From, client, store, () => DateTimeOffset.UtcNow);
-                var result = await rotator.PruneAsync(dryRun, expectedNew: 0, DateTimeOffset.UtcNow, ct);
+                PruneResult result;
+                try
+                {
+                    result = await rotator.PruneAsync(dryRun, expectedNew: 0, DateTimeOffset.UtcNow, ct);
+                }
+                catch (SkylightSignInException ex)
+                {
+                    gate.RecordFailure(ex.Message);
+                    stderr.WriteLine($"prune failed: {ex.Message}");
+                    stderr.WriteLine(CommandSupport.SkylightPausedHint);
+                    return RunCommand.ExitError;
+                }
+
+                if (gate.RecordSuccess())
+                {
+                    stdout.WriteLine("Skylight sign-in works again; scheduled runs will prune from now on.");
+                }
+
                 foreach (var frame in result.Frames)
                 {
                     var action = dryRun ? $"would delete {frame.WouldDelete}" : $"deleted {frame.Deleted}";

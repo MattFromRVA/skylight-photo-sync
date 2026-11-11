@@ -33,6 +33,14 @@ internal static class CommandSupport
     public static SkylightClient CreateSkylightClient(Secrets secrets, AppPaths paths) =>
         new(secrets.SkylightEmail!, secrets.SkylightPassword!, paths.SkylightTokenFile, SkylightHandlerFactory?.Invoke());
 
+    /// <summary>The gate that remembers a refused Skylight sign-in for the saved credentials.</summary>
+    public static SkylightSignInGate CreateSkylightSignInGate(Secrets secrets, State.StateStore store) =>
+        new(store, secrets.SkylightEmail!, secrets.SkylightPassword!, () => DateTimeOffset.UtcNow);
+
+    public const string SkylightPausedHint =
+        "Pruning is paused until a sign-in works: check [skylight] email and password in secrets.toml, "
+        + "sign in once in the Skylight app, then run 'skylight-sync prune --dry-run'.";
+
     /// <summary>
     /// The secrets file when it exists, otherwise all-empty secrets: a dry run against a local folder
     /// must work before the user has logged in. A present but unreadable file still fails loudly.

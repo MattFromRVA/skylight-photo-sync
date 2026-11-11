@@ -955,6 +955,80 @@ public sealed class CommandTests : IDisposable
         Assert.Contains("[skylight] email and password", err);
     }
 
+    [Fact]
+    public async Task Refused_sign_in_pauses_scheduled_pruning_until_a_prune_signs_in()
+    {
+        WriteConfig(rotation: true);
+        WriteSkylightSecrets();
+        var tokenFile = Path.Combine(_home.Dir, "skylight-token.json");
+        var cachedToken = File.ReadAllText(tokenFile);
+        File.Delete(tokenFile);   // no cached token: the commands have to sign in with the password
+        var refusing = SkylightRefusingSignIn();
+        CommandSupport.SkylightHandlerFactory = () => refusing;
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+
+        var (pruneCode, _, pruneErr) = await Run("prune", "--dry-run");
+        var (_, pausedStatus, _) = await Run("status");
+        var requestsAfterPrune = refusing.Requests.Count;
+        var (runCode, runOut, runErr) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.Equal(1, pruneCode);
+        Assert.Contains("prune failed: Skylight did not accept the sign-in", pruneErr);
+        Assert.Contains("skylight-sync prune --dry-run", pruneErr);
+        Assert.Contains("skylight_needs_login: yes, pruning paused since ", pausedStatus);
+        Assert.True(runCode == 0, runErr);
+        Assert.Contains("pruned 0, pruning paused (Skylight sign-in needed) (dry run)", runOut);
+        Assert.Contains("Pruning is paused", runErr);
+        Assert.Equal(requestsAfterPrune, refusing.Requests.Count);
+        Assert.Single(refusing.Requests, r => r.Method == HttpMethod.Post);
+        Assert.DoesNotContain("skylight-placeholder", pruneErr + pausedStatus + runOut + runErr);
+
+        File.WriteAllText(tokenFile, cachedToken);   // stands in for "the sign-in works again"
+        CommandSupport.SkylightHandlerFactory = () => SkylightAccount(ourPhotos: 31);
+        var (fixedCode, fixedOut, fixedErr) = await Run("prune", "--dry-run");
+        var (_, status, _) = await Run("status");
+
+        Assert.True(fixedCode == 0, fixedErr);
+        Assert.Contains("Skylight sign-in works again", fixedOut);
+        Assert.Contains("skylight_needs_login: no", status);
+    }
+
+    [Fact]
+    public async Task Run_that_hits_a_refused_sign_in_fails_once_then_runs_paused()
+    {
+        WriteConfig(rotation: true);
+        WriteSkylightSecrets();
+        File.Delete(Path.Combine(_home.Dir, "skylight-token.json"));
+        var refusing = SkylightRefusingSignIn();
+        CommandSupport.SkylightHandlerFactory = () => refusing;
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+
+        var (firstCode, _, firstErr) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+        var (secondCode, _, secondErr) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.Equal(1, firstCode);
+        Assert.Contains("run failed: skylight_sign_in_failed: Skylight did not accept the sign-in", firstErr);
+        Assert.Contains("Pruning is paused", firstErr);
+        Assert.True(secondCode == 0, secondErr);
+        Assert.Single(refusing.Requests, r => r.Method == HttpMethod.Post);
+    }
+
+    /// <summary>HAND-WRITTEN PLACEHOLDER Skylight sign-in that shows the form and then refuses the password.</summary>
+    private static ScriptedHandler SkylightRefusingSignIn() =>
+        new ScriptedHandler()
+            .On("/oauth/authorize", _ =>
+            {
+                var redirect = new HttpResponseMessage(HttpStatusCode.Found);
+                redirect.Headers.Location = new Uri("/auth/session/new", UriKind.Relative);
+                return redirect;
+            })
+            .On("/auth/session/new", _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<html><head><meta name=\"csrf-token\" content=\"placeholder-csrf\" /></head></html>"),
+            })
+            .On(r => r.Method == HttpMethod.Post, _ =>
+                new HttpResponseMessage(HttpStatusCode.UnprocessableEntity) { Content = new StringContent("<html>Invalid</html>") });
+
     private void WriteSkylightSecrets()
     {
         ConfigLoader.WriteSecrets(

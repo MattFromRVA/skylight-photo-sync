@@ -16,6 +16,8 @@ namespace SkylightPhotoSync.Pipeline;
 /// one email per batch per recipient, marking items sent only after the SMTP server accepts the message.
 /// With <c>[rotation]</c> enabled, a run that runs out of new items tops up with the items sent longest
 /// ago, and <paramref name="rotator"/> (when given) then prunes the frame down to the newest photos.
+/// A refused Skylight sign-in is recorded in <paramref name="signInGate"/> and alerted once; later runs
+/// keep sending but leave pruning out until the gate opens again.
 /// </summary>
 public sealed class SyncPipeline(
     AppConfig cfg,
@@ -26,7 +28,8 @@ public sealed class SyncPipeline(
     Alerter alerter,
     Func<DateTimeOffset> now,
     string lockPath,
-    FrameRotator? rotator = null)
+    FrameRotator? rotator = null,
+    SkylightSignInGate? signInGate = null)
 {
     /// <summary><see cref="RunResult.Error"/> when the run skipped the source because a login is needed.</summary>
     internal const string NeedsLoginError = "needs_login";
@@ -40,7 +43,11 @@ public sealed class SyncPipeline(
     /// <summary>Prefix of <see cref="RunResult.Error"/> when everything was sent but rotation failed.</summary>
     internal const string PruneFailedErrorPrefix = "prune_failed: ";
 
+    /// <summary>Prefix of <see cref="RunResult.Error"/> when everything was sent but Skylight refused the sign-in.</summary>
+    internal const string SkylightSignInFailedErrorPrefix = "skylight_sign_in_failed: ";
+
     internal const string AuthExpiredTitle = "Amazon login expired";
+    internal const string SkylightSignInTitle = "Skylight sign-in failed";
     internal const string RepeatedFailureTitle = "Sync failing";
 
     private const int _repeatedFailureThreshold = 3;
@@ -221,11 +228,24 @@ public sealed class SyncPipeline(
             return null;
         }
 
+        if (signInGate is not null && !signInGate.ShouldAttempt())
+        {
+            counts.PrunePaused = true;
+            return null;
+        }
+
         try
         {
             var result = await rotator.PruneAsync(dryRun, counts.SentIds.Count, startedAt, ct);
             counts.Pruned = dryRun ? result.WouldDelete : result.Deleted;
+            signInGate?.RecordSuccess();
             return null;
+        }
+        catch (SkylightSignInException ex)
+        {
+            signInGate?.RecordFailure(ex.Message);
+            await alerter.AlertAsync(AlertKind.SkylightSignIn, SkylightSignInTitle, AlertTexts.SkylightSignInBody(ex.Message), ct);
+            return SkylightSignInFailedErrorPrefix + ex.Message;
         }
         catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
         {
@@ -293,7 +313,8 @@ public sealed class SyncPipeline(
 
         // An expired login already raised its own alert and pauses every run until the user logs in again,
         // so counting it towards "repeated failures" would only produce a second alert for the same cause.
-        if (error is not null && error != AuthExpiredError)
+        // The same goes for a refused Skylight sign-in, which pauses pruning.
+        if (error is not null && error != AuthExpiredError && !error.StartsWith(SkylightSignInFailedErrorPrefix, StringComparison.Ordinal))
         {
             var failures = store.ConsecutiveFailures();
             if (failures >= _repeatedFailureThreshold)
@@ -306,7 +327,8 @@ public sealed class SyncPipeline(
             }
         }
 
-        return new RunResult(counts.Found, counts.Sent, counts.Skipped, counts.Batches, dryRun, error, counts.Recycled, counts.Pruned);
+        return new RunResult(
+            counts.Found, counts.Sent, counts.Skipped, counts.Batches, dryRun, error, counts.Recycled, counts.Pruned, counts.PrunePaused);
     }
 
     /// <summary>Closes the run's row. A dry run records zero sent, because nothing was.</summary>
@@ -363,6 +385,8 @@ public sealed class SyncPipeline(
         public int Recycled { get; set; }
 
         public int Pruned { get; set; }
+
+        public bool PrunePaused { get; set; }
 
         public HashSet<string> SentIds { get; } = new(StringComparer.Ordinal);
 
