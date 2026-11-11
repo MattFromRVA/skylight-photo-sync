@@ -29,6 +29,9 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
     internal const string CaptchaMessage =
         "Skylight asked for a CAPTCHA, which this tool cannot answer. Sign in once in the Skylight app or at app.ourskylight.com, then try again.";
 
+    internal const string RateLimitedMessage =
+        "Skylight is rate-limiting sign-in attempts (HTTP 429). Wait a while before trying again.";
+
     private const int _maxRedirects = 10;
     private static readonly TimeSpan _expiryMargin = TimeSpan.FromMinutes(5);
 
@@ -392,7 +395,7 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
             if (status == (int)HttpStatusCode.TooManyRequests)
             {
                 throw new SkylightSignInException(
-                    "Skylight is rate-limiting sign-in attempts (HTTP 429). Wait a while before trying again.");
+                    RateLimitedMessage);
             }
 
             if (status is not (>= 300 and < 400) || response.Headers.Location is not { } location)
@@ -435,6 +438,13 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         {
             // An outage says nothing about the tokens or the password, so neither is given up on.
             throw new SkylightApiException($"Skylight answered HTTP {(int)response.StatusCode} when asked for a token.");
+        }
+
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            // Returning null here would send a refused refresh on to the password, into the same throttle.
+            throw new SkylightSignInException(
+                RateLimitedMessage);
         }
 
         if (!response.IsSuccessStatusCode)

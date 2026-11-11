@@ -226,6 +226,20 @@ public sealed class SkylightClientTests : IDisposable
     }
 
     [Fact]
+    public async Task Rate_limited_refresh_is_a_sign_in_failure_that_never_sends_the_password()
+    {
+        WriteTokenFile(expiresAt: _t0.AddMinutes(-1));
+        var handler = SignInRoutes().On("/oauth/token", _ => ScriptedHandler.Status(HttpStatusCode.TooManyRequests));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightSignInException>(() => client.ListFramesAsync(CancellationToken.None));
+
+        Assert.Contains("429", ex.Message);
+        Assert.Empty(handler.RequestsTo("/auth/session"));
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
     public async Task Outage_during_refresh_does_not_fall_back_to_the_password()
     {
         WriteTokenFile(expiresAt: _t0.AddMinutes(-1));
