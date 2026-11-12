@@ -726,10 +726,6 @@ public sealed class SyncPipelineTests : IDisposable
     private FrameRotator Rotator(AppConfig cfg, ISkylightClient client) =>
         new(cfg.Rotation, cfg.Email.From, client, _store, () => _now, (_, _) => Task.CompletedTask);
 
-    /// <summary>
-    /// Wraps a source, counting calls, and throws <see cref="AuthExpiredException"/> on the download after
-    /// <paramref name="failAfterDownloads"/> successful ones (never, by default).
-    /// </summary>
     private sealed class RecordingReporter : IRunReporter
     {
         public List<EmailReport> Emails { get; } = [];
@@ -741,6 +737,10 @@ public sealed class SyncPipelineTests : IDisposable
         public void Skipped(Item item, SkipReason reason, string detail) => Skips.Add((item, reason, detail));
     }
 
+    /// <summary>
+    /// Wraps a source, counting calls, and throws <see cref="AuthExpiredException"/> on the download after
+    /// <paramref name="failAfterDownloads"/> successful ones (never, by default).
+    /// </summary>
     private sealed class FailingSource(IPhotoSource inner, int failAfterDownloads = int.MaxValue) : IPhotoSource
     {
         public int Listings { get; private set; }
