@@ -229,6 +229,64 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Reset_yes_forgets_sent_and_skipped_items()
+    {
+        using (var store = OpenStore())
+        {
+            store.MarkSent([Item("a")], _frame, "batch-1", DateTimeOffset.UtcNow);
+            store.MarkSkipped("b", SkipReason.Oversize, "too big");
+        }
+
+        var (code, out_, _) = await Run("reset", "--yes");
+
+        Assert.Equal(0, code);
+        Assert.Contains("Forgot 1 sent items; the next run starts over.", out_);
+        using var reopened = OpenStore();
+        Assert.False(reopened.IsSent("a", _frame));
+        Assert.False(reopened.IsSkipped("b"));
+    }
+
+    [Fact]
+    public async Task Reset_skipped_clears_skipped_items_and_keeps_sent_items()
+    {
+        using (var store = OpenStore())
+        {
+            store.MarkSent([Item("a")], _frame, "batch-1", DateTimeOffset.UtcNow);
+            store.MarkSkipped("b", SkipReason.Oversize, "too big");
+            store.MarkSkipped("c", SkipReason.UnsupportedType, "not a photo");
+        }
+
+        var (code, out_, err) = await Run("reset", "--skipped");
+
+        Assert.Equal(0, code);
+        Assert.Contains("Cleared 2 skipped items", out_);
+        Assert.Empty(err);
+        using var reopened = OpenStore();
+        Assert.True(reopened.IsSent("a", _frame));
+        Assert.False(reopened.IsSkipped("b"));
+        Assert.False(reopened.IsSkipped("c"));
+    }
+
+    [Fact]
+    public async Task Reset_skipped_with_yes_still_keeps_sent_items()
+    {
+        using (var store = OpenStore())
+        {
+            store.MarkSent([Item("a")], _frame, "batch-1", DateTimeOffset.UtcNow);
+            store.MarkSkipped("b", SkipReason.Oversize, "too big");
+        }
+
+        var (code, out_, _) = await Run("reset", "--skipped", "--yes");
+
+        Assert.Equal(0, code);
+        Assert.Contains("Cleared 1 skipped items", out_);
+        Assert.DoesNotContain("Forgot", out_);
+        using var reopened = OpenStore();
+        Assert.True(reopened.IsSent("a", _frame));
+        Assert.False(reopened.IsSkipped("b"));
+    }
+
+    [Fact]
     public async Task Login_parses_curl_paste()
     {
         using (var store = OpenStore())

@@ -168,7 +168,7 @@ public class AppTests
   - `int ConsecutiveFailures()` (trailing finished runs with non-null error; unfinished runs are ignored)
   - `void SetNeedsLogin(bool flag, DateTimeOffset? at)`; `bool NeedsLogin()`
   - `DateTimeOffset? LastAlertAt(string kind)`; `void RecordAlert(string kind, DateTimeOffset at)`
-  - `RunRecord? LastRun()`; `int ResetSent()` (clears sent and skipped items; returns the sent rows removed)
+  - `RunRecord? LastRun()`; `int ResetSent()` (clears sent and skipped items; returns the sent rows removed); `int ResetSkipped()` (issue #47: clears only skipped items; returns the rows removed)
   - `public sealed record RunRecord(long Id, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt, SourceMode Mode, int Found, int Sent, int Skipped, string? Error);`
   - Schema created on open; `PRAGMA journal_mode=WAL`; timestamps stored as ISO-8601 UTC text.
 
@@ -277,7 +277,7 @@ public class AppTests
   - `run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N] [--source local:PATH]` — CLI flags override config; `--source local:PATH` selects `LocalFolderSource`; without `--source` the default is Amazon (Task 12); until then exit 2 with `Amazon source not yet available`. Exit codes: 0 ok, 1 error, 3 `needs_login`, 4 lock held.
   - `status` — last run time/result, totals sent, `needs_login` state, next launchd run if installed (Task 11 `LaunchdInstaller.NextRun`; print `not installed` otherwise).
   - `test-email [--size-probe]` — sends one generated 800×600 JPEG to each `email.to`; with `--size-probe` sends 5 emails of ~5/10/15/20/24 MB generated-noise JPEGs with size-tagged subjects and prints `Check which arrived on the frame`. An SMTP rejection of one probe is reported and the series continues (base64 pushes the larger probes past Gmail's 25 MB limit); exit 1 only if no probe was accepted.
-  - `reset --yes` — `store.ResetSent()`; refuses without `--yes`.
+  - `reset --yes` — `store.ResetSent()`; refuses without `--yes`. `reset --skipped` (issue #47) — `store.ResetSkipped()`, prints `Cleared N skipped items; …`; needs no `--yes` because nothing is resent, and `--skipped --yes` is still skipped-only.
   - `login` — reads stdin: either a pasted cURL command (parse the `Cookie:` header for `session-id`, `ubid-main|ubid_main`, `at-main|at_main`) or three lines of values; `WriteSecrets`; `SetNeedsLogin(false, null)`; prints `Saved. Run 'skylight-sync run --dry-run' to verify.` (live check added in Task 12).
   - `Logging.Configure(AppPaths paths)`: Serilog to `paths.LogFile` with `fileSizeLimitBytes: 5_000_000, rollOnFileSizeLimit: true, retainedFileCountLimit: 5` plus stderr at Information. The stderr sink is only added when stderr is a terminal: under launchd stderr is already appended to the same log file (Task 11 plist), so both sinks would record every line twice.
 

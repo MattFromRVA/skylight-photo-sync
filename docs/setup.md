@@ -353,7 +353,8 @@ a run.
 
 Per-item detail lives in the state database rather than the log. `sent_items` has one row per
 item and recipient; `skipped_items` has the reason and detail for every item the pipeline gave up
-on (these are not retried until `reset --yes`). macOS ships `sqlite3`, so:
+on (oversize and unsupported items are not retried until `reset --skipped`). macOS ships
+`sqlite3`, so:
 
 ```bash
 sqlite3 ~/Library/Application\ Support/skylight-photo-sync/state.db \
@@ -400,10 +401,12 @@ skylight-sync prune --dry-run    # [rotation]: what would be deleted from the fr
 skylight-sync login              # sign in again (device login); login --cookies for pasted cookies
 skylight-sync logout             # remove the device from your Amazon account and forget the login
 skylight-sync reset --yes        # forget everything sent and skipped; next run resends the whole window
+skylight-sync reset --skipped    # forget only what was skipped; next run retries those, nothing is resent
 skylight-sync uninstall-launchd  # stop the schedule
 ```
 
-`reset` without `--yes` refuses and explains what it would do. `record-fixtures` is for
+`reset` without `--yes` refuses and explains what it would do. `reset --skipped` needs no `--yes`
+because it resends nothing, and adding `--yes` to it changes nothing. `record-fixtures` is for
 contributors: it records redacted Amazon API responses as test fixtures and is not part of
 normal use.
 
