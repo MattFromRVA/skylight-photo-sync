@@ -129,6 +129,58 @@ public sealed class SyncPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Dry_run_reports_each_email_and_each_skip()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.mp4", $"{_album}/clip.mp4", DaysAgo(2));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(1));
+        var reporter = new RecordingReporter();
+        var pipeline = Pipeline(_baseConfig, Source(), Mailer(stub), reporter: reporter);
+
+        await pipeline.RunAsync(dryRun: true, limit: null, CancellationToken.None);
+
+        Assert.Empty(stub.Received);
+        var email = Assert.Single(reporter.Emails);
+        Assert.Equal((1, _frame), (email.Number, email.Recipient));
+        Assert.Equal(["a.png", "b.gif"], email.Items.Select(i => i.Item.Name));
+        Assert.All(email.Items, i => Assert.True(i.Bytes > 0));
+        Assert.All(email.Items, i => Assert.False(i.Recycled));
+        Assert.Equal(email.Items.Sum(i => i.Bytes), email.TotalBytes);
+        var skip = Assert.Single(reporter.Skips);
+        Assert.Equal(("clip.mp4", SkipReason.VideoDisabled, "source.include_videos is false"), (skip.Item.Name, skip.Reason, skip.Detail));
+    }
+
+    [Fact]
+    public async Task Reports_one_numbered_email_per_recipient_after_sending()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var two = _baseConfig with { Email = _baseConfig.Email with { To = [_frame, _calendar] } };
+        var reporter = new RecordingReporter();
+        var pipeline = Pipeline(two, Source(), Mailer(stub), reporter: reporter);
+
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal(2, stub.Received.Count);
+        Assert.Equal([(1, _frame), (2, _calendar)], reporter.Emails.Select(e => (e.Number, e.Recipient)));
+        Assert.Empty(reporter.Skips);
+    }
+
+    [Fact]
+    public async Task Reports_nothing_for_an_email_the_server_refused()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var reporter = new RecordingReporter();
+        var pipeline = Pipeline(_baseConfig, Source(), DeadMailer(), reporter: reporter);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.StartsWith("send_failed: ", result.Error);
+        Assert.Empty(reporter.Emails);
+    }
+
+    [Fact]
     public async Task Dry_run_sends_nothing_and_marks_nothing()
     {
         await using var stub = await SmtpStub.StartAsync();
@@ -651,11 +703,11 @@ public sealed class SyncPipelineTests : IDisposable
 
     private SyncPipeline Pipeline(
         AppConfig cfg, IPhotoSource source, IMailer mailer, IMailer? alertMailer = null, long videoCapBytes = 22_000_000,
-        FrameRotator? rotator = null, SkylightSignInGate? gate = null)
+        FrameRotator? rotator = null, SkylightSignInGate? gate = null, IRunReporter? reporter = null)
     {
         var normalizer = new ImageNormalizer(new FakeHeicConverter(), cfg.Image, videoCapBytes);
         var alerter = new Alerter(_store, alertMailer, cfg.Alerts.Email, cfg.Email.From, _notifier, () => _now);
-        return new SyncPipeline(cfg, source, _store, normalizer, mailer, alerter, () => _now, _lockPath, rotator, gate);
+        return new SyncPipeline(cfg, source, _store, normalizer, mailer, alerter, () => _now, _lockPath, rotator, gate, reporter);
     }
 
     private SkylightSignInGate Gate(string password = "placeholder-password-not-real") =>
@@ -678,6 +730,17 @@ public sealed class SyncPipelineTests : IDisposable
     /// Wraps a source, counting calls, and throws <see cref="AuthExpiredException"/> on the download after
     /// <paramref name="failAfterDownloads"/> successful ones (never, by default).
     /// </summary>
+    private sealed class RecordingReporter : IRunReporter
+    {
+        public List<EmailReport> Emails { get; } = [];
+
+        public List<(Item Item, SkipReason Reason, string Detail)> Skips { get; } = [];
+
+        public void Email(EmailReport email) => Emails.Add(email);
+
+        public void Skipped(Item item, SkipReason reason, string detail) => Skips.Add((item, reason, detail));
+    }
+
     private sealed class FailingSource(IPhotoSource inner, int failAfterDownloads = int.MaxValue) : IPhotoSource
     {
         public int Listings { get; private set; }

@@ -57,10 +57,49 @@ public sealed class CommandTests : IDisposable
         var (code, out_, _) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
 
         Assert.Equal(0, code);
-        Assert.Contains("found 1, sent 1, skipped 0, batches 1 (dry run)", out_);
+        Assert.Contains("found 1, would send 1, skipped 0, batches 1 (dry run)", out_);
         using var store = OpenStore();
         Assert.False(store.IsSent($"{_album}/a.png", _frame));
         Assert.True(File.Exists(Path.Combine(_home.Dir, "sync.log")));
+    }
+
+    [Fact]
+    public async Task Run_dry_run_lists_each_email_its_items_and_the_skips()
+    {
+        WriteConfig();
+        var day = DateTime.UtcNow.AddDays(-1);
+        _root.AddFixture("tiny.png", $"{_album}/a.png", day);
+        _root.AddFixture("tiny.mp4", $"{_album}/clip.mp4", day);
+
+        var (code, out_, _) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.Equal(0, code);
+        var lines = out_.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.TrimEnd('\r')).ToList();
+        Assert.Equal(4, lines.Count);
+        Assert.Equal($"skipped: {day:yyyy-MM-dd}  clip.mp4  VideoDisabled: source.include_videos is false", lines[0]);
+        Assert.Matches($"^email 1 to {_frame}: 1 item, \\d+ (B|KB)$", lines[1]);
+        Assert.Matches($"^  {day:yyyy-MM-dd}  a\\.png  \\d+ (B|KB)$", lines[2]);
+        Assert.Equal("found 2, would send 1, skipped 1, batches 1 (dry run)", lines[3]);
+    }
+
+    [Fact]
+    public async Task Run_real_run_prints_only_the_summary_and_logs_emails_and_skips()
+    {
+        await using var stub = await SmtpStub.StartAsync();
+        WriteConfig(stub.Port);
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+        _root.AddFixture("tiny.mp4", $"{_album}/clip.mp4", DateTime.UtcNow.AddDays(-1));
+        File.WriteAllText(_root.AddFixture("tiny.png", $"{_album}/broken.png", DateTime.UtcNow.AddDays(-1)), "not an image");
+
+        var (code, out_, err) = await Run("run", "--source", $"local:{_root.Path}");
+
+        Assert.True(code == 0, err);
+        Assert.Single(stub.Received);
+        Assert.Equal("found 3, sent 1, skipped 2, batches 1", out_.Trim());
+        var log = File.ReadAllText(Path.Combine(_home.Dir, "sync.log"));
+        Assert.Contains($"sent email 1 to {_frame}: 1 item", log);
+        Assert.Contains("skipped broken.png: ", log);
+        Assert.DoesNotContain("clip.mp4", log);   // videos-off skips repeat every run, so they stay out of the log
     }
 
     [Fact]
@@ -74,7 +113,7 @@ public sealed class CommandTests : IDisposable
             "run", "--dry-run", "--mode", "all", "--lookback-days", "1", "--source", $"local:{_root.Path}");
 
         Assert.Equal(0, code);
-        Assert.Contains("found 1, sent 1, skipped 0, batches 1 (dry run)", out_);
+        Assert.Contains("found 1, would send 1, skipped 0, batches 1 (dry run)", out_);
     }
 
     [Fact]
@@ -86,7 +125,7 @@ public sealed class CommandTests : IDisposable
         var (code, out_, _) = await Run("run", "--dry-run", "--limit", "1");
 
         Assert.Equal(0, code);
-        Assert.Contains("found 9, sent 1, skipped 0, batches 1 (dry run)", out_);
+        Assert.Contains("found 9, would send 1, skipped 0, batches 1 (dry run)", out_);
         Assert.Single(_amazon.RequestsTo($"/nodes/{ScriptedHandler.AlbumId}/children"), r => !ScriptedHandler.Query(r).Contains("startToken"));
         Assert.Single(_amazon.RequestsTo("/content"));
         Assert.Contains("source=amazon", File.ReadAllText(Path.Combine(_home.Dir, "sync.log")));
@@ -792,7 +831,7 @@ public sealed class CommandTests : IDisposable
         var (code, out_, err) = await Run("run", "--dry-run", "--limit", "1");
 
         Assert.Equal(0, code);
-        Assert.Contains("found 9, sent 1, skipped 0, batches 1 (dry run)", out_);
+        Assert.Contains("found 9, would send 1, skipped 0, batches 1 (dry run)", out_);
         Assert.Equal("/ap/exchangetoken/cookies", _amazon.Requests[0].RequestUri!.AbsolutePath);
         Assert.Single(_amazon.RequestsTo("/ap/exchangetoken/cookies"));
         AssertNoSecretsIn(out_ + err + File.ReadAllText(Path.Combine(_home.Dir, "sync.log")));
@@ -965,7 +1004,7 @@ public sealed class CommandTests : IDisposable
         var (code, out_, err) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
 
         Assert.True(code == 0, err);
-        Assert.Contains("found 1, sent 1, skipped 0, batches 1, recycled 0, pruned 3 (dry run)", out_);
+        Assert.Contains("found 1, would send 1, skipped 0, batches 1, would recycle 0, would prune 3 (dry run)", out_);
         Assert.DoesNotContain("skylight-placeholder", out_ + err);
     }
 
@@ -1035,7 +1074,7 @@ public sealed class CommandTests : IDisposable
         Assert.Contains("skylight-sync prune --dry-run", pruneErr);
         Assert.Contains("skylight_needs_login: yes, pruning paused since ", pausedStatus);
         Assert.True(runCode == 0, runErr);
-        Assert.Contains("pruned 0, pruning paused (Skylight sign-in needed) (dry run)", runOut);
+        Assert.Contains("would prune 0, pruning paused (Skylight sign-in needed) (dry run)", runOut);
         Assert.Contains("Pruning is paused", runErr);
         Assert.Equal(requestsAfterPrune, refusing.Requests.Count);
         Assert.Single(refusing.Requests, r => r.Method == HttpMethod.Post);
