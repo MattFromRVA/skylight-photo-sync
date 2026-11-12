@@ -253,7 +253,7 @@ Both kinds of login fail the same way, and the tool is built around it:
 skylight-sync run --dry-run
 ```
 
-exits 0 and prints `found N, sent S, skipped K, batches B (dry run)` (in a dry run `sent` is how
-many would be sent; nothing is emailed) when the login works, or
+exits 0, lists what it would send and ends with `found N, would send S, skipped K, batches B (dry run)`
+(nothing is emailed) when the login works, or
 exits 3 with `run failed: needs_login` / `run failed: auth_expired` when it does not. More in
 [troubleshooting.md](troubleshooting.md#needs_login-exit-code-3).

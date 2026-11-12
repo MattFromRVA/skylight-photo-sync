@@ -17,7 +17,8 @@ namespace SkylightPhotoSync.Pipeline;
 /// With <c>[rotation]</c> enabled, a run that runs out of new items tops up with the items sent longest
 /// ago, and <paramref name="rotator"/> (when given) then prunes the frame down to the newest photos.
 /// A refused Skylight sign-in is recorded in <paramref name="signInGate"/> and alerted once; later runs
-/// keep sending but leave pruning out until the gate opens again.
+/// keep sending but leave pruning out until the gate opens again. <paramref name="reporter"/> (when given)
+/// is told about each email and each skipped item as the run goes.
 /// </summary>
 public sealed class SyncPipeline(
     AppConfig cfg,
@@ -29,7 +30,8 @@ public sealed class SyncPipeline(
     Func<DateTimeOffset> now,
     string lockPath,
     FrameRotator? rotator = null,
-    SkylightSignInGate? signInGate = null)
+    SkylightSignInGate? signInGate = null,
+    IRunReporter? reporter = null)
 {
     /// <summary><see cref="RunResult.Error"/> when the run skipped the source because a login is needed.</summary>
     internal const string NeedsLoginError = "needs_login";
@@ -182,6 +184,11 @@ public sealed class SyncPipeline(
 
                 counts.Batches++;
                 counts.Sent += batch.Items.Count;
+                reporter?.Email(new EmailReport(
+                    counts.Batches,
+                    recipient,
+                    batch.Items.Select((item, i) => new EmailItemReport(item, new FileInfo(batch.Files[i]).Length, recycled.Contains(item.Id))).ToList(),
+                    batch.TotalBytes));
                 foreach (var item in batch.Items)
                 {
                     counts.SentIds.Add(item.Id);
@@ -304,6 +311,7 @@ public sealed class SyncPipeline(
         if (counts.SkippedIds.Add(item.Id))
         {
             counts.Skipped++;
+            reporter?.Skipped(item, reason, detail);
         }
     }
 

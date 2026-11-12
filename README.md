@@ -55,7 +55,7 @@ mkdir -p ~/.config/skylight-photo-sync
 skylight-sync login             # 2. sign in to Amazon once in your browser (docs/cookies.md)
 # 3. Add the SMTP password to secrets.toml
 skylight-sync test-email        # 4. one test image; approve the sender in Skylight when asked
-skylight-sync run --dry-run     # 5. counts what would be sent, sends nothing
+skylight-sync run --dry-run     # 5. lists what would be sent, sends nothing
 skylight-sync run --limit 1     # 6. sends one photo
 skylight-sync install-launchd   # 7. runs hourly from now on
 skylight-sync status
