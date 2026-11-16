@@ -18,6 +18,18 @@ public class LocalFolderSourceTests
     private static readonly DateTime _y2021 = new(2021, 3, 1, 0, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime _y2022 = new(2022, 7, 7, 0, 0, 0, DateTimeKind.Utc);
 
+    [Theory]
+    [InlineData("~", "/Users/me")]
+    [InlineData("~/", "/Users/me/")]
+    [InlineData("~/Pictures/test", "/Users/me/Pictures/test")]
+    [InlineData("~other/Pictures", "~other/Pictures")]
+    [InlineData("photos/~/test", "photos/~/test")]
+    [InlineData("/abs/path", "/abs/path")]
+    public void ExpandHome_expands_only_a_leading_tilde(string path, string expected)
+    {
+        Assert.Equal(expected, LocalFolderSource.ExpandHome(path, "/Users/me"));
+    }
+
     [Fact]
     public async Task All_mode_lists_oldest_first()
     {
