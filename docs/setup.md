@@ -259,13 +259,26 @@ and the series continues, and the command only fails if no probe was accepted.
 
 ```bash
 skylight-sync run --dry-run
-# found 25, sent 25, skipped 0, batches 2 (dry run)
+# skipped: 2026-10-30  clip.mp4  VideoDisabled: source.include_videos is false
+# email 1 to yourframe@ourskylight.com: 12 items, 9.8 MB
+#   2026-10-28  IMG_0101.HEIC  812 KB
+#   2026-10-29  IMG_0102.JPG  1.1 MB
+#   ...
+# email 2 to yourframe@ourskylight.com: 12 items, 10.4 MB
+#   ...
+# found 25, would send 24, skipped 1, batches 2 (dry run)
 ```
 
 A dry run does everything except send: lists the album, downloads and normalizes up to
-`max_items_per_run` photos, packs them into batches, and marks nothing as sent. It prints the
-counts (`found` is the number of new items in the window; in a dry run `sent` is how many would
-be sent and `batches` is how many emails they would take), not the individual file names. Exit code 0 means Amazon, your config and the image
+`max_items_per_run` photos, packs them into batches, and marks nothing as sent. It prints one
+block per email that would go out, with each item's capture date, original file name and size
+as attached (after resizing), and one `skipped:` line per item it cannot send, with the reason.
+With rotation on, an old photo that would be sent again is marked `(resend)`. The last line has
+the counts: `found` is the number of new items in the window, `would send` is how many would be
+sent and `batches` is how many emails they would take. A real run prints only that last line,
+with `sent` in place of `would send`, and writes one line per email and per skip to `sync.log`
+(videos skipped because `include_videos = false` are left out of the log, since they are skipped
+again on every run). Exit code 0 means Amazon, your config and the image
 pipeline all work. Items that cannot be sent (videos while `include_videos = false`, files too
 large for one email, unsupported types) are counted under `skipped` and recorded with their
 reason in the state database (see step 10); a dry run records them too.

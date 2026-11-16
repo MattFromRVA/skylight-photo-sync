@@ -1,9 +1,12 @@
 using System.CommandLine;
+using System.Globalization;
+using Serilog;
 using Serilog.Core;
 using SkylightPhotoSync.Alerts;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Imaging;
 using SkylightPhotoSync.Infrastructure;
+using SkylightPhotoSync.Models;
 using SkylightPhotoSync.Pipeline;
 using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.Sources;
@@ -206,7 +209,8 @@ public static class RunCommand
             ? null
             : new FrameRotator(cfg.Rotation, cfg.Email.From, skylight, store, now, CommandSupport.RotationDelay);
         var signInGate = skylight is null ? null : CommandSupport.CreateSkylightSignInGate(secrets, store);
-        var pipeline = new SyncPipeline(cfg, source, store, normalizer, mailer, alerter, now, paths.LockFile, rotator, signInGate);
+        var pipeline = new SyncPipeline(cfg, source, store, normalizer, mailer, alerter, now, paths.LockFile, rotator, signInGate,
+            new RunReporter(options.DryRun, stdout, log));
 
         log.Information(
             "run started: mode={Mode} album={Album} lookbackDays={LookbackDays} limit={Limit} dryRun={DryRun} source={Source} rotation={Rotation}",
@@ -215,9 +219,12 @@ public static class RunCommand
 
         var result = await pipeline.RunAsync(options.DryRun, options.Limit, ct);
 
-        var summary = $"found {result.Found}, sent {result.Sent}, skipped {result.Skipped}, batches {result.Batches}"
-            + (cfg.Rotation.Enabled ? $", recycled {result.Recycled}, pruned {result.Pruned}" : "")
-            + (result.PrunePaused ? ", pruning paused (Skylight sign-in needed)" : "")
+        var summary = result.DryRun
+            ? $"found {result.Found}, would send {result.Sent}, skipped {result.Skipped}, batches {result.Batches}"
+                + (cfg.Rotation.Enabled ? $", would recycle {result.Recycled}, would prune {result.Pruned}" : "")
+            : $"found {result.Found}, sent {result.Sent}, skipped {result.Skipped}, batches {result.Batches}"
+                + (cfg.Rotation.Enabled ? $", recycled {result.Recycled}, pruned {result.Pruned}" : "");
+        summary += (result.PrunePaused ? ", pruning paused (Skylight sign-in needed)" : "")
             + (result.DryRun ? " (dry run)" : "");
         stdout.WriteLine(summary);
         if (result.PrunePaused)
@@ -242,6 +249,57 @@ public static class RunCommand
         return result.Error is SyncPipeline.NeedsLoginError or SyncPipeline.AuthExpiredError
             ? ExitNeedsLogin
             : ExitError;
+    }
+
+    /// <summary>Decimal units, to match the byte limits in config.toml (17_000_000 reads as 17.0 MB).</summary>
+    internal static string FormatSize(long bytes) => bytes switch
+    {
+        < 1_000 => string.Create(CultureInfo.InvariantCulture, $"{bytes} B"),
+        < 999_500 => string.Create(CultureInfo.InvariantCulture, $"{bytes / 1_000d:0} KB"),
+        _ => string.Create(CultureInfo.InvariantCulture, $"{bytes / 1_000_000d:0.0} MB"),
+    };
+
+    private static string ItemCount(int count) => count == 1 ? "1 item" : $"{count} items";
+
+    /// <summary>
+    /// A dry run lists every email, its items and every skip on stdout. A real run keeps stdout to the
+    /// summary line and writes one log line per email and per skip instead.
+    /// </summary>
+    private sealed class RunReporter(bool dryRun, TextWriter stdout, ILogger log) : IRunReporter
+    {
+        public void Email(EmailReport email)
+        {
+            if (!dryRun)
+            {
+                log.Information(
+                    "sent email {Number} to {Recipient}: {Items}, {Size}",
+                    email.Number, email.Recipient, ItemCount(email.Items.Count), FormatSize(email.TotalBytes));
+                return;
+            }
+
+            stdout.WriteLine($"email {email.Number} to {email.Recipient}: {ItemCount(email.Items.Count)}, {FormatSize(email.TotalBytes)}");
+            foreach (var entry in email.Items)
+            {
+                stdout.WriteLine(
+                    $"  {Date(entry.Item)}  {entry.Item.Name}  {FormatSize(entry.Bytes)}" + (entry.Recycled ? "  (resend)" : ""));
+            }
+        }
+
+        public void Skipped(Item item, SkipReason reason, string detail)
+        {
+            if (dryRun)
+            {
+                stdout.WriteLine($"skipped: {Date(item)}  {item.Name}  {reason}: {detail}");
+            }
+
+            // With include_videos off every video is skipped again on every run; logging each would bury the rest.
+            if (reason != SkipReason.VideoDisabled)
+            {
+                log.Warning("skipped {Name}: {Reason}: {Detail}", item.Name, reason, detail);
+            }
+        }
+
+        private static string Date(Item item) => item.CapturedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 
     private sealed record Options(bool DryRun, string? Mode, int? LookbackDays, int? Limit, string? Source);
