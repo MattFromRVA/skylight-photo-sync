@@ -293,8 +293,9 @@ skylight-sync run --dry-run --source local:~/Pictures/test --mode all --lookback
 
 `--source local:PATH` reads a folder on this Mac instead of Amazon Photos, which lets you exercise
 the whole pipeline before `login` works. A leading `~` (`local:~/Pictures/test`) means your home
-folder; the tool expands it because the shell does not after `local:`. In `all` mode it reads every photo under that folder (within the lookback window,
-by file capture date, so use a large one). In `album` mode it reads `PATH/<album_name>/` instead,
+folder; the tool expands it because the shell does not after `local:`. In `all` mode it reads
+every photo under that folder (within the lookback window, by file capture date, so use a large
+one). In `album` mode it reads `PATH/<album_name>/` instead,
 so with the config above `--source local:~/Pictures/test` alone expects your photos in
 `~/Pictures/test/Skylight/`.
 
