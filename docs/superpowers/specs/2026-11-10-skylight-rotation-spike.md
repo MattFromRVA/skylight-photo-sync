@@ -57,7 +57,7 @@ In the API, photos are called **messages**.
 | List photos | `GET /api/frames/{id}/messages?page=N` | Newest first, fixed 30 per page; `meta.num_pages`. Fields: `id`, `created_at`, `from_email`, `sender_id`, `asset_type`, `asset_url` (signed URL, expires), `caption`, `destroyed_at`. |
 | Delete one photo | `DELETE /api/frames/{id}/messages/{messageId}` | No body. Implemented in pyskylight. |
 | Bulk delete | `DELETE /api/frames/{id}/messages/destroy_multiple` | Listed in the gist. Body not documented (probably `{"ids":[...]}`). **(verify)** Not needed; per-photo delete is enough at hourly scale. |
-| Upload | `POST /api/messages/uploads`, presigned-URL endpoints | Listed by name only, no shapes. Not needed; email already works. |
+| Upload | `POST /api/messages/uploads`, presigned-URL endpoints | Listed by name only, no shapes. Not needed for rotation. (2026-11-16: now the planned way to add photos; flows in `docs/research-notes.md`, "Skylight upload API", and design spec §6.11.) |
 
 Not established: whether deleting photos through the API needs Skylight Plus (bulk delete in the
 app may be Plus-only), any rate limits, and whether the API's terms permit this use. The
