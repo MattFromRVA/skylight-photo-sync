@@ -14,6 +14,9 @@ public sealed class StateStore : IDisposable
 {
     private const string _timestampFormat = "O";
 
+    /// <summary>Stored in <c>runs.mode</c> by <see cref="RecordFailedRun"/>; read back as a null mode.</summary>
+    private const string _unknownMode = "unknown";
+
     private static readonly HashSet<SkipReason> _permanentSkipReasons = [SkipReason.Oversize, SkipReason.UnsupportedType];
 
     private readonly SqliteConnection _connection;
@@ -130,6 +133,23 @@ public sealed class StateStore : IDisposable
             ("$skipped", skipped),
             ("$error", error),
             ("$id", runId));
+
+    /// <summary>
+    /// Records a run that failed before it could start, such as one whose config.toml could not be read.
+    /// It is finished at once and has no mode, and it counts towards <see cref="ConsecutiveFailures"/>.
+    /// </summary>
+    public void RecordFailedRun(string error)
+    {
+        var at = Format(DateTimeOffset.UtcNow);
+        Execute(
+            """
+            INSERT INTO runs (started_at, finished_at, mode, found, sent, skipped, error)
+            VALUES ($at, $at, $mode, 0, 0, 0, $error)
+            """,
+            ("$at", at),
+            ("$mode", _unknownMode),
+            ("$error", error));
+    }
 
     /// <summary>Number of finished runs with an error since the last finished run without one.</summary>
     public int ConsecutiveFailures()
@@ -268,7 +288,7 @@ public sealed class StateStore : IDisposable
             Id: reader.GetInt64(0),
             StartedAt: Parse(reader.GetString(1)),
             FinishedAt: reader.IsDBNull(2) ? null : Parse(reader.GetString(2)),
-            Mode: Enum.Parse<SourceMode>(reader.GetString(3)),
+            Mode: Enum.TryParse<SourceMode>(reader.GetString(3), out var mode) ? mode : null,
             Found: reader.GetInt32(4),
             Sent: reader.GetInt32(5),
             Skipped: reader.GetInt32(6),

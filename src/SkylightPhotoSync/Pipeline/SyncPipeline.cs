@@ -52,7 +52,8 @@ public sealed class SyncPipeline(
     internal const string SkylightSignInTitle = "Skylight sign-in failed";
     internal const string RepeatedFailureTitle = "Sync failing";
 
-    private const int _repeatedFailureThreshold = 3;
+    /// <summary>Consecutive failed runs that raise <see cref="AlertKind.RepeatedFailure"/>.</summary>
+    internal const int RepeatedFailureThreshold = 3;
 
     /// <summary>Parent of the per-run working directories.</summary>
     internal static string TempRoot { get; } = Path.Combine(Path.GetTempPath(), "skylight-photo-sync");
@@ -325,12 +326,12 @@ public sealed class SyncPipeline(
         if (error is not null && error != AuthExpiredError && !error.StartsWith(SkylightSignInFailedErrorPrefix, StringComparison.Ordinal))
         {
             var failures = store.ConsecutiveFailures();
-            if (failures >= _repeatedFailureThreshold)
+            if (failures >= RepeatedFailureThreshold)
             {
                 await alerter.AlertAsync(
                     AlertKind.RepeatedFailure,
                     RepeatedFailureTitle,
-                    $"{failures} scheduled sync runs in a row have failed. Last error: {error}",
+                    RepeatedFailureBody(failures, error),
                     ct);
             }
         }
@@ -338,6 +339,9 @@ public sealed class SyncPipeline(
         return new RunResult(
             counts.Found, counts.Sent, counts.Skipped, counts.Batches, dryRun, error, counts.Recycled, counts.Pruned, counts.PrunePaused);
     }
+
+    internal static string RepeatedFailureBody(int failures, string error) =>
+        $"{failures} scheduled sync runs in a row have failed. Last error: {error}";
 
     /// <summary>Closes the run's row. A dry run records zero sent, because nothing was.</summary>
     private void RecordRun(long runId, bool dryRun, Counts counts, string? error) =>

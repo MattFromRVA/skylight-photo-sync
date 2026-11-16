@@ -22,6 +22,9 @@ public static class RunCommand
     public const int ExitNeedsLogin = 3;
     public const int ExitLockHeld = 4;
 
+    /// <summary>Prefix of the error recorded on a run whose config.toml or secrets.toml could not be loaded.</summary>
+    internal const string ConfigErrorPrefix = "config_error: ";
+
     private const string _localSourcePrefix = "local:";
 
     public static Command Create()
@@ -162,8 +165,21 @@ public static class RunCommand
     private static async Task<int> RunAsync(
         AppPaths paths, Options options, Logger log, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
-        var cfg = ApplyOverrides(ConfigLoader.LoadConfig(paths.ConfigFile), options.Mode, options.LookbackDays);
-        var secrets = CommandSupport.LoadSecretsIfPresent(paths);
+        AppConfig loaded;
+        Secrets secrets;
+        try
+        {
+            loaded = ConfigLoader.LoadConfig(paths.ConfigFile);
+            secrets = CommandSupport.LoadSecretsIfPresent(paths);
+        }
+        catch (ConfigException ex)
+        {
+            await RecordConfigErrorAsync(paths, ex.Message, log, ct);
+            throw;
+        }
+
+        // A bad flag is a typo at the keyboard, not a broken schedule, so it is not recorded as a run.
+        var cfg = ApplyOverrides(loaded, options.Mode, options.LookbackDays);
 
         IPhotoSource source;
         string sourceLabel;
@@ -204,7 +220,7 @@ public static class RunCommand
         using var store = new StateStore(paths.StateDb);
         var normalizer = new ImageNormalizer(new SipsHeicConverter(runner), cfg.Image);
         var mailer = CommandSupport.CreateMailer(cfg.Smtp, secrets);
-        var alerter = new Alerter(store, mailer, cfg.Alerts.Email, cfg.Email.From, new OsascriptNotifier(runner), now);
+        var alerter = new Alerter(store, mailer, cfg.Alerts.Email, cfg.Email.From, CommandSupport.CreateNotifier(runner), now);
         var rotator = skylight is null
             ? null
             : new FrameRotator(cfg.Rotation, cfg.Email.From, skylight, store, now, CommandSupport.RotationDelay);
@@ -249,6 +265,33 @@ public static class RunCommand
         return result.Error is SyncPipeline.NeedsLoginError or SyncPipeline.AuthExpiredError
             ? ExitNeedsLogin
             : ExitError;
+    }
+
+    /// <summary>
+    /// Records a failed run for a config.toml or secrets.toml that cannot be loaded, so a broken config under
+    /// launchd reaches the repeated-failure alert instead of failing silently. Without a config there is no
+    /// mail server or alert address, so that alert is a notification only. Best effort: the run fails anyway.
+    /// </summary>
+    private static async Task RecordConfigErrorAsync(AppPaths paths, string message, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            using var store = new StateStore(paths.StateDb);
+            var error = ConfigErrorPrefix + message;
+            store.RecordFailedRun(error);
+            var failures = store.ConsecutiveFailures();
+            if (failures >= SyncPipeline.RepeatedFailureThreshold)
+            {
+                var alerter = new Alerter(
+                    store, mailer: null, alertTo: "", from: "", CommandSupport.CreateNotifier(new ProcessRunner()), () => DateTimeOffset.UtcNow);
+                await alerter.AlertAsync(
+                    AlertKind.RepeatedFailure, SyncPipeline.RepeatedFailureTitle, SyncPipeline.RepeatedFailureBody(failures, error), ct);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.Warning(ex, "could not record the config error as a failed run");
+        }
     }
 
     /// <summary>Decimal units, to match the byte limits in config.toml (17_000_000 reads as 17.0 MB).</summary>
