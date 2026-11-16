@@ -166,10 +166,11 @@ public class AppTests
   - `void MarkSkipped(string itemId, SkipReason reason, string detail)`; `bool IsSkipped(string itemId)` (true only for the permanent reasons `Oversize` and `UnsupportedType`; other reasons stay recorded but the item is retried)
   - `long StartRun(SourceMode mode)`; `void FinishRun(long runId, int found, int sent, int skipped, string? error)`
   - `int ConsecutiveFailures()` (trailing finished runs with non-null error; unfinished runs are ignored)
+  - `void RecordFailedRun(string error)` (issue #53: a run that failed before it started, finished at once with mode `unknown`; it counts towards `ConsecutiveFailures`)
   - `void SetNeedsLogin(bool flag, DateTimeOffset? at)`; `bool NeedsLogin()`
   - `DateTimeOffset? LastAlertAt(string kind)`; `void RecordAlert(string kind, DateTimeOffset at)`
   - `RunRecord? LastRun()`; `int ResetSent()` (clears sent and skipped items; returns the sent rows removed); `int ResetSkipped()` (issue #47: clears only skipped items; returns the rows removed)
-  - `public sealed record RunRecord(long Id, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt, SourceMode Mode, int Found, int Sent, int Skipped, string? Error);`
+  - `public sealed record RunRecord(long Id, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt, SourceMode? Mode, int Found, int Sent, int Skipped, string? Error);` — `Mode` became nullable in issue #53: it is null for a run recorded by `RecordFailedRun`, which never read `config.toml`.
   - Schema created on open; `PRAGMA journal_mode=WAL`; timestamps stored as ISO-8601 UTC text.
 
 - [x] **Step 1: Write failing tests** for each method plus `MarkSent_is_per_recipient` and `ConsecutiveFailures_resets_on_success`.
@@ -274,7 +275,7 @@ public class AppTests
 **Interfaces:**
 - Consumes Tasks 2–9.
 - Produces commands on the System.CommandLine root (all invoked through `App.RunAsync`):
-  - `run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N] [--source local:PATH]` — CLI flags override config; `--source local:PATH` selects `LocalFolderSource`; without `--source` the default is Amazon (Task 12); until then exit 2 with `Amazon source not yet available`. Exit codes: 0 ok, 1 error, 3 `needs_login`, 4 lock held.
+  - `run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N] [--source local:PATH]` — CLI flags override config; `--source local:PATH` selects `LocalFolderSource`; without `--source` the default is Amazon (Task 12); until then exit 2 with `Amazon source not yet available`. Exit codes: 0 ok, 1 error, 3 `needs_login`, 4 lock held. When `config.toml` or `secrets.toml` cannot be loaded (issue #53), `run` records `RecordFailedRun("config_error: …")` and, at `ConsecutiveFailures() >= 3`, raises `RepeatedFailure` as a notification only (no config means no mail server); a bad flag (`--mode`, `--lookback-days`) is not recorded.
   - `status` — last run time/result, totals sent, `needs_login` state, next launchd run if installed (Task 11 `LaunchdInstaller.NextRun`; print `not installed` otherwise).
   - `test-email [--size-probe]` — sends one generated 800×600 JPEG to each `email.to`; with `--size-probe` sends 5 emails of ~5/10/15/20/24 MB generated-noise JPEGs with size-tagged subjects and prints `Check which arrived on the frame`. An SMTP rejection of one probe is reported and the series continues (base64 pushes the larger probes past Gmail's 25 MB limit); exit 1 only if no probe was accepted.
   - `reset --yes` — `store.ResetSent()`; refuses without `--yes`. `reset --skipped` (issue #47) — `store.ResetSkipped()`, prints `Cleared N skipped items; …`; needs no `--yes` because nothing is resent, and `--skipped --yes` is still skipped-only.

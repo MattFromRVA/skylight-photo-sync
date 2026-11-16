@@ -1,5 +1,7 @@
 using System.Net;
+using SkylightPhotoSync.Alerts;
 using SkylightPhotoSync.Config;
+using SkylightPhotoSync.Infrastructure;
 using SkylightPhotoSync.Mail;
 using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.Sources;
@@ -21,6 +23,11 @@ internal static class CommandSupport
 
     /// <summary>Test hook: replaces the pause between "have the new photos arrived?" checks.</summary>
     internal static Func<TimeSpan, CancellationToken, Task>? RotationDelay { get; set; }
+
+    /// <summary>Test hook: replaces the macOS notification that every alert posts.</summary>
+    internal static Func<INotifier>? NotifierFactory { get; set; }
+
+    public static INotifier CreateNotifier(IProcessRunner runner) => NotifierFactory?.Invoke() ?? new OsascriptNotifier(runner);
 
     public const string SkylightLoginMissingMessage =
         "[rotation] is enabled but secrets.toml has no [skylight] email and password; add them or set [rotation] enabled = false.";

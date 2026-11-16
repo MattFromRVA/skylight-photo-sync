@@ -1,6 +1,7 @@
 using System.Net;
 using MimeKit;
 using SkiaSharp;
+using SkylightPhotoSync.Alerts;
 using SkylightPhotoSync.Commands;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Models;
@@ -32,10 +33,12 @@ public sealed class CommandTests : IDisposable
     private readonly TempDir _root = new();
     private readonly TextReader _originalStdin = Console.In;
     private readonly ScriptedHandler _amazon = new ScriptedHandler().WithAmazonDefaults().WithDeviceAuthDefaults();
+    private readonly RecordingNotifier _notifier = new();
 
     public CommandTests()
     {
         CommandSupport.AmazonHandlerFactory = () => _amazon;
+        CommandSupport.NotifierFactory = () => _notifier;
     }
 
     public void Dispose()
@@ -43,6 +46,7 @@ public sealed class CommandTests : IDisposable
         CommandSupport.AmazonHandlerFactory = null;
         CommandSupport.SkylightHandlerFactory = null;
         CommandSupport.RotationDelay = null;
+        CommandSupport.NotifierFactory = null;
         Console.SetIn(_originalStdin);
         _root.Dispose();
         _home.Dispose();
@@ -247,6 +251,77 @@ public sealed class CommandTests : IDisposable
 
         Assert.Equal(1, code);
         Assert.Contains("mode", err);
+    }
+
+    [Fact]
+    public async Task Run_bad_config_records_a_failed_run()
+    {
+        File.WriteAllText(Path.Combine(_home.Dir, "config.toml"), "[source]\nmode = \"sideways\"\n");
+
+        await Run("run", "--source", $"local:{_root.Path}");
+
+        using var store = OpenStore();
+        var run = store.LastRun();
+        Assert.NotNull(run);
+        Assert.NotNull(run.FinishedAt);
+        Assert.Null(run.Mode);
+        Assert.StartsWith("config_error: ", run.Error);
+        Assert.Contains("mode", run.Error);
+        Assert.Empty(_notifier.Titles);
+    }
+
+    [Fact]
+    public async Task Run_missing_config_records_a_failed_run()
+    {
+        var (code, _, err) = await Run("run", "--source", $"local:{_root.Path}");
+
+        Assert.Equal(1, code);
+        Assert.Contains("Config file not found", err);
+        using var store = OpenStore();
+        Assert.StartsWith("config_error: Config file not found", store.LastRun()?.Error);
+    }
+
+    [Fact]
+    public async Task Run_third_config_error_in_a_row_notifies_once()
+    {
+        File.WriteAllText(Path.Combine(_home.Dir, "config.toml"), "[source]\nmode = \"sideways\"\n");
+
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(1, (await Run("run", "--source", $"local:{_root.Path}")).Code);
+            Assert.Equal(i < 2 ? 0 : 1, _notifier.Titles.Count);
+        }
+
+        Assert.Equal(["Sync failing"], _notifier.Titles);
+        Assert.Contains("config_error: ", _notifier.Bodies[0]);
+        using var store = OpenStore();
+        Assert.Equal(4, store.ConsecutiveFailures());
+        Assert.NotNull(store.LastAlertAt(nameof(AlertKind.RepeatedFailure)));
+    }
+
+    [Fact]
+    public async Task Run_bad_flag_is_not_recorded_as_a_failed_run()
+    {
+        WriteConfig();
+
+        var (code, _, err) = await Run("run", "--dry-run", "--lookback-days", "-1", "--source", $"local:{_root.Path}");
+
+        Assert.Equal(1, code);
+        Assert.Contains("--lookback-days", err);
+        using var store = OpenStore();
+        Assert.Null(store.LastRun());
+    }
+
+    [Fact]
+    public async Task Status_shows_a_config_error_as_the_last_run()
+    {
+        File.WriteAllText(Path.Combine(_home.Dir, "config.toml"), "[source]\nmode = \"sideways\"\n");
+        await Run("run", "--source", $"local:{_root.Path}");
+
+        var (_, out_, _) = await Run("status");
+
+        Assert.Contains("last run: ", out_);
+        Assert.Contains("error: config_error: ", out_);
     }
 
     [Fact]
@@ -1194,6 +1269,20 @@ public sealed class CommandTests : IDisposable
             enabled = {(rotation ? "true" : "false")}
             arrival_wait_minutes = 0
             """);
+
+    private sealed class RecordingNotifier : INotifier
+    {
+        public List<string> Titles { get; } = [];
+
+        public List<string> Bodies { get; } = [];
+
+        public Task NotifyAsync(string title, string body, CancellationToken ct)
+        {
+            Titles.Add(title);
+            Bodies.Add(body);
+            return Task.CompletedTask;
+        }
+    }
 
     /// <summary>No fake token, cookie or authorization code may ever reach output or logs.</summary>
     private static void AssertNoSecretsIn(string text)

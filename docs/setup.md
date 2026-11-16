@@ -388,8 +388,9 @@ running `skylight-sync login` again ([cookies.md](cookies.md)), which clears the
 resumes on the next scheduled run.
 
 **Sync failing** (subject `Skylight Photo Sync: Sync failing`). Three scheduled runs in a row
-failed for some other reason (SMTP down, Amazon returning errors). A broken `config.toml` never
-triggers this alert: the run stops before it is recorded, so the error only shows in the log. The body
+failed for some other reason (SMTP down, Amazon returning errors, a `config.toml` or `secrets.toml`
+that cannot be read). When the config itself is broken there is no mail server to use, so this alert
+is a macOS notification only, and `status` shows the last run as `error: config_error: …`. The body
 carries the last error; `skylight-sync status` and the log have the rest. Nothing is paused: the
 next run tries again. See [troubleshooting.md](troubleshooting.md).
 

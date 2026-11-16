@@ -231,6 +231,21 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void RecordFailedRun_is_a_finished_failure_with_no_mode()
+    {
+        _store.FinishRun(_store.StartRun(SourceMode.Album), 1, 1, 0, null);
+
+        _store.RecordFailedRun("config_error: bad mode");
+
+        var run = _store.LastRun();
+        Assert.NotNull(run);
+        Assert.Null(run.Mode);
+        Assert.NotNull(run.FinishedAt);
+        Assert.Equal("config_error: bad mode", run.Error);
+        Assert.Equal(1, _store.ConsecutiveFailures());
+    }
+
+    [Fact]
     public void LastRun_reflects_an_unfinished_run()
     {
         var before = DateTimeOffset.UtcNow.AddSeconds(-1);
