@@ -180,6 +180,29 @@ https://audible.readthedocs.io/en/latest/auth/authorization.html,
 https://github.com/Apollon77/alexa-cookie (README; issue #190),
 https://github.com/adn77/alexa-cookie-cli, https://github.com/airbone42/immich-amazon-sync/pull/2.
 
+## Skylight upload API (read from source code 2026-11-16, not yet tried live)
+
+Matt chose on 2026-11-16 to add photos through Skylight's app API instead of email (spec §6.11).
+Nobody has documented upload in prose; these are read from the community clients' code, and
+**they use three different flows**. The live check (#44) decides which one this tool uses.
+
+| Client | Flow | New message id |
+|---|---|---|
+| [sebrandon1/go-skylight](https://github.com/sebrandon1/go-skylight) `lib/photo.go` | `POST /api/upload_url` with JSON `{ext, frame_ids, caption?}` → `data.url` (presigned S3), `key`, `get_url`, `message_ids`, `frame_names`; then a raw `PUT` of the bytes to `url` with the image's `Content-Type` (200 or 204). No third call. | Returned before the bytes are sent |
+| [jakewilkins/skylight-frame](https://github.com/jakewilkins/skylight-frame) `lib/skylight/photo_methods.rb` | `POST /api/message_upload_urls` with `{frame_ids, messages: [{ext, caption: "", local_file_id: <sha256>}]}` (several files per call) → `data.upload_urls[].url`; then `PUT` each file as `application/octet-stream`. No finalize call. | Not returned; the gem notes the newest message id first and polls the frame's messages for newer ones |
+| [chrischall/skylight-mcp](https://github.com/chrischall/skylight-mcp) `src/tools/photos.ts`, `src/s3-upload.ts` | `GET /api/messages/cloud_upload_credentials` → temporary STS keys, `bucket`, `region`, `key_prefix`; SigV4 **multipart** upload to `key_prefix + uuid + ext` (16 MiB parts, `If-None-Match: *` on Complete); then `POST /api/messages/uploads` with `{file_upload: {bucket, key, etag}, frame_ids, caption, ext}` | `data.message_ids` |
+
+- skylight-mcp says a single `PutObject` "lands the bytes but never fires the S3 event that
+  triggers server-side image processing, so the photo sticks in 'processing' forever". The other
+  two clients use a single presigned `PUT` and say it works. Unresolved until tried live.
+- skylight-mcp sends `skylight-api-version: 2026-05-01` on every request and accepts jpg/jpeg,
+  png, heic, gif, webp, mp4 and mov (its own 200 MB cap; no Skylight limit is documented).
+- No client says what `from_email` an uploaded photo shows when listed, which is why rotation
+  will match API-delivered photos by recorded message id instead (spec §6.11).
+- dknowles2's gist lists `POST /api/messages/uploads`, `POST /api/upload_url`,
+  `POST /api/message_upload_urls` and `GET /api/messages/cloud_upload_credentials` by name only.
+  dknowles2/pyskylight has no upload code.
+
 ## Prior art (same shape of problem)
 
 - MChartier/immich-skylight-mailer (TypeScript, MIT): Immich album → JPEG via sharp →

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Each task below is also a GitHub issue in the v1 milestone; one task per agent session; issue number = task number.
 
-**Goal:** A Mac-scheduled CLI that emails new Amazon Photos (from one album or all photos, within a lookback window) to a Skylight household address, never twice, and alerts once when Amazon cookies expire.
+**Goal:** (v1) A Mac-scheduled CLI that emails new Amazon Photos (from one album or all photos, within a lookback window) to a Skylight household address, never twice, and alerts once when Amazon cookies expire. Phase 2 (below) moves adding photos to Skylight's app API.
 
 **Architecture:** An `IPhotoSource` yields candidate `Item`s; the pipeline filters them through a SQLite sent-state, downloads and normalizes them to JPEG, packs them into size-bounded batches, and hands each batch to an SMTP mailer. Amazon is one `IPhotoSource` implementation built last and verified against live fixtures; `LocalFolderSource` lets everything else be built and tested offline first. Mac-only tools (`sips`, `osascript`, `launchctl`) are called through `IProcessRunner` so tests can fake them.
 
@@ -349,12 +349,61 @@ public class AppTests
 - [x] **Step 7 (Matt): live verification** — done 2026-11-10: `skylight-sync login` (`connected as <name>, 52067 items`, device registered, no consent page), `skylight-sync run --dry-run --limit 3` (`found 595, sent 3, skipped 24, batches 1 (dry run)`), `skylight-sync status` (`auth: device login`). The exchange placeholder was replaced by the redacted recording `tests/.../Fixtures/AmazonAuth/exchange_cookies.json` (`record-fixtures --auth`); the register, token and deregister placeholders stay hand-written because the register step runs once per login with a single-use code. Findings in `docs/research-notes.md`.
 ---
 
+## Phase 2: Skylight API delivery (decided 2026-11-16)
+
+**Goal:** add photos through Skylight's app API as well as remove them, with email kept as a fallback. Spec §6.11 has the decisions and open questions; `docs/research-notes.md` ("Skylight upload API") has the three candidate upload flows.
+
+**Order:** #57 → #58 and #59 can be built now against a fake `ISkylightClient`. #16 waits for the live check (#44), which waits for Matt's Skylight sign-in. #60 comes last. Each task is one issue and one PR, as in v1.
+
+### Task A (#44): live check of sign-in, list, delete and upload (needs Matt)
+
+- [ ] **Step 1 (Matt):** sign in once with the tool, and list the frame's messages (`prune --dry-run`).
+- [ ] **Step 2 (Matt):** delete one test photo.
+- [ ] **Step 3 (Matt):** upload one test image with each candidate flow until one appears on the frame and in the app, not stuck in "processing". Record which flow, whether the message id comes back, the uploaded photo's `from_email`/`sender_id`, and any size limit or Plus requirement.
+- [ ] **Step 4:** save redacted fixtures, labelled as recorded live, and replace the placeholders they stand in for. Never try the password sign-in without Matt (lockout risk).
+
+### Task B (#16): upload in `SkylightClient`
+
+**Interfaces:**
+- `ISkylightClient` gains `Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct);` with `public sealed record SkylightUpload(string FrameId, string MessageId);`. It returns only after the bytes are accepted and each frame's message id is known (from the response, or by listing the frame if the proven flow does not return one).
+
+- [ ] **Step 1: Write failing tests** with `ScriptedHandler` and the recorded fixtures from task A: the happy path, a refused upload (`SkylightApiException`), a 401 mid-upload refreshing the token once.
+- [ ] **Step 2–4: fail → implement → green.**
+
+### Task C (#57): delivery seam and `[delivery]` config
+
+**Interfaces:**
+- `public interface IPhotoDelivery { Task<DeliveryResult> DeliverAsync(IReadOnlyList<(Item Item, string File)> prepared, bool dryRun, CancellationToken ct); }` in `Delivery/` (`prepared` is what `BatchPacker.Pack` takes today; `DeliveryResult` lists each delivered item with its destination and message id, and the skipped ones; record the final shape here), with `EmailDelivery` (today's `BatchPacker` + `MessageBuilder` + `IMailer`, behaviour unchanged) and `SkylightApiDelivery` (one `UploadPhotoAsync` per photo, oldest first). `SyncPipeline` takes an `IPhotoDelivery` instead of building emails itself; `IRunReporter` reports deliveries as it reports emails today.
+- Config: `public sealed record DeliveryConfig(DeliveryMethod Method, IReadOnlyList<string> Frames);`, `enum DeliveryMethod { Email, Api }`; TOML `[delivery] method = "email" | "api"` (default `"email"`), `frames = []` (blank = every frame). `[email]` and `[smtp]` are required only for `"email"`.
+- State: `sent_items` gains a nullable `message_id`; API sends use recipient `skylight:frame:<id>`. `MarkSent` takes the message id when there is one.
+- Under `"api"` a refused Skylight sign-in closes the `SkylightSignInGate` and pauses delivery (not only pruning), with the existing single `SkylightSignIn` alert.
+
+- [ ] **Step 1: Write failing tests** against a fake `ISkylightClient`: API delivery marks each photo sent with its message id; nothing is marked sent when an upload fails; the email path is unchanged (existing tests stay green); a refused sign-in pauses delivery and alerts once; `"api"` without `[smtp]` loads and alerts notification-only.
+- [ ] **Step 2–4: fail → implement → green.** Update spec §6.8 config and this plan's Interfaces if names change.
+
+### Task D (#58): rotation by recorded message id
+
+- [ ] **Step 1: Write failing tests:** API-delivered photos are pruned by their stored message ids, oldest send first, keeping the newest `keep`; a photo with no recorded id is never deleted; email-delivered photos still match on `from_email`; `prune --dry-run` lists both groups.
+- [ ] **Step 2–4: fail → implement → green.**
+
+### Task E (#59): CLI and docs for API delivery
+
+- [ ] `skylight-sync test-upload` uploads one generated 800×600 JPEG to each configured frame and prints the frame names.
+- [ ] `status` prints `delivery: api (Kitchen, Hallway)` or `delivery: email`.
+- [ ] `docs/setup.md` gains the API path (Skylight sign-in, `[delivery]`, SMTP optional) with email as the alternative; README and `docs/troubleshooting.md` updated.
+
+### Task F (#60): API delivery becomes the default
+
+- [ ] Settle spec §6.11's open questions with Matt.
+- [ ] Default `[delivery] method` to `"api"`; decide the video cap left open in #34 from the upload limit task A found.
+
 ## Post-v1 follow-ups (filed as issues, not in the v1 milestone)
 
 - Family Vault / multi-account reading.
 - Store secrets in macOS Keychain instead of a 0600 file.
-- Optional `SkylightApiSender` using the community-documented private API, as an alternative to email.
+- ~~Optional `SkylightApiSender`~~: now Phase 2 above (#16, #57).
 - Publish the global tool to NuGet (and/or a Homebrew tap).
+- Rotation (PR #42, #43): keep the frame at the newest N photos by deleting the tool's older ones through Skylight's app API. Built; its live check is #44.
 
 ## Self-review
 
