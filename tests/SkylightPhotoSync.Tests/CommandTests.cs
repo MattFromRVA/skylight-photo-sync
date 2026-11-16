@@ -68,6 +68,46 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_local_source_expands_a_leading_tilde()
+    {
+        WriteConfig();
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+        var previousHome = Environment.GetEnvironmentVariable("HOME");
+        Environment.SetEnvironmentVariable("HOME", Path.GetDirectoryName(_root.Path));
+        try
+        {
+            var (code, out_, err) = await Run("run", "--dry-run", "--source", $"local:~/{Path.GetFileName(_root.Path)}");
+
+            Assert.Equal(0, code);
+            Assert.Contains("found 1, would send 1, skipped 0, batches 1 (dry run)", out_);
+            Assert.Empty(err);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("HOME", previousHome);
+        }
+    }
+
+    [Fact]
+    public async Task Run_local_source_missing_tilde_folder_names_the_expanded_path()
+    {
+        WriteConfig();
+        var previousHome = Environment.GetEnvironmentVariable("HOME");
+        Environment.SetEnvironmentVariable("HOME", _root.Path);
+        try
+        {
+            var (code, _, err) = await Run("run", "--dry-run", "--source", "local:~/nope");
+
+            Assert.Equal(1, code);
+            Assert.Contains(Path.Combine(_root.Path, "nope", _album), err);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("HOME", previousHome);
+        }
+    }
+
+    [Fact]
     public async Task Run_dry_run_lists_each_email_its_items_and_the_skips()
     {
         WriteConfig();

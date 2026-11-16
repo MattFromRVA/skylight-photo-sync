@@ -27,7 +27,15 @@ public sealed class LocalFolderSource(string root) : IPhotoSource
 
     private const int _exifHeaderBytes = 256 * 1024;
 
-    private readonly string _root = Path.GetFullPath(root);
+    private readonly string _root =
+        Path.GetFullPath(ExpandHome(root, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
+
+    /// <summary>
+    /// Expands a leading <c>~</c> or <c>~/</c> to <paramref name="home"/>, because the shell leaves the
+    /// <c>~</c> in <c>--source local:~/…</c> alone. <c>~user</c> and a <c>~</c> later in the path stay literal.
+    /// </summary>
+    internal static string ExpandHome(string path, string home) =>
+        path == "~" || path.StartsWith("~/", StringComparison.Ordinal) ? home + path[1..] : path;
 
     public async Task<IReadOnlyList<Item>> ListCandidatesAsync(
         Window window, SourceMode mode, string? albumName, CancellationToken ct)
