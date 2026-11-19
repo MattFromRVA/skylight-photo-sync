@@ -135,7 +135,8 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 
 - **(call)** SQLite database at
   `~/Library/Application Support/skylight-photo-sync/state.db`. Tables: `sent_items`
-  (item_id, md5, sent_at, recipient, batch_id; `item_id` is the source's id, i.e. the Amazon
+  (item_id, md5, sent_at, recipient, batch_id, message_id; `message_id` is set only for API
+  sends (§6.11); `item_id` is the source's id, i.e. the Amazon
   node id for Amazon), `skipped_items` (item_id, reason, detail, skipped_at), `runs`
   (started_at, finished_at, mode, found, sent, skipped, error), `auth_state` (needs_login
   flag, last_401_at), `alerts` (kind, last_at).
