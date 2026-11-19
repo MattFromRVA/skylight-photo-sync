@@ -233,11 +233,11 @@ public static class RunCommand
             ? new SkylightApiDelivery(cfg.Delivery, skylight!, store, now)
             : new EmailDelivery(cfg.Email!, cfg.Source, mailer!, store, now);
 
-        // Pruning picks this tool's photos by the address they were emailed from, so it only runs with
-        // email delivery; pruning photos uploaded through the API is issue #58.
-        var rotator = skylight is null || apiDelivery || cfg.Email is null
+        // Pruning picks uploaded photos by the ids recorded at upload and emailed ones by [email] from,
+        // which API delivery may leave out; then only the uploads are pruned.
+        var rotator = skylight is null || !cfg.Rotation.Enabled
             ? null
-            : new FrameRotator(cfg.Rotation, cfg.Email.From, skylight, store, now, CommandSupport.RotationDelay);
+            : new FrameRotator(cfg.Rotation, cfg.Email?.From, skylight, store, now, CommandSupport.RotationDelay);
         var signInGate = skylight is null ? null : CommandSupport.CreateSkylightSignInGate(secrets, store);
         var pipeline = new SyncPipeline(cfg, source, store, normalizer, delivery, alerter, now, paths.LockFile, rotator, signInGate,
             new RunReporter(options.DryRun, apiDelivery, stdout, log));

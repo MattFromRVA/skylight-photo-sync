@@ -57,7 +57,7 @@ public sealed record ScheduleConfig(int IntervalMinutes);
 /// <param name="Keep">How many of this tool's photos stay on each frame.</param>
 /// <param name="MaxDeletesPerRun">Safety brake: most photos one run may delete per frame.</param>
 /// <param name="FrameName">Only rotate the frame with this name; <see langword="null"/> means every frame on the account.</param>
-/// <param name="ArrivalWaitMinutes">How long a run waits for the photos it just emailed to show up on the frame before pruning.</param>
+/// <param name="ArrivalWaitMinutes">How long a run waits for the photos it just sent to show up on the frame before pruning.</param>
 public sealed record RotationConfig(bool Enabled, int Keep, int MaxDeletesPerRun, string? FrameName, int ArrivalWaitMinutes)
 {
     /// <summary>The defaults, with rotation turned off.</summary>

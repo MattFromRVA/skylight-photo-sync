@@ -62,7 +62,16 @@ public sealed class FakeSkylightClient : ISkylightClient
         return Task.CompletedTask;
     }
 
-    /// <summary>Accepts the photo for every frame asked for; message ids are <c>up1</c>, <c>up2</c>, … in upload order.</summary>
+    /// <summary>What the account reports as <c>created_at</c> for an uploaded photo.</summary>
+    public DateTimeOffset UploadTime { get; set; } = new(2026, 11, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>When false, an accepted upload does not show up in the frame's listing (as if Skylight were slow to list it).</summary>
+    public bool ListUploads { get; set; } = true;
+
+    /// <summary>
+    /// Accepts the photo for every frame asked for and puts it on those frames, with no sender;
+    /// message ids are <c>up1</c>, <c>up2</c>, … in upload order.
+    /// </summary>
     public Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct)
     {
         Arrive();
@@ -72,8 +81,21 @@ public sealed class FakeSkylightClient : ISkylightClient
         }
 
         Uploads.Add((frameIds.ToList(), Path.GetFileName(path), mime));
-        return Task.FromResult<IReadOnlyList<SkylightUpload>>(
-            frameIds.Select(frameId => new SkylightUpload(frameId, $"up{++_nextUpload}")).ToList());
+        var uploads = frameIds.Select(frameId => new SkylightUpload(frameId, $"up{++_nextUpload}")).ToList();
+        if (ListUploads)
+        {
+            foreach (var upload in uploads)
+            {
+                if (!Messages.TryGetValue(upload.FrameId, out var list))
+                {
+                    Messages[upload.FrameId] = list = [];
+                }
+
+                list.Add(new SkylightMessage(upload.MessageId, UploadTime, FromEmail: null, Destroyed: false));
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<SkylightUpload>>(uploads);
     }
 
     private void Arrive()

@@ -137,7 +137,8 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
   `~/Library/Application Support/skylight-photo-sync/state.db`. Tables: `sent_items`
   (item_id, md5, sent_at, recipient, batch_id, message_id; `message_id` is set only for API
   sends (§6.11); `item_id` is the source's id, i.e. the Amazon
-  node id for Amazon), `skipped_items` (item_id, reason, detail, skipped_at), `runs`
+  node id for Amazon), `uploaded_messages` (recipient, message_id, item_id, uploaded_at: every
+  photo uploaded through the API and not deleted since, §6.11), `skipped_items` (item_id, reason, detail, skipped_at), `runs`
   (started_at, finished_at, mode, found, sent, skipped, error), `auth_state` (needs_login
   flag, last_401_at), `alerts` (kind, last_at).
 - Dedupe key is the Amazon node id, with md5 as a second check so the same image added
@@ -306,6 +307,22 @@ skylight-sync reset --skipped  # only the skipped items; no --yes needed (issue 
   finds it by listing the frame after the upload. Rotation then deletes API-delivered photos
   **by recorded message id**, which is stricter than matching `from_email`; email-delivered
   photos keep the `from_email` match.
+- **(call, #58)** The recorded ids live in their own table, `uploaded_messages`, one row per
+  uploaded photo per frame until rotation deletes it. The sent row cannot do this job: it holds
+  one id per item and frame, a resend overwrites it and `reset` removes it, and either would
+  leave a photo on the frame that the tool put there and can no longer delete. Rotation only
+  ever deletes an id that is both in this table for that frame and in the frame's current
+  listing; an id that is no longer listed (someone deleted the photo in the app) is skipped.
+- **(call, #58)** `keep` counts the tool's photos on a frame together, uploaded and emailed: the
+  newest `keep` stay. A frame that was fed by email and then switched to `"api"` therefore
+  drains its emailed photos as uploads arrive, instead of holding `keep` of each. An uploaded
+  photo's age is the time the tool recorded the upload; an emailed photo's is Skylight's
+  `created_at`. Under `"api"` without `[email]` there is no sender address, so emailed photos
+  are not matched at all and are left alone.
+- **(call, #58)** Recycling works under `"api"` as under email. A recycled photo is a new upload
+  with a new id; the copy from the earlier send stays recorded and is deleted by the prune that
+  follows, as the oldest of the tool's photos. Under `"api"` a run recycles only when it can
+  also prune.
 - **(call)** Image processing (§6.4) is unchanged: photos are still re-encoded upright, resized
   and stripped of EXIF/GPS before upload. Email batching (§6.5) does not apply to API uploads;
   each photo is uploaded on its own. The per-file size limit for uploads is unknown until the

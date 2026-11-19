@@ -1218,9 +1218,50 @@ public sealed class CommandTests : IDisposable
 
         Assert.True(code == 0, err);
         Assert.Contains("Skylight sign-in works again", out_);
-        Assert.Contains("nothing to prune: config.toml has no [email] from", out_);
+        Assert.Contains("frame \"Kitchen\": 0 photos from this tool, would delete 0 (keep 30)", out_);
+        Assert.Contains("  emailed: not counted (config.toml has no [email] from)", out_);
+        Assert.Contains("  left alone: 3 from sync@example.com", out_);
         Assert.DoesNotContain(account.Requests, r => r.Method == HttpMethod.Delete);
         Assert.True(runCode == 0, runErr);
+    }
+
+    [Fact]
+    public async Task Prune_with_api_delivery_and_no_email_section_deletes_only_recorded_uploads()
+    {
+        WriteApiConfig(rotationKeep: 1);
+        WriteSkylightSecrets();
+        RecordUploads("1", "2", "3");
+        var account = SkylightAccount(ourPhotos: 5);   // 4 and 5 look the same on the frame but were never recorded
+        CommandSupport.SkylightHandlerFactory = () => account;
+
+        var (code, out_, err) = await Run("prune");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("frame \"Kitchen\": 3 photos from this tool, deleted 2 (keep 1)", out_);
+        Assert.Contains("  uploaded through the API: 3, deleted 2", out_);
+        Assert.Contains("  left alone: 2 from sync@example.com", out_);
+        Assert.Equal(
+            ["/api/frames/1/messages/1", "/api/frames/1/messages/2"],
+            account.Requests.Where(r => r.Method == HttpMethod.Delete).Select(r => r.RequestUri!.AbsolutePath));
+        using var store = OpenStore();
+        Assert.Equal("3", Assert.Single(store.RecordedUploads("skylight:frame:1")).MessageId);
+    }
+
+    [Fact]
+    public async Task Run_with_api_delivery_and_rotation_prunes_without_an_email_section()
+    {
+        WriteApiConfig(rotationKeep: 1);
+        WriteSkylightSecrets();
+        RecordUploads("1", "2", "3");
+        var account = SkylightAccount(ourPhotos: 3);
+        CommandSupport.SkylightHandlerFactory = () => account;
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+
+        var (code, out_, err) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("found 1, would send 1, skipped 0, batches 1, would recycle 0, would prune 2 (dry run)", out_);
+        Assert.DoesNotContain(account.Requests, r => r.Method == HttpMethod.Delete);
     }
 
     [Fact]
@@ -1245,9 +1286,32 @@ public sealed class CommandTests : IDisposable
         var (code, out_, err) = await Run("prune", "--dry-run");
 
         Assert.True(code == 0, err);
-        Assert.Contains("frame \"Kitchen\": 31 photos from sync@example.com, would delete 1 (keep 30)", out_);
+        Assert.Contains("frame \"Kitchen\": 31 photos from this tool, would delete 1 (keep 30)", out_);
+        Assert.Contains("  uploaded through the API: 0, would delete 0", out_);
+        Assert.Contains("  emailed from sync@example.com: 31, would delete 1", out_);
         Assert.Contains("left alone: 1 from grandma@example.com", out_);
         Assert.DoesNotContain(account.Requests, r => r.Method == HttpMethod.Delete);
+    }
+
+    [Fact]
+    public async Task Prune_dry_run_lists_uploaded_and_emailed_photos_as_separate_groups()
+    {
+        WriteConfig();
+        WriteSkylightSecrets();
+        RecordUploads("1", "2");   // uploaded days ago, so the oldest of this tool's photos
+        var account = SkylightAccount(ourPhotos: 31);
+        CommandSupport.SkylightHandlerFactory = () => account;
+
+        var (code, out_, err) = await Run("prune", "--dry-run");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("frame \"Kitchen\": 31 photos from this tool, would delete 1 (keep 30)", out_);
+        Assert.Contains("  uploaded through the API: 2, would delete 1", out_);
+        Assert.Contains("  emailed from sync@example.com: 29, would delete 0", out_);
+        Assert.Contains("  left alone: 1 from grandma@example.com", out_);
+        Assert.DoesNotContain(account.Requests, r => r.Method == HttpMethod.Delete);
+        using var store = OpenStore();
+        Assert.Equal(2, store.RecordedUploads("skylight:frame:1").Count);
     }
 
     [Fact]
@@ -1421,8 +1485,11 @@ public sealed class CommandTests : IDisposable
             arrival_wait_minutes = 0
             """);
 
-    /// <summary><c>[delivery] method = "api"</c> with no <c>[email]</c> and no <c>[smtp]</c>.</summary>
-    private void WriteApiConfig() =>
+    /// <summary>
+    /// <c>[delivery] method = "api"</c> with no <c>[email]</c> and no <c>[smtp]</c>; with
+    /// <paramref name="rotationKeep"/>, rotation is on and keeps that many.
+    /// </summary>
+    private void WriteApiConfig(int? rotationKeep = null) =>
         File.WriteAllText(
             Path.Combine(_home.Dir, "config.toml"),
             $"""
@@ -1432,7 +1499,24 @@ public sealed class CommandTests : IDisposable
 
             [delivery]
             method = "api"
+
+            [rotation]
+            enabled = {(rotationKeep is null ? "false" : "true")}
+            keep = {rotationKeep ?? 30}
+            arrival_wait_minutes = 0
             """);
+
+    /// <summary>Records uploads to the placeholder account's frame, a day apart, the last one five days ago.</summary>
+    private void RecordUploads(params string[] messageIds)
+    {
+        using var store = OpenStore();
+        for (var i = 0; i < messageIds.Length; i++)
+        {
+            store.MarkSent(
+                [Item($"uploaded-{messageIds[i]}")], "skylight:frame:1", "batch",
+                DateTimeOffset.UtcNow.AddDays(-5 - (messageIds.Length - 1 - i)), messageIds[i]);
+        }
+    }
 
     private sealed class RecordingNotifier : INotifier
     {

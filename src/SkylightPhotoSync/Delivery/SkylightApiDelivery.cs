@@ -9,7 +9,9 @@ namespace SkylightPhotoSync.Delivery;
 /// <summary>
 /// Uploads the photos through Skylight's app API (spec §6.11): one upload per photo, oldest first, to
 /// the frames <c>[delivery] frames</c> names (every frame when it is empty). A photo is marked sent to a
-/// frame, with the photo id Skylight returned for it, only after Skylight accepted the upload. A network
+/// frame, with the photo id Skylight returned for it, only after Skylight accepted the upload; that id
+/// is what lets rotation delete the photo later, and sending an item again keeps the earlier id on
+/// record too, so the earlier copy is pruned like any other old photo. A network
 /// failure or timeout talking to Skylight surfaces as a <see cref="SkylightApiException"/>.
 /// </summary>
 public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient client, StateStore store, Func<DateTimeOffset> now)
@@ -42,7 +44,13 @@ public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient clie
             {
                 ct.ThrowIfCancellationRequested();
 
+                // An item every frame already has is one rotation is sending round again: it goes to them all.
                 var targets = frames.Where(frame => !store.WasSentTo(item, RecipientFor(frame.Id))).ToList();
+                if (targets.Count == 0)
+                {
+                    targets = frames.ToList();
+                }
+
                 var bytes = new FileInfo(file).Length;
                 if (dryRun)
                 {

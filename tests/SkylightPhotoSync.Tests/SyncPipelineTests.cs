@@ -868,6 +868,118 @@ public sealed class SyncPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Api_rotation_recycles_and_prunes_by_recorded_id_leaving_other_photos_alone()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        _root.AddFixture("tiny_rot6.heic", $"{_album}/c.heic", DaysAgo(1));
+        var client = new FakeSkylightClient().Add("grandma@example.com", 2, _t0.AddDays(-9), idPrefix: "gma");
+        client.Messages["100"].Add(new SkylightMessage("app1", _t0.AddDays(-30), null, Destroyed: false));
+        var pipeline = ApiPipeline(ApiRotating(keep: 1, maxPerRun: 1), Source(), client, rotate: true);
+
+        var runs = new List<(int Sent, int Recycled, int Pruned)>();
+        for (var hour = 0; hour < 5; hour++)
+        {
+            _now = _t0.AddHours(hour);
+            var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+            Assert.Null(result.Error);
+            runs.Add((result.Sent, result.Recycled, result.Pruned));
+
+            // Never more than keep of this tool's photos once a run is over.
+            Assert.Single(client.Messages["100"], m => m.Id.StartsWith("up", StringComparison.Ordinal));
+        }
+
+        // a, b, c are new; then a (sent longest ago) and b come round again, each as a new upload.
+        Assert.Equal([(1, 0, 0), (1, 0, 1), (1, 0, 1), (1, 1, 1), (1, 1, 1)], runs);
+        Assert.Equal(client.Uploads[0].FileName, client.Uploads[3].FileName);
+        Assert.Equal(client.Uploads[1].FileName, client.Uploads[4].FileName);
+        Assert.Equal(["up1", "up2", "up3", "up4"], client.Deleted.Select(d => d.MessageId));
+        Assert.Equal(["gma1", "gma2", "app1", "up5"], client.Messages["100"].Select(m => m.Id));
+        Assert.Equal(["up5"], _store.RecordedUploads(_kitchen).Select(u => u.MessageId));
+    }
+
+    [Fact]
+    public async Task Api_recycled_reupload_keeps_the_earlier_copy_tracked_until_it_is_pruned()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var client = new FakeSkylightClient { FailDeletesWith = new SkylightApiException("Skylight returned 500 for the delete.") };
+        var pipeline = ApiPipeline(ApiRotating(keep: 1, maxPerRun: 1), Source(), client, rotate: true);
+        for (var hour = 0; hour < 3; hour++)
+        {
+            _now = _t0.AddHours(hour);
+            var failed = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+            Assert.Equal(hour == 0 ? null : "prune_failed: Skylight returned 500 for the delete.", failed.Error);
+        }
+
+        // a was uploaded twice (up1, up3) while nothing could be deleted; sent_items only knows up3.
+        Assert.Equal("up3", _store.SentMessageId($"{_album}/a.png", _kitchen));
+        Assert.Equal(["up1", "up2", "up3"], client.Messages["100"].Select(m => m.Id));
+        client.FailDeletesWith = null;
+        _now = _t0.AddHours(3);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: 0, CancellationToken.None);
+
+        Assert.Equal((0, 2, (string?)null), (result.Sent, result.Pruned, result.Error));
+        Assert.Equal(["up1", "up2"], client.Deleted.Select(d => d.MessageId));
+        Assert.Equal(["up3"], client.Messages["100"].Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task Api_photos_uploaded_before_a_reset_are_still_pruned_when_they_are_sent_again()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var client = new FakeSkylightClient();
+        var pipeline = ApiPipeline(ApiRotating(keep: 2, maxPerRun: 5), Source(), client, rotate: true);
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _store.ResetSent();
+        _now = _t0.AddHours(1);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((2, 2, (string?)null), (result.Sent, result.Pruned, result.Error));
+        Assert.Equal(["up1", "up2"], client.Deleted.Select(d => d.MessageId));
+        Assert.Equal(["up3", "up4"], client.Messages["100"].Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task Api_rotation_dry_run_uploads_and_deletes_nothing()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var client = new FakeSkylightClient();
+        var cfg = ApiRotating(keep: 1, maxPerRun: 5);
+        await ApiPipeline(cfg with { Rotation = RotationConfig.Disabled }, Source(), client).RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);
+
+        var result = await ApiPipeline(cfg, Source(), client, rotate: true).RunAsync(dryRun: true, limit: null, CancellationToken.None);
+
+        Assert.Equal((1, 1, 1, null), (result.Sent, result.Recycled, result.Pruned, result.Error));
+        Assert.Equal(2, client.Uploads.Count);
+        Assert.Empty(client.Deleted);
+    }
+
+    [Fact]
+    public async Task Api_recycled_photo_goes_to_every_frame_again()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var client = new FakeSkylightClient();
+        client.Frames.Add(new SkylightFrame("200", "Calendar"));
+        var pipeline = ApiPipeline(ApiRotating(keep: 1, maxPerRun: 2), Source(), client, rotate: true);
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((1, null), (result.Recycled, result.Error));
+        Assert.Equal(["100", "200"], client.Uploads[^1].FrameIds);
+        Assert.Single(client.Messages["100"]);
+        Assert.Single(client.Messages["200"]);
+    }
+
+    [Fact]
     public async Task Api_delivery_reports_skylight_unreachable_as_an_upload_failure()
     {
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
@@ -1000,8 +1112,18 @@ public sealed class SyncPipelineTests : IDisposable
 
     /// <summary>A pipeline that uploads through <paramref name="client"/>; the config has no <c>[email]</c> or <c>[smtp]</c>.</summary>
     private SyncPipeline ApiPipeline(
-        AppConfig cfg, IPhotoSource source, ISkylightClient client, SkylightSignInGate? gate = null, IRunReporter? reporter = null) =>
-        PipelineFor(cfg, source, new SkylightApiDelivery(cfg.Delivery, client, _store, () => _now), gate: gate, reporter: reporter);
+        AppConfig cfg, IPhotoSource source, ISkylightClient client, SkylightSignInGate? gate = null, IRunReporter? reporter = null,
+        bool rotate = false) =>
+        PipelineFor(
+            cfg, source, new SkylightApiDelivery(cfg.Delivery, client, _store, () => _now),
+            rotator: rotate ? Rotator(cfg, client) : null, gate: gate, reporter: reporter);
+
+    private static AppConfig ApiRotating(int keep, int maxPerRun) =>
+        _apiConfig with
+        {
+            Limits = new LimitsConfig(maxPerRun),
+            Rotation = new RotationConfig(Enabled: true, keep, MaxDeletesPerRun: 100, FrameName: null, ArrivalWaitMinutes: 0),
+        };
 
     private SyncPipeline PipelineFor(
         AppConfig cfg, IPhotoSource source, IPhotoDelivery delivery, IMailer? alertMailer = null, long videoCapBytes = 22_000_000,
@@ -1026,7 +1148,7 @@ public sealed class SyncPipelineTests : IDisposable
         };
 
     private FrameRotator Rotator(AppConfig cfg, ISkylightClient client) =>
-        new(cfg.Rotation, cfg.Email!.From, client, _store, () => _now, (_, _) => Task.CompletedTask);
+        new(cfg.Rotation, cfg.Email?.From, client, _store, () => _now, (_, _) => Task.CompletedTask);
 
     private sealed class RecordingReporter : IRunReporter
     {

@@ -171,8 +171,11 @@ contacting Skylight, and the recovery steps above (`skylight-sync prune --dry-ru
 
 Under `method = "api"` a network error or timeout reaching Skylight ends the run with
 `upload_failed: Could not reach Skylight: …`; nothing is paused and the next run tries again.
-`[rotation]` does not resend old photos under `method = "api"` yet: that arrives together with
-pruning API-delivered photos ([issue #58](https://github.com/MattFromRVA/skylight-photo-sync/issues/58)).
+
+`[rotation]` under `method = "api"` deletes only photos whose Skylight id the tool recorded when
+it uploaded them; `skylight-sync prune --dry-run` lists them as `uploaded through the API`. A
+photo of the tool's that you delete in the Skylight app yourself is simply skipped. `reset` does
+not forget these ids, so the old copies are still pruned once the photos are sent again.
 
 ## Photos not appearing on the frame
 
