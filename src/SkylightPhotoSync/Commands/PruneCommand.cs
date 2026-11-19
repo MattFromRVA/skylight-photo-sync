@@ -61,23 +61,46 @@ public static class PruneCommand
                 using var store = new StateStore(paths.StateDb);
                 using var client = CommandSupport.CreateSkylightClient(secrets, paths);
                 var gate = CommandSupport.CreateSkylightSignInGate(secrets, store);
-                var rotator = new FrameRotator(cfg.Rotation, cfg.Email.From, client, store, () => DateTimeOffset.UtcNow);
-                PruneResult result;
+
+                // Without [email] (only possible under [delivery] method = "api") there is no sender to pick
+                // this tool's photos by, so the command only checks the sign-in. Pruning uploads is issue #58.
+                var rotator = cfg.Email is null
+                    ? null
+                    : new FrameRotator(cfg.Rotation, cfg.Email.From, client, store, () => DateTimeOffset.UtcNow);
+                PruneResult? result = null;
                 try
                 {
-                    result = await rotator.PruneAsync(dryRun, expectedNew: 0, DateTimeOffset.UtcNow, ct);
+                    if (rotator is null)
+                    {
+                        await client.ListFramesAsync(ct);
+                    }
+                    else
+                    {
+                        result = await rotator.PruneAsync(dryRun, expectedNew: 0, DateTimeOffset.UtcNow, ct);
+                    }
                 }
                 catch (SkylightSignInException ex)
                 {
                     gate.RecordFailure(ex.Message);
                     stderr.WriteLine($"prune failed: {ex.Message}");
-                    stderr.WriteLine(CommandSupport.SkylightPausedHint);
+                    stderr.WriteLine(cfg.Delivery.Method == DeliveryMethod.Api
+                        ? CommandSupport.SkylightDeliveryPausedHint
+                        : CommandSupport.SkylightPausedHint);
                     return RunCommand.ExitError;
                 }
 
                 if (gate.RecordSuccess())
                 {
-                    stdout.WriteLine("Skylight sign-in works again; scheduled runs will prune from now on.");
+                    stdout.WriteLine(cfg.Delivery.Method == DeliveryMethod.Api
+                        ? "Skylight sign-in works again; scheduled runs will send photos from now on."
+                        : "Skylight sign-in works again; scheduled runs will prune from now on.");
+                }
+
+                if (result is null || cfg.Email is null)
+                {
+                    stdout.WriteLine(
+                        "nothing to prune: config.toml has no [email] from, and pruning picks this tool's photos by that sender.");
+                    return RunCommand.ExitOk;
                 }
 
                 foreach (var frame in result.Frames)

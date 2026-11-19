@@ -53,11 +53,30 @@ public sealed class StateStore : IDisposable
             ("$md5", md5),
             ("$recipient", recipient)) is not null;
 
+    /// <summary>True when the item, or a byte-identical copy of it, was already sent to <paramref name="recipient"/>.</summary>
+    public bool WasSentTo(Item item, string recipient)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return IsSent(item.Id, recipient) || (item.Md5 is not null && IsMd5Sent(item.Md5, recipient));
+    }
+
     /// <summary>
-    /// Records the items as sent to <paramref name="recipient"/>. Sending an item again (rotation's
-    /// recycling) keeps one row and moves its <c>sent_at</c> and <c>batch_id</c> to the latest send.
+    /// The Skylight photo ("message") id recorded with the item's latest send to <paramref name="recipient"/>;
+    /// <see langword="null"/> when it was emailed, or never sent there.
     /// </summary>
-    public void MarkSent(IReadOnlyList<Item> items, string recipient, string batchId, DateTimeOffset sentAt)
+    public string? SentMessageId(string itemId, string recipient) =>
+        Scalar(
+            "SELECT message_id FROM sent_items WHERE item_id = $itemId AND recipient = $recipient",
+            ("$itemId", itemId),
+            ("$recipient", recipient)) as string;
+
+    /// <summary>
+    /// Records the items as sent to <paramref name="recipient"/>: an email address, or
+    /// <c>skylight:frame:&lt;id&gt;</c> for an API upload. Sending an item again (rotation's recycling)
+    /// keeps one row and moves its <c>sent_at</c>, <c>batch_id</c> and <c>message_id</c> to the latest send.
+    /// <paramref name="messageId"/> is the Skylight photo id an API upload returned; email has none.
+    /// </summary>
+    public void MarkSent(IReadOnlyList<Item> items, string recipient, string batchId, DateTimeOffset sentAt, string? messageId = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         using var transaction = _connection.BeginTransaction();
@@ -65,17 +84,19 @@ public sealed class StateStore : IDisposable
         command.Transaction = transaction;
         command.CommandText =
             """
-            INSERT INTO sent_items (item_id, recipient, md5, batch_id, sent_at)
-            VALUES ($itemId, $recipient, $md5, $batchId, $sentAt)
+            INSERT INTO sent_items (item_id, recipient, md5, batch_id, sent_at, message_id)
+            VALUES ($itemId, $recipient, $md5, $batchId, $sentAt, $messageId)
             ON CONFLICT(item_id, recipient) DO UPDATE SET
                 batch_id = excluded.batch_id,
-                sent_at = excluded.sent_at
+                sent_at = excluded.sent_at,
+                message_id = excluded.message_id
             """;
         var itemIdParam = command.Parameters.Add("$itemId", SqliteType.Text);
         var md5Param = command.Parameters.Add("$md5", SqliteType.Text);
         command.Parameters.AddWithValue("$recipient", recipient);
         command.Parameters.AddWithValue("$batchId", batchId);
         command.Parameters.AddWithValue("$sentAt", Format(sentAt));
+        command.Parameters.AddWithValue("$messageId", (object?)messageId ?? DBNull.Value);
         foreach (var item in items)
         {
             itemIdParam.Value = item.Id;
@@ -327,7 +348,8 @@ public sealed class StateStore : IDisposable
     private static DateTimeOffset Parse(string text) =>
         DateTimeOffset.ParseExact(text, _timestampFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
 
-    private void CreateSchema() =>
+    private void CreateSchema()
+    {
         Execute(
             """
             CREATE TABLE IF NOT EXISTS sent_items (
@@ -336,6 +358,7 @@ public sealed class StateStore : IDisposable
                 md5       TEXT,
                 batch_id  TEXT NOT NULL,
                 sent_at   TEXT NOT NULL,
+                message_id TEXT,
                 PRIMARY KEY (item_id, recipient)
             );
             CREATE INDEX IF NOT EXISTS ix_sent_items_md5 ON sent_items (md5, recipient);
@@ -378,6 +401,13 @@ public sealed class StateStore : IDisposable
                 PRIMARY KEY (frame_id, message_id)
             );
             """);
+
+        // state.db files from before API delivery have no message_id; CREATE TABLE IF NOT EXISTS leaves them as they were.
+        if (Scalar("SELECT 1 FROM pragma_table_info('sent_items') WHERE name = 'message_id'") is null)
+        {
+            Execute("ALTER TABLE sent_items ADD COLUMN message_id TEXT");
+        }
+    }
 
     private int Execute(string sql, params (string Name, object? Value)[] parameters)
     {

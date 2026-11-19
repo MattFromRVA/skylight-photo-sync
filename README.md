@@ -25,6 +25,11 @@ Every hour (configurable) it:
    older ones, and resends old favourites once the album runs dry. Deleting uses Skylight's
    unofficial app API; see [setup step 13](docs/setup.md#13-optional-rotate-photos-on-the-frame).
 
+**Direction (2026-11-16):** the next phase adds photos through Skylight's app API too, so one
+signed-in connection both adds and removes them, with email kept as a fallback. It is planned,
+not built: see [Phase 2 of the plan](docs/superpowers/plans/2026-11-02-skylight-photo-sync-v1.md#phase-2-skylight-api-delivery-decided-2026-11-16)
+and spec §6.11.
+
 ## Quick start
 
 The tool is a .NET global tool called `skylight-sync`. You need macOS and the
@@ -93,6 +98,10 @@ port = 587
 username = "you@gmail.com"
 ```
 
+Photos are sent by email. An optional `[delivery] method = "api"` setting (upload through
+Skylight's app API instead) exists but is **not usable yet**: the upload itself is not built
+([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)), so leave it out.
+
 Secrets (the Amazon device login's refresh token, SMTP password) live in a separate
 `secrets.toml` with `0600` permissions and are never committed. The full list of keys and defaults is in
 [docs/setup.md](docs/setup.md#3-write-configtoml).
@@ -129,7 +138,11 @@ tested against a redacted recording made by `skylight-sync record-fixtures --aut
 (`tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/exchange_cookies.json`). `login --cookies`
 remains as the fallback.
 
-Planned: publishing to NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)).
+Planned: adding photos through Skylight's app API (plan Phase 2: issues
+[#44](https://github.com/MattFromRVA/skylight-photo-sync/issues/44) live check,
+[#16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16) upload,
+[#57](https://github.com/MattFromRVA/skylight-photo-sync/issues/57)–[#60](https://github.com/MattFromRVA/skylight-photo-sync/issues/60)),
+and publishing to NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)).
 
 Nightly build: [![Nightly](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml/badge.svg)](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml)
 builds, formats and tests on Linux and macOS every night (07:00 UTC) and packs the
@@ -150,7 +163,9 @@ Microsoft.Data.Sqlite, Tomlyn, SkiaSharp, and macOS's own `sips` for HEIC decodi
 ## Why email, and why a browser sign-in?
 
 - **Skylight** has no public API. Emailing photos to the household address is the
-  supported path and works for both Calendar (Plus plan) and Frame.
+  supported path and works for both Calendar (Plus plan) and Frame. Email can only add photos,
+  though, so rotation uses the unofficial API the Skylight apps use, and from Phase 2 that API
+  adds photos too (spec §6.11). Email stays as the fallback if Skylight changes the API.
 - **Amazon Photos** has no public API and discontinued desktop sync in 2024. The only
   automated way to read your library is the web app's private endpoints, which need a
   logged-in Amazon session. Rather than store your password (and fight 2FA and CAPTCHAs

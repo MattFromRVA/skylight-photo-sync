@@ -38,9 +38,28 @@ public static class ConfigLoader
         var alerts = Table(root, "alerts");
         var schedule = Table(root, "schedule");
         var rotation = ReadRotation(Table(root, "rotation"));
+        var delivery = ReadDelivery(Table(root, "delivery"));
+
+        // Email delivery cannot work without both tables. API delivery needs neither, but a table that
+        // is there is still read in full: [smtp] sends alert emails and [email] from is what pruning matches.
+        var emailRequired = delivery.Method == DeliveryMethod.Email;
+        var hasSmtp = emailRequired || smtp is not null;
 
         // Spec 6.7: alerts go to the SMTP username unless [alerts] email says otherwise.
-        var smtpUsername = RequireString(smtp, "smtp", "username");
+        var smtpUsername = hasSmtp ? RequireString(smtp, "smtp", "username") : null;
+        var emailConfig = emailRequired || email is not null
+            ? new EmailConfig(
+                To: RequireStringList(email, "email", "to"),
+                From: RequireString(email, "email", "from"),
+                MaxAttachments: GetInt(email, "email", "max_attachments") ?? 12,
+                MaxTotalBytes: GetLong(email, "email", "max_total_bytes") ?? 17_000_000L)
+            : null;
+        var smtpConfig = smtpUsername is not null
+            ? new SmtpConfig(
+                Host: RequireString(smtp, "smtp", "host"),
+                Port: GetInt(smtp, "smtp", "port") ?? 587,
+                Username: smtpUsername)
+            : null;
         var alertEmail = GetString(alerts, "alerts", "email");
 
         return new AppConfig(
@@ -50,21 +69,15 @@ public static class ConfigLoader
             Image: new ImageConfig(
                 MaxLongEdge: GetInt(image, "image", "max_long_edge") ?? 2048,
                 JpegQuality: GetInt(image, "image", "jpeg_quality") ?? 88),
-            Email: new EmailConfig(
-                To: RequireStringList(email, "email", "to"),
-                From: RequireString(email, "email", "from"),
-                MaxAttachments: GetInt(email, "email", "max_attachments") ?? 12,
-                MaxTotalBytes: GetLong(email, "email", "max_total_bytes") ?? 17_000_000L),
-            Smtp: new SmtpConfig(
-                Host: RequireString(smtp, "smtp", "host"),
-                Port: GetInt(smtp, "smtp", "port") ?? 587,
-                Username: smtpUsername),
+            Email: emailConfig,
+            Smtp: smtpConfig,
             Alerts: new AlertsConfig(
-                Email: string.IsNullOrWhiteSpace(alertEmail) ? smtpUsername : alertEmail),
+                Email: string.IsNullOrWhiteSpace(alertEmail) ? smtpConfig?.Username : alertEmail),
             Schedule: new ScheduleConfig(
                 IntervalMinutes: GetInt(schedule, "schedule", "interval_minutes") ?? 60))
         {
             Rotation = rotation,
+            Delivery = delivery,
         };
     }
 
@@ -251,6 +264,26 @@ public static class ConfigLoader
         return new SourceConfig(mode, albumName, lookbackDays, includeVideos);
     }
 
+    private static DeliveryConfig ReadDelivery(TomlTable? delivery)
+    {
+        var methodText = GetString(delivery, "delivery", "method") ?? "email";
+        DeliveryMethod method;
+        if (methodText.Equals("email", StringComparison.OrdinalIgnoreCase))
+        {
+            method = DeliveryMethod.Email;
+        }
+        else if (methodText.Equals("api", StringComparison.OrdinalIgnoreCase))
+        {
+            method = DeliveryMethod.Api;
+        }
+        else
+        {
+            throw new ConfigException($"[delivery] method must be \"email\" or \"api\", got \"{methodText}\".");
+        }
+
+        return new DeliveryConfig(method, GetStringList(delivery, "delivery", "frames").Select(name => name.Trim()).ToList());
+    }
+
     private static RotationConfig ReadRotation(TomlTable? rotation)
     {
         var defaults = RotationConfig.Disabled;
@@ -355,9 +388,26 @@ public static class ConfigLoader
 
     private static IReadOnlyList<string> RequireStringList(TomlTable? table, string section, string key)
     {
-        if (table is null || !table.TryGetValue(key, out var value))
+        if (table is null || !table.ContainsKey(key))
         {
             throw new ConfigException($"[{section}] {key} is required.");
+        }
+
+        var items = GetStringList(table, section, key);
+        if (items.Count == 0)
+        {
+            throw new ConfigException($"[{section}] {key} must list at least one address.");
+        }
+
+        return items;
+    }
+
+    /// <summary>An optional array of non-empty strings; a missing key reads as empty.</summary>
+    private static IReadOnlyList<string> GetStringList(TomlTable? table, string section, string key)
+    {
+        if (table is null || !table.TryGetValue(key, out var value))
+        {
+            return [];
         }
 
         if (value is not TomlArray array)
@@ -374,11 +424,6 @@ public static class ConfigLoader
             }
 
             items.Add(text);
-        }
-
-        if (items.Count == 0)
-        {
-            throw new ConfigException($"[{section}] {key} must list at least one address.");
         }
 
         return items;
