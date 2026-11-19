@@ -117,15 +117,21 @@ public static class TestEmailCommand
             try
             {
                 var cfg = ConfigLoader.LoadConfig(paths.ConfigFile);
+                if (cfg.Email is not { } email || cfg.Smtp is null)
+                {
+                    // Only possible under [delivery] method = "api", where both sections are optional.
+                    throw new ConfigException("config.toml has no [email] and [smtp] sections; test-email needs both.");
+                }
+
                 var mailer = CommandSupport.CreateMailer(cfg.Smtp, CommandSupport.LoadSecretsIfPresent(paths));
                 if (sizeProbe)
                 {
-                    var accepted = await SendProbesAsync(cfg, mailer, log, stdout, stderr, ct);
+                    var accepted = await SendProbesAsync(email, mailer, log, stdout, stderr, ct);
                     stdout.WriteLine(ProbeHint);
                     return accepted > 0 ? 0 : 1;
                 }
 
-                await SendTestImageAsync(cfg, mailer, log, stdout, ct);
+                await SendTestImageAsync(email, mailer, log, stdout, ct);
                 return 0;
             }
             catch (Exception ex) when (ex is ConfigException or SendFailedException)
@@ -148,14 +154,14 @@ public static class TestEmailCommand
         }
     }
 
-    private static async Task SendTestImageAsync(AppConfig cfg, IMailer mailer, Logger log, TextWriter stdout, CancellationToken ct)
+    private static async Task SendTestImageAsync(EmailConfig email, IMailer mailer, Logger log, TextWriter stdout, CancellationToken ct)
     {
         var jpeg = TestJpeg();
         var stamp = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-        foreach (var recipient in cfg.Email.To)
+        foreach (var recipient in email.To)
         {
             var message = Build(
-                cfg.Email.From,
+                email.From,
                 recipient,
                 $"Skylight Photo Sync test ({stamp})",
                 "Test image from skylight-sync. If it shows on the frame, the sender is approved.",
@@ -172,17 +178,17 @@ public static class TestEmailCommand
     /// relays with a 25 MB limit) is reported and the series continues. Returns how many sends were accepted.
     /// </summary>
     private static async Task<int> SendProbesAsync(
-        AppConfig cfg, IMailer mailer, Logger log, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+        EmailConfig email, IMailer mailer, Logger log, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
         var accepted = 0;
         foreach (var megabytes in ProbeSizesMb)
         {
             ct.ThrowIfCancellationRequested();
             var jpeg = NoiseJpeg(megabytes * 1_000_000);
-            foreach (var recipient in cfg.Email.To)
+            foreach (var recipient in email.To)
             {
                 var message = Build(
-                    cfg.Email.From,
+                    email.From,
                     recipient,
                     $"Skylight Photo Sync size probe — {megabytes} MB",
                     $"Size probe: one {megabytes} MB JPEG ({jpeg.Length:N0} bytes).",

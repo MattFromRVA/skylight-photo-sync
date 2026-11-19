@@ -73,6 +73,11 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
     }
 
+    /// <summary>What <see cref="UploadPhotoAsync"/> says while it is a stub.</summary>
+    internal const string UploadNotBuiltMessage =
+        "Uploading photos through the Skylight API is not built yet (issue #16). "
+        + "Set [delivery] method = \"email\" in config.toml (or remove the [delivery] section) to keep sending photos by email.";
+
     public async Task<IReadOnlyList<SkylightFrame>> ListFramesAsync(CancellationToken ct)
     {
         using var document = await GetJsonAsync("/api/frames", ct);
@@ -141,6 +146,14 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
 
         EnsureSuccess(response, "delete a photo");
     }
+
+    /// <summary>
+    /// NOT BUILT YET — a stub. The real upload (issue #16) needs the upload calls recorded from a live
+    /// Skylight account first. Until then this fails before touching the network, so nothing is ever
+    /// reported as uploaded.
+    /// </summary>
+    public Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct) =>
+        Task.FromException<IReadOnlyList<SkylightUpload>>(new SkylightApiException(UploadNotBuiltMessage));
 
     public void Dispose() => _http.Dispose();
 

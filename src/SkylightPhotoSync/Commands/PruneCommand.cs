@@ -8,7 +8,9 @@ namespace SkylightPhotoSync.Commands;
 /// <summary>
 /// <c>prune [--dry-run]</c>: rotation's clean-up on its own, without sending anything. Works whether or
 /// not <c>[rotation] enabled</c> is set, so <c>prune --dry-run</c> can check what would be deleted before
-/// rotation is turned on. Uses <c>[rotation]</c> keep, max_deletes_per_run and frame_name.
+/// rotation is turned on. Uses <c>[rotation]</c> keep, max_deletes_per_run and frame_name. Lists this
+/// tool's photos per frame in two groups: those uploaded through the API (known by the photo ids
+/// recorded at upload) and those emailed in (known by <c>[email] from</c>).
 /// Run by hand it always tries to sign in, even while scheduled runs have pruning paused after a
 /// refused sign-in: a sign-in that works here is what lifts the pause.
 /// </summary>
@@ -61,7 +63,10 @@ public static class PruneCommand
                 using var store = new StateStore(paths.StateDb);
                 using var client = CommandSupport.CreateSkylightClient(secrets, paths);
                 var gate = CommandSupport.CreateSkylightSignInGate(secrets, store);
-                var rotator = new FrameRotator(cfg.Rotation, cfg.Email.From, client, store, () => DateTimeOffset.UtcNow);
+
+                // Without [email] (only possible under [delivery] method = "api") no photo is matched by
+                // sender; the photos uploaded through the API are still pruned, by their recorded ids.
+                var rotator = new FrameRotator(cfg.Rotation, cfg.Email?.From, client, store, () => DateTimeOffset.UtcNow);
                 PruneResult result;
                 try
                 {
@@ -71,20 +76,25 @@ public static class PruneCommand
                 {
                     gate.RecordFailure(ex.Message);
                     stderr.WriteLine($"prune failed: {ex.Message}");
-                    stderr.WriteLine(CommandSupport.SkylightPausedHint);
+                    stderr.WriteLine(CommandSupport.SkylightPausedHintFor(cfg));
                     return RunCommand.ExitError;
                 }
 
                 if (gate.RecordSuccess())
                 {
-                    stdout.WriteLine("Skylight sign-in works again; scheduled runs will prune from now on.");
+                    stdout.WriteLine(CommandSupport.SkylightSignInRestoredMessage(cfg));
                 }
 
                 foreach (var frame in result.Frames)
                 {
-                    var action = dryRun ? $"would delete {frame.WouldDelete}" : $"deleted {frame.Deleted}";
                     stdout.WriteLine(
-                        $"frame \"{frame.FrameName}\": {frame.Ours} photos from {cfg.Email.From}, {action} (keep {cfg.Rotation.Keep})");
+                        $"frame \"{frame.FrameName}\": {frame.Ours} photos from this tool, "
+                        + $"{Action(frame.Deleted, frame.WouldDelete)} (keep {cfg.Rotation.Keep})");
+                    stdout.WriteLine(
+                        $"  uploaded through the API: {frame.Uploaded.OnFrame}, {Action(frame.Uploaded.Deleted, frame.Uploaded.WouldDelete)}");
+                    stdout.WriteLine(cfg.Email is null
+                        ? "  emailed: not counted (config.toml has no [email] from)"
+                        : $"  emailed from {cfg.Email.From}: {frame.Emailed.OnFrame}, {Action(frame.Emailed.Deleted, frame.Emailed.WouldDelete)}");
                     foreach (var (sender, count) in frame.OtherSenders.OrderByDescending(pair => pair.Value))
                     {
                         stdout.WriteLine($"  left alone: {count} from {sender}");
@@ -97,6 +107,8 @@ public static class PruneCommand
                 }
 
                 return RunCommand.ExitOk;
+
+                string Action(int deleted, int wouldDelete) => dryRun ? $"would delete {wouldDelete}" : $"deleted {deleted}";
             }
         }
         catch (ConfigException ex)

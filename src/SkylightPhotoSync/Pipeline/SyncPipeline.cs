@@ -1,6 +1,7 @@
+using System.Runtime.ExceptionServices;
 using SkylightPhotoSync.Alerts;
-using SkylightPhotoSync.Batching;
 using SkylightPhotoSync.Config;
+using SkylightPhotoSync.Delivery;
 using SkylightPhotoSync.Imaging;
 using SkylightPhotoSync.Mail;
 using SkylightPhotoSync.Models;
@@ -12,20 +13,23 @@ namespace SkylightPhotoSync.Pipeline;
 
 /// <summary>
 /// One sync run (spec §6.3, §6.5, §6.7): list candidates, drop what was already sent or permanently
-/// skipped, download and normalize the oldest ones into a temp directory, pack them into emails and send
-/// one email per batch per recipient, marking items sent only after the SMTP server accepts the message.
+/// skipped, download and normalize the oldest ones into a temp directory and hand them to
+/// <paramref name="delivery"/>, which emails or uploads them and marks each sent once it was accepted.
 /// With <c>[rotation]</c> enabled, a run that runs out of new items tops up with the items sent longest
 /// ago, and <paramref name="rotator"/> (when given) then prunes the frame down to the newest photos.
-/// A refused Skylight sign-in is recorded in <paramref name="signInGate"/> and alerted once; later runs
-/// keep sending but leave pruning out until the gate opens again. <paramref name="reporter"/> (when given)
-/// is told about each email and each skipped item as the run goes.
+/// API delivery only tops up when there is a rotator: every resend is a new photo on the frame, and
+/// without pruning they would pile up.
+/// A refused Skylight sign-in is recorded in <paramref name="signInGate"/> and alerted once. Under email
+/// delivery later runs keep sending but leave pruning out until the gate opens again; under
+/// <c>[delivery] method = "api"</c> nothing can be sent without the sign-in, so later runs stop before
+/// they start. <paramref name="reporter"/> (when given) is told about each delivery and each skipped item.
 /// </summary>
 public sealed class SyncPipeline(
     AppConfig cfg,
     IPhotoSource source,
     StateStore store,
     ImageNormalizer normalizer,
-    IMailer mailer,
+    IPhotoDelivery delivery,
     Alerter alerter,
     Func<DateTimeOffset> now,
     string lockPath,
@@ -42,10 +46,22 @@ public sealed class SyncPipeline(
     /// <summary>Prefix of <see cref="RunResult.Error"/> when the SMTP server did not accept a batch.</summary>
     internal const string SendFailedErrorPrefix = "send_failed: ";
 
+    /// <summary>Prefix of <see cref="RunResult.Error"/> when Skylight did not take an API upload (or could not list the frames for one).</summary>
+    internal const string UploadFailedErrorPrefix = "upload_failed: ";
+
+    /// <summary>
+    /// <see cref="RunResult.Error"/> when API delivery is paused: an earlier run's Skylight sign-in was
+    /// refused and <c>[skylight]</c> has not changed since, so the run never touched the source or Skylight.
+    /// </summary>
+    internal const string SkylightSignInNeededError = "skylight_sign_in_needed";
+
     /// <summary>Prefix of <see cref="RunResult.Error"/> when everything was sent but rotation failed.</summary>
     internal const string PruneFailedErrorPrefix = "prune_failed: ";
 
-    /// <summary>Prefix of <see cref="RunResult.Error"/> when everything was sent but Skylight refused the sign-in.</summary>
+    /// <summary>
+    /// Prefix of <see cref="RunResult.Error"/> when Skylight refused the sign-in: after everything was
+    /// sent (pruning), or under API delivery before anything could be.
+    /// </summary>
     internal const string SkylightSignInFailedErrorPrefix = "skylight_sign_in_failed: ";
 
     internal const string AuthExpiredTitle = "Amazon login expired";
@@ -72,6 +88,13 @@ public sealed class SyncPipeline(
             return new RunResult(0, 0, 0, 0, dryRun, NeedsLoginError);
         }
 
+        // Like needs_login: the refusal was recorded and alerted by the run that met it, so paused runs
+        // leave no run row behind and never add up to a "sync failing" alert for the same cause.
+        if (ApiDelivery && signInGate is not null && !signInGate.ShouldAttempt())
+        {
+            return new RunResult(0, 0, 0, 0, dryRun, SkylightSignInNeededError);
+        }
+
         var runId = store.StartRun(cfg.Source.Mode);
         var counts = new Counts();
         var workDir = Path.Combine(TempRoot, $"run-{Guid.NewGuid():N}");
@@ -93,6 +116,18 @@ public sealed class SyncPipeline(
         {
             return await FinishAsync(runId, dryRun, counts, SendFailedErrorPrefix + ex.Message, ct);
         }
+        catch (SkylightSignInException ex)
+        {
+            // Only API delivery gets here (pruning handles its own sign-in failure): nothing can be sent
+            // until the sign-in works, and trying the same password every hour could lock the account.
+            signInGate?.RecordFailure(ex.Message);
+            await alerter.AlertAsync(AlertKind.SkylightSignIn, SkylightSignInTitle, AlertTexts.SkylightSignInDeliveryBody(ex.Message), ct);
+            return await FinishAsync(runId, dryRun, counts, SkylightSignInFailedErrorPrefix + ex.Message, ct);
+        }
+        catch (SkylightApiException ex)
+        {
+            return await FinishAsync(runId, dryRun, counts, UploadFailedErrorPrefix + ex.Message, ct);
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             RecordRun(runId, dryRun, counts, "cancelled");
@@ -109,15 +144,25 @@ public sealed class SyncPipeline(
         }
     }
 
+    private bool ApiDelivery => cfg.Delivery.Method == DeliveryMethod.Api;
+
     private async Task ProcessAsync(bool dryRun, int? limit, string workDir, Counts counts, CancellationToken ct)
     {
+        // Asked first: under API delivery this is the Skylight sign-in, and a refused one must stop the
+        // run before it downloads anything.
+        var destinations = await delivery.DestinationsAsync(ct);
+        if (ApiDelivery)
+        {
+            signInGate?.RecordSuccess();
+        }
+
         var window = Window.FromLookback(cfg.Source.LookbackDays, now());
         var candidates = await source.ListCandidatesAsync(window, cfg.Source.Mode, cfg.Source.AlbumName, ct);
 
         // Byte-identical copies new in this run collapse to the oldest; later runs drop the rest via IsMd5Sent.
         var seenMd5 = new HashSet<string>(StringComparer.Ordinal);
         var fresh = candidates
-            .Where(item => !store.IsSkipped(item.Id) && !cfg.Email.To.All(recipient => AlreadySent(item, recipient)))
+            .Where(item => !store.IsSkipped(item.Id) && !destinations.All(destination => store.WasSentTo(item, destination.Key)))
             .OrderBy(item => item.CapturedAt)
             .ThenBy(item => item.Id, StringComparer.Ordinal)
             .Where(item => item.Md5 is null || seenMd5.Add(item.Md5))
@@ -141,7 +186,7 @@ public sealed class SyncPipeline(
         var take = Math.Min(max, queue.Count);
         var picked = queue.Take(take).ToList();
         var recycled = new HashSet<string>(StringComparer.Ordinal);
-        if (cfg.Rotation.Enabled && picked.Count < max)
+        if (cfg.Rotation.Enabled && (!ApiDelivery || rotator is not null) && destinations.Any(d => d.TakesRecycled) && picked.Count < max)
         {
             foreach (var item in Recyclable(candidates, fresh).Take(max - picked.Count))
             {
@@ -162,43 +207,35 @@ public sealed class SyncPipeline(
             }
         }
 
-        foreach (var recipient in cfg.Email.To)
+        var result = await delivery.DeliverAsync(prepared, dryRun, ct);
+        foreach (var skip in result.Skipped)
         {
-            var pending = prepared.Where(p => recycled.Contains(p.Item.Id) || !AlreadySent(p.Item, recipient)).ToList();
-            var pack = BatchPacker.Pack(pending, cfg.Email.MaxAttachments, cfg.Email.MaxTotalBytes);
-            foreach (var (item, reason) in pack.Skipped)
-            {
-                var file = pending.First(p => p.Item.Id == item.Id).File;
-                var detail = $"{new FileInfo(file).Length:N0} bytes exceeds email.max_total_bytes ({cfg.Email.MaxTotalBytes:N0})";
-                Skip(item, reason, detail, counts);
-            }
+            Skip(skip.Item, skip.Reason, skip.Detail, counts);
+        }
 
-            foreach (var batch in pack.Batches)
+        foreach (var batch in result.Batches)
+        {
+            counts.Batches++;
+            counts.Sent += batch.Items.Count;
+            reporter?.Delivered(new DeliveryReport(
+                counts.Batches,
+                batch.Destination.Name,
+                batch.Items.Select(sent => new DeliveryItemReport(sent.Item, sent.Bytes, recycled.Contains(sent.Item.Id))).ToList(),
+                batch.TotalBytes));
+            foreach (var sent in batch.Items)
             {
-                ct.ThrowIfCancellationRequested();
-                var message = MessageBuilder.Build(batch, recipient, cfg.Email.From, cfg.Source.Mode, cfg.Source.AlbumName, now());
-                if (!dryRun)
+                counts.SentIds.Add(sent.Item.Id);
+                if (recycled.Contains(sent.Item.Id) && counts.RecycledIds.Add(sent.Item.Id))
                 {
-                    await mailer.SendAsync(message, ct);
-                    store.MarkSent(batch.Items, recipient, batch.Id, now());
-                }
-
-                counts.Batches++;
-                counts.Sent += batch.Items.Count;
-                reporter?.Email(new EmailReport(
-                    counts.Batches,
-                    recipient,
-                    batch.Items.Select((item, i) => new EmailItemReport(item, new FileInfo(batch.Files[i]).Length, recycled.Contains(item.Id))).ToList(),
-                    batch.TotalBytes));
-                foreach (var item in batch.Items)
-                {
-                    counts.SentIds.Add(item.Id);
-                    if (recycled.Contains(item.Id) && counts.RecycledIds.Add(item.Id))
-                    {
-                        counts.Recycled++;
-                    }
+                    counts.Recycled++;
                 }
             }
+        }
+
+        // What was delivered before the failure is counted above; the failure itself is handled by RunAsync.
+        if (result.Failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(result.Failure).Throw();
         }
     }
 
@@ -244,7 +281,8 @@ public sealed class SyncPipeline(
 
         try
         {
-            var result = await rotator.PruneAsync(dryRun, counts.SentIds.Count, startedAt, ct);
+            // Uploads are waited for by their recorded ids; only emailed photos have to be counted in.
+            var result = await rotator.PruneAsync(dryRun, ApiDelivery ? 0 : counts.SentIds.Count, startedAt, ct);
             counts.Pruned = dryRun ? result.WouldDelete : result.Deleted;
             signInGate?.RecordSuccess();
             return null;
@@ -252,7 +290,8 @@ public sealed class SyncPipeline(
         catch (SkylightSignInException ex)
         {
             signInGate?.RecordFailure(ex.Message);
-            await alerter.AlertAsync(AlertKind.SkylightSignIn, SkylightSignInTitle, AlertTexts.SkylightSignInBody(ex.Message), ct);
+            var body = ApiDelivery ? AlertTexts.SkylightSignInDeliveryBody(ex.Message) : AlertTexts.SkylightSignInBody(ex.Message);
+            await alerter.AlertAsync(AlertKind.SkylightSignIn, SkylightSignInTitle, body, ct);
             return SkylightSignInFailedErrorPrefix + ex.Message;
         }
         catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
@@ -303,9 +342,6 @@ public sealed class SyncPipeline(
         ex is not AuthExpiredException
         && !(ex is OperationCanceledException && ct.IsCancellationRequested);
 
-    private bool AlreadySent(Item item, string recipient) =>
-        store.IsSent(item.Id, recipient) || (item.Md5 is not null && store.IsMd5Sent(item.Md5, recipient));
-
     private void Skip(Item item, SkipReason reason, string detail, Counts counts)
     {
         store.MarkSkipped(item.Id, reason, detail);
@@ -322,7 +358,7 @@ public sealed class SyncPipeline(
 
         // An expired login already raised its own alert and pauses every run until the user logs in again,
         // so counting it towards "repeated failures" would only produce a second alert for the same cause.
-        // The same goes for a refused Skylight sign-in, which pauses pruning.
+        // The same goes for a refused Skylight sign-in, which pauses pruning (or, under API delivery, the runs).
         if (error is not null && error != AuthExpiredError && !error.StartsWith(SkylightSignInFailedErrorPrefix, StringComparison.Ordinal))
         {
             var failures = store.ConsecutiveFailures();
