@@ -842,7 +842,7 @@ public sealed class SyncPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task Api_delivery_resends_a_recycled_photo_and_keeps_the_newest_message_id()
+    public async Task Api_delivery_does_not_recycle_photos_it_cannot_prune()
     {
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
         _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
@@ -852,7 +852,8 @@ public sealed class SyncPipelineTests : IDisposable
             Rotation = new RotationConfig(Enabled: true, Keep: 1, MaxDeletesPerRun: 100, FrameName: null, ArrivalWaitMinutes: 0),
         };
         var client = new FakeSkylightClient();
-        var pipeline = ApiPipeline(cfg, Source(), client);
+        var source = Source();
+        var pipeline = ApiPipeline(cfg, source, client);
         await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
         _now = _t0.AddHours(1);
         await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
@@ -860,10 +861,37 @@ public sealed class SyncPipelineTests : IDisposable
 
         var third = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
 
-        Assert.Equal((0, 1, 1), (third.Found, third.Sent, third.Recycled));
-        Assert.Equal(3, client.Uploads.Count);
-        Assert.Equal("up3", _store.SentMessageId($"{_album}/a.png", _kitchen));
-        Assert.Equal("up2", _store.SentMessageId($"{_album}/b.gif", _kitchen));
+        Assert.Equal((0, 0, 0, null), (third.Found, third.Sent, third.Recycled, third.Error));
+        Assert.Equal(2, client.Uploads.Count);
+        Assert.Equal(2, source.Downloads);
+        Assert.Equal("up1", _store.SentMessageId($"{_album}/a.png", _kitchen));
+    }
+
+    [Fact]
+    public async Task Api_delivery_reports_skylight_unreachable_as_an_upload_failure()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient { FailEverythingWith = new HttpRequestException("Name or service not known") };
+        var source = Source();
+        var pipeline = ApiPipeline(_apiConfig, source, client);
+
+        var result = await pipeline.RunAsync(dryRun: true, limit: null, CancellationToken.None);
+
+        Assert.Equal("upload_failed: Could not reach Skylight: Name or service not known", result.Error);
+        Assert.Equal(0, source.Downloads);
+    }
+
+    [Fact]
+    public async Task Api_delivery_reports_an_upload_timeout_as_an_upload_failure_and_marks_nothing_sent()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient { FailUploadsWith = new TaskCanceledException("The request timed out.") };
+        var pipeline = ApiPipeline(_apiConfig, Source(), client);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal("upload_failed: Could not reach Skylight: The request timed out.", result.Error);
+        Assert.Equal(0, _store.TotalSent());
     }
 
     [Fact]

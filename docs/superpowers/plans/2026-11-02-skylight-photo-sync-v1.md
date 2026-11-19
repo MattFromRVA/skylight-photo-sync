@@ -386,6 +386,8 @@ public class AppTests
   - `AppConfig.Email` and `AppConfig.Smtp` are nullable (null only under `"api"` when the section is absent), `AlertsConfig.Email` is nullable, and `AppConfig.Delivery` is an init property defaulting to email. `test-email` refuses to run without both sections.
   - `StateStore.MarkSent(items, recipient, batchId, sentAt, string? messageId = null)`, plus `SentMessageId(itemId, recipient)` and `WasSentTo(item, recipient)`. Existing databases get the `message_id` column on open.
   - New `RunResult.Error` values: `upload_failed: …` and `skylight_sign_in_needed` (a paused `"api"` run; like `needs_login` it records no run). Under `"api"` `skylight_sign_in_failed: …` means nothing was sent.
+  - `SkylightApiDelivery` reports a network failure or an HTTP timeout from Skylight as a `SkylightApiException`, so the run ends with `upload_failed: Could not reach Skylight: …` like any other refused upload.
+  - Under `"api"` with `[rotation] enabled = true` a run does not top up with recycled items: without pruning, every resend would add a second copy to the frame. Recycling under `"api"` arrives with #58.
   - Left for later tasks: pruning under `"api"` (#58; no rotator is built under `"api"`, and `prune` without `[email]` only checks the sign-in, which is what lifts the pause until #59 adds `test-upload`), and status wording (#59).
 
 - [x] **Step 1: Write failing tests** against a fake `ISkylightClient`: API delivery marks each photo sent with its message id; nothing is marked sent when an upload fails; the email path is unchanged (existing tests stay green); a refused sign-in pauses delivery and alerts once; `"api"` without `[smtp]` loads and alerts notification-only.

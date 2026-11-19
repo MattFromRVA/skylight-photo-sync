@@ -154,6 +154,7 @@ interval_minutes = 60          # default 60
 # Optional, off by default: keep only the newest photos this tool sent on the frame, deleting
 # older ones after each run, and resend old photos once the album has nothing new. Needs
 # [skylight] email and password in secrets.toml. See step 13 before turning it on.
+# Under [delivery] method = "api" old photos are not resent yet (issue #58).
 enabled = false                # default false
 keep = 30                      # default 30; photos from this tool kept on each frame
 max_deletes_per_run = 100      # default 100; safety brake per frame per run

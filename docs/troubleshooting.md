@@ -169,6 +169,11 @@ Under `method = "api"` a refused Skylight sign-in pauses **sending**, not only p
 ends with `skylight_sign_in_failed: …`, later runs end with `skylight_sign_in_needed` without
 contacting Skylight, and the recovery steps above (`skylight-sync prune --dry-run`) lift the pause.
 
+Under `method = "api"` a network error or timeout reaching Skylight ends the run with
+`upload_failed: Could not reach Skylight: …`; nothing is paused and the next run tries again.
+`[rotation]` does not resend old photos under `method = "api"` yet: that arrives together with
+pruning API-delivered photos ([issue #58](https://github.com/MattFromRVA/skylight-photo-sync/issues/58)).
+
 ## Photos not appearing on the frame
 
 Work down the list.

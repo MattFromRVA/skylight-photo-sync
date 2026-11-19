@@ -9,7 +9,8 @@ namespace SkylightPhotoSync.Delivery;
 /// <summary>
 /// Uploads the photos through Skylight's app API (spec §6.11): one upload per photo, oldest first, to
 /// the frames <c>[delivery] frames</c> names (every frame when it is empty). A photo is marked sent to a
-/// frame, with the photo id Skylight returned for it, only after Skylight accepted the upload.
+/// frame, with the photo id Skylight returned for it, only after Skylight accepted the upload. A network
+/// failure or timeout talking to Skylight surfaces as a <see cref="SkylightApiException"/>.
 /// </summary>
 public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient client, StateStore store, Func<DateTimeOffset> now)
     : IPhotoDelivery
@@ -41,9 +42,7 @@ public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient clie
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Every frame already has it: rotation is sending it again, so it goes to all of them.
-                var missing = frames.Where(frame => !store.WasSentTo(item, RecipientFor(frame.Id))).ToList();
-                var targets = missing.Count == 0 ? frames : missing;
+                var targets = frames.Where(frame => !store.WasSentTo(item, RecipientFor(frame.Id))).ToList();
                 var bytes = new FileInfo(file).Length;
                 if (dryRun)
                 {
@@ -51,8 +50,10 @@ public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient clie
                     continue;
                 }
 
-                var uploads = await client.UploadPhotoAsync(
-                    targets.Select(frame => frame.Id).ToList(), file, MimeTypes.GetMimeType(Path.GetFileName(file)), ct);
+                var uploads = await SkylightAsync(
+                    () => client.UploadPhotoAsync(
+                        targets.Select(frame => frame.Id).ToList(), file, MimeTypes.GetMimeType(Path.GetFileName(file)), ct),
+                    ct);
                 var uploadId = Guid.NewGuid().ToString("N")[..12];
                 var unconfirmed = new List<SkylightFrame>();
                 foreach (var frame in targets)
@@ -91,7 +92,23 @@ public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient clie
         new(Destination(frame), [new DeliveredItem(item, bytes, messageId)], bytes);
 
     private async Task<IReadOnlyList<SkylightFrame>> FramesAsync(CancellationToken ct) =>
-        _frames ??= Select(await client.ListFramesAsync(ct));
+        _frames ??= Select(await SkylightAsync(() => client.ListFramesAsync(ct), ct));
+
+    /// <summary>
+    /// Runs one Skylight call, turning a network failure or an HTTP timeout into a
+    /// <see cref="SkylightApiException"/> so the run reports it like any other refused upload.
+    /// </summary>
+    private static async Task<T> SkylightAsync<T>(Func<Task<T>> call, CancellationToken ct)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            throw new SkylightApiException($"Could not reach Skylight: {ex.Message}", ex);
+        }
+    }
 
     private IReadOnlyList<SkylightFrame> Select(IReadOnlyList<SkylightFrame> all)
     {
