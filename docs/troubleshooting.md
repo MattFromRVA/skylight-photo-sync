@@ -220,9 +220,10 @@ exits 1 with a single `test-upload failed: …` line when it cannot finish.
 - **`Another sync run holds the lock file …`** (exit code 4): a run is going; wait for it
   ([below](#lock-held-exit-code-4)).
 
-The test image is recorded as one of the tool's photos but not as a sent one: with `[rotation]`
-on it is the first photo removed once a frame holds more than `keep`; with rotation off it stays
-until you delete it in the Skylight app.
+The last line of a successful `test-upload` says, per frame, whether rotation removes the test
+image or it stays until you delete it in the Skylight app; see
+[setup step 14](setup.md#14-not-usable-yet-add-photos-through-skylights-app-api) for how rotation
+treats it.
 
 ## Photos not appearing on the frame
 
