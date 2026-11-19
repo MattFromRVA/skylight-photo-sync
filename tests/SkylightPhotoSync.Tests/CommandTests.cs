@@ -1307,6 +1307,27 @@ public sealed class CommandTests : IDisposable
         Assert.Empty(store.LastSentTimes());
         Assert.Contains("test image uploaded to frame", File.ReadAllText(Path.Combine(_home.Dir, "sync.log")));
         Assert.DoesNotContain("skylight-placeholder", out_ + err);
+
+        // Rotation is off, so nothing will ever remove the test image.
+        Assert.Contains(
+            "Rotation does not prune \"Kitchen\", \"Hallway\", so the test image stays there until you delete it in the Skylight app.", out_);
+        Assert.DoesNotContain("Rotation removes", out_);
+    }
+
+    [Fact]
+    public async Task TestUpload_says_rotation_removes_the_image_only_from_the_frame_it_prunes()
+    {
+        WriteApiConfig(rotationKeep: 30, rotationFrame: "Kitchen");
+        WriteSkylightSecrets();
+        FakeSkylight("Hallway");
+
+        var (code, out_, err) = await Run("test-upload");
+
+        Assert.True(code == 0, err);
+        Assert.Contains(
+            "Rotation removes the test image from \"Kitchen\" before any real photo; you can also delete it in the Skylight app.", out_);
+        Assert.Contains(
+            "Rotation does not prune \"Hallway\", so the test image stays there until you delete it in the Skylight app.", out_);
     }
 
     [Fact]
@@ -1439,6 +1460,28 @@ public sealed class CommandTests : IDisposable
         Assert.Contains("Uploaded test image to frame \"Kitchen\"", out_);
         Assert.Contains("skylight_needs_login: no", status);
         Assert.True(runCode == 0, runErr);
+    }
+
+    [Fact]
+    public async Task TestUpload_that_signs_in_lifts_the_pause_even_when_a_frame_name_is_wrong()
+    {
+        WriteApiConfig(frames: "\"Porch\"");
+        WriteSkylightSecrets();
+        var account = FakeSkylight();
+        account.FailEverythingWith = new SkylightSignInException("Skylight did not accept the sign-in (placeholder).");
+        await Run("test-upload");
+        var (_, pausedStatus, _) = await Run("status");
+        account.FailEverythingWith = null;
+
+        var (code, out_, err) = await Run("test-upload");
+        var (_, status, _) = await Run("status");
+
+        Assert.Contains("skylight_needs_login: yes", pausedStatus);
+        Assert.Equal(1, code);
+        Assert.Contains("Skylight sign-in works again", out_);
+        Assert.Contains("test-upload failed: [delivery] frames names \"Porch\"", err);
+        Assert.Contains("skylight_needs_login: no", status);
+        Assert.Empty(account.Uploads);
     }
 
     [Fact]
@@ -1740,7 +1783,7 @@ public sealed class CommandTests : IDisposable
     /// <c>[delivery] method = "api"</c> with no <c>[email]</c> and no <c>[smtp]</c>; with
     /// <paramref name="rotationKeep"/>, rotation is on and keeps that many.
     /// </summary>
-    private void WriteApiConfig(int? rotationKeep = null, string frames = "") =>
+    private void WriteApiConfig(int? rotationKeep = null, string frames = "", string rotationFrame = "") =>
         File.WriteAllText(
             Path.Combine(_home.Dir, "config.toml"),
             $"""
@@ -1755,6 +1798,7 @@ public sealed class CommandTests : IDisposable
             [rotation]
             enabled = {(rotationKeep is null ? "false" : "true")}
             keep = {rotationKeep ?? 30}
+            frame_name = "{rotationFrame}"
             arrival_wait_minutes = 0
             """);
 

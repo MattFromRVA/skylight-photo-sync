@@ -12,8 +12,8 @@ namespace SkylightPhotoSync.Commands;
 /// <c>[delivery] frames</c> names (every frame on the account when it is empty) and prints the frame
 /// names; the API counterpart of <c>test-email</c>. It needs only <c>[skylight]</c> email and password
 /// in secrets.toml and works whatever <c>[delivery] method</c> is, so the API can be tried before
-/// switching to it. The photo id Skylight returns is recorded for each frame, so rotation removes the
-/// test image later (before any real photo), but nothing is marked sent.
+/// switching to it. The photo id Skylight returns is recorded for each frame, so on the frames rotation
+/// prunes it removes the test image later (before any real photo), but nothing is marked sent.
 /// Like a manual <c>prune</c> it always tries to sign in, even while scheduled runs are paused after a
 /// refused sign-in: a sign-in that works here lifts the pause, a refused one starts it.
 /// </summary>
@@ -106,8 +106,7 @@ public static class TestUploadCommand
             var delivery = new SkylightApiDelivery(cfg.Delivery, cfg.Rotation, client, store, () => DateTimeOffset.UtcNow);
             try
             {
-                // Signs in and lists the frames, so a refused sign-in or a misspelt frame name stops here, before anything is uploaded.
-                await delivery.DestinationsAsync(ct);
+                await delivery.SignInAsync(ct);
             }
             catch (SkylightSignInException ex)
             {
@@ -123,6 +122,9 @@ public static class TestUploadCommand
                 stdout.WriteLine(CommandSupport.SkylightSignInRestoredMessage(cfg));
             }
 
+            // A misspelt frame name or an account with no frames stops here, before anything is uploaded.
+            await delivery.DestinationsAsync(ct);
+
             Directory.CreateDirectory(folder);
             var file = Path.Combine(folder, TestFileName);
             var jpeg = TestEmailCommand.TestJpeg();
@@ -131,8 +133,8 @@ public static class TestUploadCommand
             var (uploaded, unconfirmed) = await delivery.UploadTestPhotoAsync(file, ct);
             foreach (var frame in uploaded)
             {
-                log.Information("test image uploaded to frame {Frame} ({Bytes} bytes)", frame, jpeg.Length);
-                stdout.WriteLine($"Uploaded test image to frame \"{frame}\"");
+                log.Information("test image uploaded to frame {Frame} ({Bytes} bytes)", frame.Name, jpeg.Length);
+                stdout.WriteLine($"Uploaded test image to frame \"{frame.Name}\"");
             }
 
             if (unconfirmed.Count > 0)
@@ -143,7 +145,20 @@ public static class TestUploadCommand
                     + "If it shows on that frame, delete it in the Skylight app; rotation cannot remove it.");
             }
 
-            stdout.WriteLine("The test image is recorded as this tool's, so rotation removes it before any real photo; you can also delete it in the Skylight app.");
+            var pruned = uploaded.Where(frame => frame.TakesRecycled).ToList();
+            var kept = uploaded.Where(frame => !frame.TakesRecycled).ToList();
+            if (pruned.Count > 0)
+            {
+                stdout.WriteLine(
+                    $"Rotation removes the test image from {FrameList(pruned)} before any real photo; you can also delete it in the Skylight app.");
+            }
+
+            if (kept.Count > 0)
+            {
+                stdout.WriteLine(
+                    $"Rotation does not prune {FrameList(kept)}, so the test image stays there until you delete it in the Skylight app.");
+            }
+
             return RunCommand.ExitOk;
         }
         finally
@@ -155,4 +170,7 @@ public static class TestUploadCommand
             }
         }
     }
+
+    private static string FrameList(IEnumerable<DeliveryDestination> frames) =>
+        string.Join(", ", frames.Select(frame => $"\"{frame.Name}\""));
 }

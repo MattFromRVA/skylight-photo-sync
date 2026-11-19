@@ -560,7 +560,7 @@ works whatever `[delivery] method` is, so you can leave email delivery in place 
 skylight-sync test-upload
 # Uploaded test image to frame "Kitchen"
 # Uploaded test image to frame "Hallway"
-# The test image is recorded as this tool's, so rotation removes it before any real photo; you can also delete it in the Skylight app.
+# Rotation does not prune "Kitchen", "Hallway", so the test image stays there until you delete it in the Skylight app.
 ```
 
 It uploads one generated 800x600 JPEG (the same image `test-email` sends) to every frame
@@ -578,12 +578,13 @@ What else it does:
   image later. The test image counts as the oldest of the tool's photos: it is the first to go
   once a frame holds more than `keep`, and it never pushes a real photo off the frame. It is not a
   "sent" photo: it does not count in `total sent` and cannot make a real photo look already sent.
-  With rotation off it stays until you delete it in the Skylight app.
+  With rotation off, or on a frame `[rotation] frame_name` does not name, it stays until you
+  delete it in the Skylight app; the last line of the output says which frames that is.
 - A sign-in that works lifts a pause left by an earlier refused sign-in (it prints
   `Skylight sign-in works again; …`). A refused sign-in is reported with Skylight's reason and
   starts that pause, exactly as in a scheduled run (step 11), so do not repeat it blindly.
 - A name in `[delivery] frames` that no frame on the account has is an error that lists the
-  account's frames; nothing is uploaded.
+  account's frames; nothing is uploaded (the sign-in still worked, so a pause is still lifted).
 - It takes the run lock, so it exits 4 if a sync run is going at that moment.
 
 **3. Switch delivery over.** In `config.toml`:

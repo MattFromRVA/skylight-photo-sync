@@ -22,10 +22,18 @@ public sealed class SkylightApiDelivery(
     /// <summary>Prefix of the <c>recipient</c> recorded for a frame; the frame's Skylight id follows.</summary>
     public const string RecipientPrefix = "skylight:frame:";
 
+    private IReadOnlyList<SkylightFrame>? _all;
     private IReadOnlyList<SkylightFrame>? _frames;
 
     /// <summary>The <c>recipient</c> recorded with items uploaded to the frame.</summary>
     public static string RecipientFor(string frameId) => RecipientPrefix + frameId;
+
+    /// <summary>
+    /// Signs in and lists every frame on the account, without choosing the frames to upload to. Throws
+    /// <see cref="SkylightSignInException"/> when Skylight refuses the sign-in.
+    /// </summary>
+    public async Task SignInAsync(CancellationToken ct) =>
+        _all ??= await SkylightAsync(() => client.ListFramesAsync(ct), ct);
 
     /// <summary>
     /// The frames to upload to; the first call signs in and lists them. Throws
@@ -105,10 +113,11 @@ public sealed class SkylightApiDelivery(
     /// Uploads <paramref name="file"/>, the <c>test-upload</c> image, once to every frame
     /// <see cref="DestinationsAsync"/> returns. Each returned photo id is recorded for its frame so
     /// rotation can delete the image later, but nothing is marked sent: the image is no source item,
-    /// so it cannot make a real photo look already sent. A frame Skylight returned no photo id for is
-    /// in <c>Unconfirmed</c> and has nothing recorded.
+    /// so it cannot make a real photo look already sent. <c>Uploaded</c> says per frame whether rotation
+    /// prunes it (<see cref="DeliveryDestination.TakesRecycled"/>), so whether rotation ever removes the
+    /// image there. A frame Skylight returned no photo id for is in <c>Unconfirmed</c> and has nothing recorded.
     /// </summary>
-    public async Task<(IReadOnlyList<string> Uploaded, IReadOnlyList<string> Unconfirmed)> UploadTestPhotoAsync(
+    public async Task<(IReadOnlyList<DeliveryDestination> Uploaded, IReadOnlyList<string> Unconfirmed)> UploadTestPhotoAsync(
         string file, CancellationToken ct)
     {
         var frames = await FramesAsync(ct);
@@ -117,7 +126,7 @@ public sealed class SkylightApiDelivery(
                 frames.Select(frame => frame.Id).ToList(), file, MimeTypes.GetMimeType(Path.GetFileName(file)), ct),
             ct);
         var itemId = RecordedUpload.TestItemPrefix + Guid.NewGuid().ToString("N");
-        var uploaded = new List<string>();
+        var uploaded = new List<DeliveryDestination>();
         var unconfirmed = new List<string>();
         foreach (var frame in frames)
         {
@@ -129,7 +138,7 @@ public sealed class SkylightApiDelivery(
             }
 
             store.RecordUpload(RecipientFor(frame.Id), messageId, itemId, now());
-            uploaded.Add(frame.Name);
+            uploaded.Add(Destination(frame));
         }
 
         return (uploaded, unconfirmed);
@@ -143,8 +152,11 @@ public sealed class SkylightApiDelivery(
     private DeliveredBatch Batch(SkylightFrame frame, Item item, long bytes, string? messageId) =>
         new(Destination(frame), [new DeliveredItem(item, bytes, messageId)], bytes);
 
-    private async Task<IReadOnlyList<SkylightFrame>> FramesAsync(CancellationToken ct) =>
-        _frames ??= Select(await SkylightAsync(() => client.ListFramesAsync(ct), ct));
+    private async Task<IReadOnlyList<SkylightFrame>> FramesAsync(CancellationToken ct)
+    {
+        await SignInAsync(ct);
+        return _frames ??= Select(_all!);
+    }
 
     /// <summary>
     /// Runs one Skylight call, turning a network failure or an HTTP timeout into a
