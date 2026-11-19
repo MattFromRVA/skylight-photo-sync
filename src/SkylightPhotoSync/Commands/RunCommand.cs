@@ -230,7 +230,7 @@ public static class RunCommand
         var alerter = new Alerter(
             store, mailer, cfg.Alerts.Email ?? "", cfg.Email?.From ?? cfg.Smtp?.Username ?? "", CommandSupport.CreateNotifier(runner), now);
         IPhotoDelivery delivery = apiDelivery
-            ? new SkylightApiDelivery(cfg.Delivery, skylight!, store, now)
+            ? new SkylightApiDelivery(cfg.Delivery, cfg.Rotation, skylight!, store, now)
             : new EmailDelivery(cfg.Email!, cfg.Source, mailer!, store, now);
 
         // Pruning picks uploaded photos by the ids recorded at upload and emailed ones by [email] from,

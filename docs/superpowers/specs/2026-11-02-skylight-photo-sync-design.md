@@ -322,7 +322,8 @@ skylight-sync reset --skipped  # only the skipped items; no --yes needed (issue 
 - **(call, #58)** Recycling works under `"api"` as under email. A recycled photo is a new upload
   with a new id; the copy from the earlier send stays recorded and is deleted by the prune that
   follows, as the oldest of the tool's photos. Under `"api"` a run recycles only when it can
-  also prune.
+  also prune, and a recycled photo goes only to the frames rotation prunes (every frame, or
+  `[rotation] frame_name`); other frames get new photos only.
 - **(call)** Image processing (§6.4) is unchanged: photos are still re-encoded upright, resized
   and stripped of EXIF/GPS before upload. Email batching (§6.5) does not apply to API uploads;
   each photo is uploaded on its own. The per-file size limit for uploads is unknown until the

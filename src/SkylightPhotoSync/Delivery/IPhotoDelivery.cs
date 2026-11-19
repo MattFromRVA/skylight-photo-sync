@@ -17,8 +17,8 @@ public interface IPhotoDelivery
 
     /// <summary>
     /// Sends <paramref name="prepared"/> (oldest first) to every destination that does not have it yet.
-    /// A photo that every destination already has is one rotation chose to send again, and goes to all
-    /// of them. A dry run sends and records nothing and reports what would have been sent.
+    /// A photo that every destination already has is one rotation chose to send again, and goes to every
+    /// destination that <see cref="DeliveryDestination.TakesRecycled"/>. A dry run sends and records nothing and reports what would have been sent.
     /// Never throws for a failed send: whatever stopped it comes back in <see cref="DeliveryResult.Failure"/>,
     /// next to what was sent before it.
     /// </summary>
@@ -31,7 +31,11 @@ public interface IPhotoDelivery
 /// <c>skylight:frame:&lt;id&gt;</c> for a frame reached through the API.
 /// </param>
 /// <param name="Name">What to call it in output: the email address, or the frame's name.</param>
-public sealed record DeliveryDestination(string Key, string Name);
+/// <param name="TakesRecycled">
+/// Whether photos rotation sends again go here. False for a frame reached through the API that
+/// <c>[rotation]</c> does not prune, where nothing would ever delete the earlier copies.
+/// </param>
+public sealed record DeliveryDestination(string Key, string Name, bool TakesRecycled = true);
 
 /// <summary>What <see cref="IPhotoDelivery.DeliverAsync"/> did.</summary>
 /// <param name="Batches">Each accepted send in order: one email, or one photo uploaded to one frame.</param>

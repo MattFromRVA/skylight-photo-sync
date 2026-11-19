@@ -450,6 +450,9 @@ remove them. With `[rotation]` turned on, every run:
 1. Sends up to `[limits] max_items_per_run` photos, as usual. Once the album has nothing new
    left, it fills the run with photos it sent longest ago, so the frame keeps changing. The `keep`
    most recently sent photos are never resent, since they are presumably still on the frame.
+   Under `[delivery] method = "api"` a resent photo is uploaded only to the frames rotation
+   prunes (every frame, or the one `frame_name` names); other `[delivery] frames` still get new
+   photos but never resends, and if rotation prunes none of them nothing is resent.
 2. Waits, up to `arrival_wait_minutes`, for the photos it just sent to show up on every frame
    it rotates. If you set no `frame_name` and the account has a frame this tool doesn't email,
    that frame never receives them, so each run waits the full time; set `frame_name` to avoid it.

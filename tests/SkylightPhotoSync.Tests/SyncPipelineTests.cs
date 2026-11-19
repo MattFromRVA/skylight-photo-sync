@@ -766,7 +766,7 @@ public sealed class SyncPipelineTests : IDisposable
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
         var client = new FakeSkylightClient();
         client.Frames.Add(new SkylightFrame("200", "Calendar"));
-        var delivery = new SkylightApiDelivery(_apiConfig.Delivery, new ForgetfulUploads(client), _store, () => _now);
+        var delivery = new SkylightApiDelivery(_apiConfig.Delivery, _apiConfig.Rotation, new ForgetfulUploads(client), _store, () => _now);
         var pipeline = PipelineFor(_apiConfig, Source(), delivery);
 
         var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
@@ -980,6 +980,49 @@ public sealed class SyncPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Api_recycled_photo_goes_only_to_the_frames_rotation_prunes()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var client = new FakeSkylightClient();
+        client.Frames.Add(new SkylightFrame("200", "Den"));
+        var cfg = ApiRotating(keep: 1, maxPerRun: 2);
+        cfg = cfg with { Rotation = cfg.Rotation with { FrameName = "Kitchen" } };
+        var pipeline = ApiPipeline(cfg, Source(), client, rotate: true);
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((0, 1, 1, null), (result.Found, result.Sent, result.Recycled, result.Error));
+        Assert.Equal([["100", "200"], ["100", "200"], ["100"]], client.Uploads.Select(u => u.FrameIds));
+        Assert.Single(client.Messages["100"]);
+        Assert.Equal(2, client.Messages["200"].Count);
+    }
+
+    [Fact]
+    public async Task Api_delivery_does_not_recycle_when_rotation_prunes_none_of_its_frames()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var client = new FakeSkylightClient();
+        client.Frames.Add(new SkylightFrame("200", "Den"));
+        var cfg = ApiRotating(keep: 1, maxPerRun: 2) with { Delivery = new DeliveryConfig(DeliveryMethod.Api, ["Den"]) };
+        cfg = cfg with { Rotation = cfg.Rotation with { FrameName = "Kitchen" } };
+        var source = Source();
+        var pipeline = ApiPipeline(cfg, source, client, rotate: true);
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((0, 0, 0, null), (result.Found, result.Sent, result.Recycled, result.Error));
+        Assert.Equal([["200"], ["200"]], client.Uploads.Select(u => u.FrameIds));
+        Assert.Equal(2, source.Downloads);
+        Assert.Equal(2, client.Messages["200"].Count);
+    }
+
+    [Fact]
     public async Task Api_delivery_reports_skylight_unreachable_as_an_upload_failure()
     {
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
@@ -1115,7 +1158,7 @@ public sealed class SyncPipelineTests : IDisposable
         AppConfig cfg, IPhotoSource source, ISkylightClient client, SkylightSignInGate? gate = null, IRunReporter? reporter = null,
         bool rotate = false) =>
         PipelineFor(
-            cfg, source, new SkylightApiDelivery(cfg.Delivery, client, _store, () => _now),
+            cfg, source, new SkylightApiDelivery(cfg.Delivery, cfg.Rotation, client, _store, () => _now),
             rotator: rotate ? Rotator(cfg, client) : null, gate: gate, reporter: reporter);
 
     private static AppConfig ApiRotating(int keep, int maxPerRun) =>

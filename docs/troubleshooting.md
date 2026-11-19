@@ -176,6 +176,8 @@ Under `method = "api"` a network error or timeout reaching Skylight ends the run
 it uploaded them; `skylight-sync prune --dry-run` lists them as `uploaded through the API`. A
 photo of the tool's that you delete in the Skylight app yourself is simply skipped. `reset` does
 not forget these ids, so the old copies are still pruned once the photos are sent again.
+If a frame gets new photos but never resent ones, `[rotation] frame_name` names a different
+frame: under `"api"` only frames rotation prunes are sent photos again.
 
 ## Photos not appearing on the frame
 

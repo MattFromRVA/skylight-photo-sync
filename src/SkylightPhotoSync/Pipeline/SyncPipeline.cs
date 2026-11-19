@@ -186,7 +186,7 @@ public sealed class SyncPipeline(
         var take = Math.Min(max, queue.Count);
         var picked = queue.Take(take).ToList();
         var recycled = new HashSet<string>(StringComparer.Ordinal);
-        if (cfg.Rotation.Enabled && (!ApiDelivery || rotator is not null) && picked.Count < max)
+        if (cfg.Rotation.Enabled && (!ApiDelivery || rotator is not null) && destinations.Any(d => d.TakesRecycled) && picked.Count < max)
         {
             foreach (var item in Recyclable(candidates, fresh).Take(max - picked.Count))
             {

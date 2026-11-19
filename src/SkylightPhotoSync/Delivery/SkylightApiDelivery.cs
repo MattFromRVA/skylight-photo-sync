@@ -11,10 +11,12 @@ namespace SkylightPhotoSync.Delivery;
 /// the frames <c>[delivery] frames</c> names (every frame when it is empty). A photo is marked sent to a
 /// frame, with the photo id Skylight returned for it, only after Skylight accepted the upload; that id
 /// is what lets rotation delete the photo later, and sending an item again keeps the earlier id on
-/// record too, so the earlier copy is pruned like any other old photo. A network
+/// record too, so the earlier copy is pruned like any other old photo. Only frames rotation prunes
+/// (every frame, or the one <c>[rotation] frame_name</c> names) take an item sent again. A network
 /// failure or timeout talking to Skylight surfaces as a <see cref="SkylightApiException"/>.
 /// </summary>
-public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient client, StateStore store, Func<DateTimeOffset> now)
+public sealed class SkylightApiDelivery(
+    DeliveryConfig cfg, RotationConfig rotation, ISkylightClient client, StateStore store, Func<DateTimeOffset> now)
     : IPhotoDelivery
 {
     /// <summary>Prefix of the <c>recipient</c> recorded for a frame; the frame's Skylight id follows.</summary>
@@ -44,11 +46,16 @@ public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient clie
             {
                 ct.ThrowIfCancellationRequested();
 
-                // An item every frame already has is one rotation is sending round again: it goes to them all.
+                // An item every frame already has is one rotation is sending round again: it goes only to the
+                // frames rotation prunes, so no frame collects copies nothing deletes.
                 var targets = frames.Where(frame => !store.WasSentTo(item, RecipientFor(frame.Id))).ToList();
                 if (targets.Count == 0)
                 {
-                    targets = frames.ToList();
+                    targets = frames.Where(TakesRecycled).ToList();
+                    if (targets.Count == 0)
+                    {
+                        continue;
+                    }
                 }
 
                 var bytes = new FileInfo(file).Length;
@@ -94,9 +101,12 @@ public sealed class SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient clie
         return new DeliveryResult(batches, []);
     }
 
-    private static DeliveryDestination Destination(SkylightFrame frame) => new(RecipientFor(frame.Id), frame.Name);
+    private DeliveryDestination Destination(SkylightFrame frame) => new(RecipientFor(frame.Id), frame.Name, TakesRecycled(frame));
 
-    private static DeliveredBatch Batch(SkylightFrame frame, Item item, long bytes, string? messageId) =>
+    private bool TakesRecycled(SkylightFrame frame) =>
+        rotation.Enabled && (rotation.FrameName is null || Named(frame, rotation.FrameName));
+
+    private DeliveredBatch Batch(SkylightFrame frame, Item item, long bytes, string? messageId) =>
         new(Destination(frame), [new DeliveredItem(item, bytes, messageId)], bytes);
 
     private async Task<IReadOnlyList<SkylightFrame>> FramesAsync(CancellationToken ct) =>
