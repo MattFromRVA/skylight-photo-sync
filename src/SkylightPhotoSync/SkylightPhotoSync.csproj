@@ -6,11 +6,21 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>skylight-sync</ToolCommandName>
     <PackageId>SkylightPhotoSync</PackageId>
+    <!-- Local and nightly builds use this version; the publish workflow overrides it with the release tag (-p:Version=). -->
     <Version>0.1.0</Version>
+    <Authors>Matt Chaulklin</Authors>
     <Description>Emails new Amazon Photos to a Skylight Calendar on a Mac schedule.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/MattFromRVA/skylight-photo-sync</PackageProjectUrl>
     <RepositoryUrl>https://github.com/MattFromRVA/skylight-photo-sync</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>skylight;amazon-photos;photo-frame;macos;dotnet-tool</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
