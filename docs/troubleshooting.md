@@ -158,6 +158,17 @@ credentials failed as a salted hash, never the password itself.
 A Skylight outage (HTTP 5xx) or a network error is different: it shows as `prune_failed: …`,
 nothing is paused, and the next run tries again.
 
+## `upload_failed: Uploading photos through the Skylight API is not built yet`
+
+`config.toml` has `[delivery] method = "api"`. That setting is a placeholder until the upload
+itself is built ([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)):
+every run fails with this message and nothing is sent or marked sent. Set
+`[delivery] method = "email"` or delete the `[delivery]` section.
+
+Under `method = "api"` a refused Skylight sign-in pauses **sending**, not only pruning: one run
+ends with `skylight_sign_in_failed: …`, later runs end with `skylight_sign_in_needed` without
+contacting Skylight, and the recovery steps above (`skylight-sync prune --dry-run`) lift the pause.
+
 ## Photos not appearing on the frame
 
 Work down the list.

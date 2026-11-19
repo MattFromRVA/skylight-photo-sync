@@ -98,6 +98,10 @@ port = 587
 username = "you@gmail.com"
 ```
 
+Photos are sent by email. An optional `[delivery] method = "api"` setting (upload through
+Skylight's app API instead) exists but is **not usable yet**: the upload itself is not built
+([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)), so leave it out.
+
 Secrets (the Amazon device login's refresh token, SMTP password) live in a separate
 `secrets.toml` with `0600` permissions and are never committed. The full list of keys and defaults is in
 [docs/setup.md](docs/setup.md#3-write-configtoml).

@@ -2,16 +2,25 @@ using SkylightPhotoSync.Skylight;
 
 namespace SkylightPhotoSync.Tests.TestSupport;
 
-/// <summary>An in-memory Skylight account: frames, their photos, and a log of deletes.</summary>
+/// <summary>An in-memory Skylight account: frames, their photos, and a log of deletes and uploads.</summary>
 public sealed class FakeSkylightClient : ISkylightClient
 {
     private int _nextId;
+    private int _nextUpload;
 
     public List<SkylightFrame> Frames { get; } = [new("100", "Kitchen")];
 
     public Dictionary<string, List<SkylightMessage>> Messages { get; } = new() { ["100"] = [] };
 
     public List<(string FrameId, string MessageId)> Deleted { get; } = [];
+
+    /// <summary>Every upload that reached the account and was accepted, in order.</summary>
+    public List<(IReadOnlyList<string> FrameIds, string FileName, string Mime)> Uploads { get; } = [];
+
+    /// <summary>When set, uploads fail with this once <see cref="FailUploadsAfter"/> of them were accepted.</summary>
+    public Exception? FailUploadsWith { get; set; }
+
+    public int FailUploadsAfter { get; set; }
 
     public int Listings { get; private set; }
 
@@ -51,6 +60,20 @@ public sealed class FakeSkylightClient : ISkylightClient
         Deleted.Add((frameId, messageId));
         Messages[frameId].RemoveAll(m => m.Id == messageId);
         return Task.CompletedTask;
+    }
+
+    /// <summary>Accepts the photo for every frame asked for; message ids are <c>up1</c>, <c>up2</c>, … in upload order.</summary>
+    public Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct)
+    {
+        Arrive();
+        if (FailUploadsWith is not null && Uploads.Count >= FailUploadsAfter)
+        {
+            throw FailUploadsWith;
+        }
+
+        Uploads.Add((frameIds.ToList(), Path.GetFileName(path), mime));
+        return Task.FromResult<IReadOnlyList<SkylightUpload>>(
+            frameIds.Select(frameId => new SkylightUpload(frameId, $"up{++_nextUpload}")).ToList());
     }
 
     private void Arrive()

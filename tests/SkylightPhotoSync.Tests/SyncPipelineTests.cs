@@ -1,6 +1,7 @@
 using MimeKit;
 using SkylightPhotoSync.Alerts;
 using SkylightPhotoSync.Config;
+using SkylightPhotoSync.Delivery;
 using SkylightPhotoSync.Imaging;
 using SkylightPhotoSync.Mail;
 using SkylightPhotoSync.Models;
@@ -28,6 +29,17 @@ public sealed class SyncPipelineTests : IDisposable
         Smtp: new SmtpConfig("127.0.0.1", 25, "user"),
         Alerts: new AlertsConfig("matt@example.com"),
         Schedule: new ScheduleConfig(60));
+
+    private const string _kitchen = "skylight:frame:100";
+
+    /// <summary><c>[delivery] method = "api"</c> with no <c>[email]</c> and no <c>[smtp]</c>.</summary>
+    private static readonly AppConfig _apiConfig = _baseConfig with
+    {
+        Email = null,
+        Smtp = null,
+        Alerts = new AlertsConfig(null),
+        Delivery = new DeliveryConfig(DeliveryMethod.Api, []),
+    };
 
     private readonly TempDir _home = new();
     private readonly TempDir _root = new();
@@ -142,7 +154,7 @@ public sealed class SyncPipelineTests : IDisposable
 
         Assert.Empty(stub.Received);
         var email = Assert.Single(reporter.Emails);
-        Assert.Equal((1, _frame), (email.Number, email.Recipient));
+        Assert.Equal((1, _frame), (email.Number, email.Destination));
         Assert.Equal(["a.png", "b.gif"], email.Items.Select(i => i.Item.Name));
         Assert.All(email.Items, i => Assert.True(i.Bytes > 0));
         Assert.All(email.Items, i => Assert.False(i.Recycled));
@@ -156,14 +168,14 @@ public sealed class SyncPipelineTests : IDisposable
     {
         await using var stub = await SmtpStub.StartAsync();
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
-        var two = _baseConfig with { Email = _baseConfig.Email with { To = [_frame, _calendar] } };
+        var two = _baseConfig with { Email = _baseConfig.Email! with { To = [_frame, _calendar] } };
         var reporter = new RecordingReporter();
         var pipeline = Pipeline(two, Source(), Mailer(stub), reporter: reporter);
 
         await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
 
         Assert.Equal(2, stub.Received.Count);
-        Assert.Equal([(1, _frame), (2, _calendar)], reporter.Emails.Select(e => (e.Number, e.Recipient)));
+        Assert.Equal([(1, _frame), (2, _calendar)], reporter.Emails.Select(e => (e.Number, e.Destination)));
         Assert.Empty(reporter.Skips);
     }
 
@@ -317,7 +329,7 @@ public sealed class SyncPipelineTests : IDisposable
         var cfg = _baseConfig with
         {
             Source = _baseConfig.Source with { IncludeVideos = true },
-            Email = _baseConfig.Email with { MaxTotalBytes = gifBytes - 1 },
+            Email = _baseConfig.Email! with { MaxTotalBytes = gifBytes - 1 },
         };
         var pipeline = Pipeline(cfg, Source(), Mailer(stub));
 
@@ -394,13 +406,13 @@ public sealed class SyncPipelineTests : IDisposable
     {
         await using var stub = await SmtpStub.StartAsync();
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
-        var two = _baseConfig with { Email = _baseConfig.Email with { To = [_frame, _calendar] } };
+        var two = _baseConfig with { Email = _baseConfig.Email! with { To = [_frame, _calendar] } };
         var source = Source();
 
         var result = await Pipeline(two, source, Mailer(stub)).RunAsync(dryRun: false, limit: null, CancellationToken.None);
-        var one = _baseConfig with { Email = _baseConfig.Email with { To = [_frame] } };
+        var one = _baseConfig with { Email = _baseConfig.Email! with { To = [_frame] } };
         var again = await Pipeline(one, source, Mailer(stub)).RunAsync(dryRun: false, limit: null, CancellationToken.None);
-        var third = _baseConfig with { Email = _baseConfig.Email with { To = [_frame, "third@example.com"] } };
+        var third = _baseConfig with { Email = _baseConfig.Email! with { To = [_frame, "third@example.com"] } };
         var added = await Pipeline(third, source, Mailer(stub)).RunAsync(dryRun: false, limit: null, CancellationToken.None);
 
         Assert.Equal((1, 2, 2), (result.Found, result.Sent, result.Batches));
@@ -527,7 +539,7 @@ public sealed class SyncPipelineTests : IDisposable
         await using var stub = await SmtpStub.StartAsync();
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
         var cfg = Rotating(keep: 2, maxPerRun: 25);
-        var client = new FakeSkylightClient().Add(cfg.Email.From, 5, _t0.AddHours(-1)).Add("someone@example.com", 3, _t0.AddDays(-3));
+        var client = new FakeSkylightClient().Add(cfg.Email!.From, 5, _t0.AddHours(-1)).Add("someone@example.com", 3, _t0.AddDays(-3));
         var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client));
 
         var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
@@ -542,7 +554,7 @@ public sealed class SyncPipelineTests : IDisposable
         await using var stub = await SmtpStub.StartAsync();
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
         var cfg = Rotating(keep: 2, maxPerRun: 25);
-        var client = new FakeSkylightClient().Add(cfg.Email.From, 5, _t0);
+        var client = new FakeSkylightClient().Add(cfg.Email!.From, 5, _t0);
         var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client));
 
         var result = await pipeline.RunAsync(dryRun: true, limit: null, CancellationToken.None);
@@ -558,7 +570,7 @@ public sealed class SyncPipelineTests : IDisposable
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
         var cfg = Rotating(keep: 1, maxPerRun: 25);
         var client = new FakeSkylightClient { FailDeletesWith = new SkylightApiException("Skylight answered HTTP 500") }
-            .Add(cfg.Email.From, 3, _t0);
+            .Add(cfg.Email!.From, 3, _t0);
         var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client));
 
         var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
@@ -574,7 +586,7 @@ public sealed class SyncPipelineTests : IDisposable
         await using var stub = await SmtpStub.StartAsync();
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
         var cfg = Rotating(keep: 1, maxPerRun: 1);
-        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email.From, 3, _t0);
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email!.From, 3, _t0);
         var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client), gate: Gate());
 
         var first = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
@@ -599,7 +611,7 @@ public sealed class SyncPipelineTests : IDisposable
         _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
         _root.AddFixture("tiny_rot6.heic", $"{_album}/c.heic", DaysAgo(1));
         var cfg = Rotating(keep: 1, maxPerRun: 1);
-        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email.From, 3, _t0);
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email!.From, 3, _t0);
         var pipeline = Pipeline(cfg, Source(), Mailer(stub), rotator: Rotator(cfg, client), gate: Gate());
         await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
 
@@ -623,7 +635,7 @@ public sealed class SyncPipelineTests : IDisposable
         await using var stub = await SmtpStub.StartAsync();
         _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
         var cfg = Rotating(keep: 1, maxPerRun: 1);
-        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email.From, 3, _t0.AddHours(-1));
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() }.Add(cfg.Email!.From, 3, _t0.AddHours(-1));
         var rotator = Rotator(cfg, client);
         await Pipeline(cfg, Source(), Mailer(stub), rotator: rotator, gate: Gate())
             .RunAsync(dryRun: false, limit: null, CancellationToken.None);
@@ -680,6 +692,255 @@ public sealed class SyncPipelineTests : IDisposable
         Assert.Empty(_notifier.Calls);
     }
 
+    [Fact]
+    public async Task Api_delivery_uploads_each_photo_oldest_first_and_records_its_message_id()
+    {
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient();
+        var reporter = new RecordingReporter();
+        var pipeline = ApiPipeline(_apiConfig, Source(), client, reporter: reporter);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal(new RunResult(Found: 2, Sent: 2, Skipped: 0, Batches: 2, DryRun: false, Error: null), result);
+        Assert.Equal(
+            [("100", "2026-11-02_120000_Skylight.jpg", "image/jpeg"), ("100", "2026-11-03_120000_Skylight.gif", "image/gif")],
+            client.Uploads.Select(u => (Assert.Single(u.FrameIds), u.FileName, u.Mime)));
+        Assert.Equal("up1", _store.SentMessageId($"{_album}/a.png", _kitchen));
+        Assert.Equal("up2", _store.SentMessageId($"{_album}/b.gif", _kitchen));
+        Assert.Equal([(1, "Kitchen", "a.png"), (2, "Kitchen", "b.gif")], reporter.Emails.Select(d => (d.Number, d.Destination, Assert.Single(d.Items).Item.Name)));
+        Assert.Empty(_notifier.Calls);
+    }
+
+    [Fact]
+    public async Task Api_delivery_sends_nothing_twice()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient();
+        var source = Source();
+        var pipeline = ApiPipeline(_apiConfig, source, client);
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        var second = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((0, 0), (second.Found, second.Sent));
+        Assert.Single(client.Uploads);
+        Assert.Equal(1, source.Downloads);
+    }
+
+    [Fact]
+    public async Task Api_delivery_marks_nothing_sent_for_an_upload_that_failed()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var client = new FakeSkylightClient
+        {
+            FailUploadsWith = new SkylightApiException("Skylight answered HTTP 503 to upload a photo."),
+            FailUploadsAfter = 1,
+        };
+        var reporter = new RecordingReporter();
+        var pipeline = ApiPipeline(_apiConfig, Source(), client, reporter: reporter);
+
+        var failed = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal("upload_failed: Skylight answered HTTP 503 to upload a photo.", failed.Error);
+        Assert.Equal((2, 1, 1), (failed.Found, failed.Sent, failed.Batches));
+        Assert.True(_store.IsSent($"{_album}/a.png", _kitchen));
+        Assert.False(_store.IsSent($"{_album}/b.gif", _kitchen));
+        Assert.Equal(1, _store.TotalSent());
+        Assert.Single(reporter.Emails);
+        Assert.Null(_store.SkylightSignInFailure());
+
+        client.FailUploadsWith = null;
+        var retried = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((1, 1, null), (retried.Found, retried.Sent, retried.Error));
+        Assert.Equal(["2026-11-02_120000_Skylight.jpg", "2026-11-03_120000_Skylight.gif"], client.Uploads.Select(u => u.FileName));
+        Assert.Equal("up2", _store.SentMessageId($"{_album}/b.gif", _kitchen));
+    }
+
+    [Fact]
+    public async Task Api_delivery_marks_nothing_sent_when_skylight_names_no_photo_for_a_frame()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient();
+        client.Frames.Add(new SkylightFrame("200", "Calendar"));
+        var delivery = new SkylightApiDelivery(_apiConfig.Delivery, new ForgetfulUploads(client), _store, () => _now);
+        var pipeline = PipelineFor(_apiConfig, Source(), delivery);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.StartsWith("upload_failed: ", result.Error);
+        Assert.Contains("Calendar", result.Error);
+        Assert.True(_store.IsSent($"{_album}/a.png", _kitchen));
+        Assert.False(_store.IsSent($"{_album}/a.png", "skylight:frame:200"));
+    }
+
+    [Fact]
+    public async Task Api_dry_run_uploads_nothing_and_marks_nothing()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient();
+        var reporter = new RecordingReporter();
+        var pipeline = ApiPipeline(_apiConfig, Source(), client, reporter: reporter);
+
+        var result = await pipeline.RunAsync(dryRun: true, limit: null, CancellationToken.None);
+
+        Assert.Equal(new RunResult(Found: 1, Sent: 1, Skipped: 0, Batches: 1, DryRun: true, Error: null), result);
+        Assert.Empty(client.Uploads);
+        Assert.Equal(0, _store.TotalSent());
+        Assert.Equal("Kitchen", Assert.Single(reporter.Emails).Destination);
+    }
+
+    [Fact]
+    public async Task Api_delivery_uploads_to_every_frame_in_one_call_by_default()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient();
+        client.Frames.Add(new SkylightFrame("200", "Calendar"));
+        var pipeline = ApiPipeline(_apiConfig, Source(), client);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((1, 2, 2), (result.Found, result.Sent, result.Batches));
+        Assert.Equal(["100", "200"], Assert.Single(client.Uploads).FrameIds);
+        Assert.Equal("up1", _store.SentMessageId($"{_album}/a.png", _kitchen));
+        Assert.Equal("up2", _store.SentMessageId($"{_album}/a.png", "skylight:frame:200"));
+    }
+
+    [Fact]
+    public async Task Api_delivery_uploads_only_to_the_frames_named_in_config()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient();
+        client.Frames.Add(new SkylightFrame("200", "Calendar"));
+        var cfg = _apiConfig with { Delivery = new DeliveryConfig(DeliveryMethod.Api, ["calendar"]) };
+        var pipeline = ApiPipeline(cfg, Source(), client);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Null(result.Error);
+        Assert.Equal(["200"], Assert.Single(client.Uploads).FrameIds);
+        Assert.False(_store.IsSent($"{_album}/a.png", _kitchen));
+    }
+
+    [Fact]
+    public async Task Api_delivery_fails_clearly_for_a_frame_name_the_account_does_not_have()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient();
+        var cfg = _apiConfig with { Delivery = new DeliveryConfig(DeliveryMethod.Api, ["Bedroom"]) };
+        var source = Source();
+        var pipeline = ApiPipeline(cfg, source, client);
+
+        var result = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal("upload_failed: [delivery] frames names \"Bedroom\", but the Skylight account has no frame called that. Its frames: \"Kitchen\".", result.Error);
+        Assert.Empty(client.Uploads);
+        Assert.Equal(0, source.Downloads);
+    }
+
+    [Fact]
+    public async Task Api_delivery_resends_a_recycled_photo_and_keeps_the_newest_message_id()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        _root.AddFixture("tiny.gif", $"{_album}/b.gif", DaysAgo(2));
+        var cfg = _apiConfig with
+        {
+            Limits = new LimitsConfig(1),
+            Rotation = new RotationConfig(Enabled: true, Keep: 1, MaxDeletesPerRun: 100, FrameName: null, ArrivalWaitMinutes: 0),
+        };
+        var client = new FakeSkylightClient();
+        var pipeline = ApiPipeline(cfg, Source(), client);
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(1);
+        await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddHours(2);
+
+        var third = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((0, 1, 1), (third.Found, third.Sent, third.Recycled));
+        Assert.Equal(3, client.Uploads.Count);
+        Assert.Equal("up3", _store.SentMessageId($"{_album}/a.png", _kitchen));
+        Assert.Equal("up2", _store.SentMessageId($"{_album}/b.gif", _kitchen));
+    }
+
+    [Fact]
+    public async Task Api_delivery_refused_sign_in_pauses_delivery_and_alerts_once()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() };
+        var source = Source();
+        var pipeline = ApiPipeline(_apiConfig, source, client, gate: Gate());
+
+        var first = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        _now = _t0.AddDays(2);   // past the alert rate limit: the pause, not the limit, keeps it to one alert
+        var second = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        var third = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal("skylight_sign_in_failed: " + Refused().Message, first.Error);
+        Assert.Equal("skylight_sign_in_needed", second.Error);
+        Assert.Equal("skylight_sign_in_needed", third.Error);
+        Assert.Equal(1, client.Calls);
+        Assert.Equal(0, source.Downloads);
+        Assert.Equal(0, _store.TotalSent());
+        var call = Assert.Single(_notifier.Calls);
+        Assert.Equal(("Skylight sign-in failed", AlertTexts.SkylightSignInDeliveryBody(Refused().Message)), call);
+        Assert.Equal((_t0, Refused().Message), (_store.SkylightSignInFailure()!.FailedAt, _store.SkylightSignInFailure()!.Reason));
+    }
+
+    [Fact]
+    public async Task Api_delivery_resumes_when_the_skylight_credentials_change()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient { FailEverythingWith = Refused() };
+        await ApiPipeline(_apiConfig, Source(), client, gate: Gate()).RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        client.FailEverythingWith = null;
+
+        var result = await ApiPipeline(_apiConfig, Source(), client, gate: Gate("placeholder-corrected-password"))
+            .RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal((1, null), (result.Sent, result.Error));
+        Assert.Null(_store.SkylightSignInFailure());
+        Assert.True(_store.IsSent($"{_album}/a.png", _kitchen));
+    }
+
+    [Fact]
+    public async Task Api_delivery_skylight_outage_does_not_pause_delivery()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient { FailEverythingWith = new SkylightApiException("Skylight answered HTTP 503 during sign-in.") };
+        var pipeline = ApiPipeline(_apiConfig, Source(), client, gate: Gate());
+
+        var first = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        var second = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+
+        Assert.Equal("upload_failed: Skylight answered HTTP 503 during sign-in.", first.Error);
+        Assert.Equal(first.Error, second.Error);
+        Assert.Equal(2, client.Calls);
+        Assert.Null(_store.SkylightSignInFailure());
+        Assert.Empty(_notifier.Calls);
+    }
+
+    [Fact]
+    public async Task Api_delivery_without_a_mail_server_alerts_by_notification_only()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DaysAgo(3));
+        var client = new FakeSkylightClient { FailUploadsWith = new SkylightApiException("Skylight answered HTTP 503 to upload a photo.") };
+        var pipeline = ApiPipeline(_apiConfig, Source(), client);
+
+        RunResult? last = null;
+        for (var i = 0; i < SyncPipeline.RepeatedFailureThreshold; i++)
+        {
+            last = await pipeline.RunAsync(dryRun: false, limit: null, CancellationToken.None);
+        }
+
+        Assert.StartsWith("upload_failed: ", last!.Error);
+        Assert.Equal("Sync failing", Assert.Single(_notifier.Calls).Title);
+        Assert.NotNull(_store.LastAlertAt(AlertKind.RepeatedFailure.ToString()));
+    }
+
     public void Dispose()
     {
         _store.Dispose();
@@ -705,9 +966,22 @@ public sealed class SyncPipelineTests : IDisposable
         AppConfig cfg, IPhotoSource source, IMailer mailer, IMailer? alertMailer = null, long videoCapBytes = 22_000_000,
         FrameRotator? rotator = null, SkylightSignInGate? gate = null, IRunReporter? reporter = null)
     {
+        var delivery = new EmailDelivery(cfg.Email!, cfg.Source, mailer, _store, () => _now);
+        return PipelineFor(cfg, source, delivery, alertMailer, videoCapBytes, rotator, gate, reporter);
+    }
+
+    /// <summary>A pipeline that uploads through <paramref name="client"/>; the config has no <c>[email]</c> or <c>[smtp]</c>.</summary>
+    private SyncPipeline ApiPipeline(
+        AppConfig cfg, IPhotoSource source, ISkylightClient client, SkylightSignInGate? gate = null, IRunReporter? reporter = null) =>
+        PipelineFor(cfg, source, new SkylightApiDelivery(cfg.Delivery, client, _store, () => _now), gate: gate, reporter: reporter);
+
+    private SyncPipeline PipelineFor(
+        AppConfig cfg, IPhotoSource source, IPhotoDelivery delivery, IMailer? alertMailer = null, long videoCapBytes = 22_000_000,
+        FrameRotator? rotator = null, SkylightSignInGate? gate = null, IRunReporter? reporter = null)
+    {
         var normalizer = new ImageNormalizer(new FakeHeicConverter(), cfg.Image, videoCapBytes);
-        var alerter = new Alerter(_store, alertMailer, cfg.Alerts.Email, cfg.Email.From, _notifier, () => _now);
-        return new SyncPipeline(cfg, source, _store, normalizer, mailer, alerter, () => _now, _lockPath, rotator, gate, reporter);
+        var alerter = new Alerter(_store, alertMailer, cfg.Alerts.Email ?? "", cfg.Email?.From ?? "", _notifier, () => _now);
+        return new SyncPipeline(cfg, source, _store, normalizer, delivery, alerter, () => _now, _lockPath, rotator, gate, reporter);
     }
 
     private SkylightSignInGate Gate(string password = "placeholder-password-not-real") =>
@@ -724,15 +998,16 @@ public sealed class SyncPipelineTests : IDisposable
         };
 
     private FrameRotator Rotator(AppConfig cfg, ISkylightClient client) =>
-        new(cfg.Rotation, cfg.Email.From, client, _store, () => _now, (_, _) => Task.CompletedTask);
+        new(cfg.Rotation, cfg.Email!.From, client, _store, () => _now, (_, _) => Task.CompletedTask);
 
     private sealed class RecordingReporter : IRunReporter
     {
-        public List<EmailReport> Emails { get; } = [];
+        /// <summary>Every delivery reported: emails, or uploads under <c>[delivery] method = "api"</c>.</summary>
+        public List<DeliveryReport> Emails { get; } = [];
 
         public List<(Item Item, SkipReason Reason, string Detail)> Skips { get; } = [];
 
-        public void Email(EmailReport email) => Emails.Add(email);
+        public void Delivered(DeliveryReport delivery) => Emails.Add(delivery);
 
         public void Skipped(Item item, SkipReason reason, string detail) => Skips.Add((item, reason, detail));
     }
@@ -763,6 +1038,19 @@ public sealed class SyncPipelineTests : IDisposable
             Downloads++;
             return inner.DownloadAsync(item, destDir, ct);
         }
+    }
+
+    /// <summary>A Skylight that accepts an upload but reports a message for the first frame only.</summary>
+    private sealed class ForgetfulUploads(ISkylightClient inner) : ISkylightClient
+    {
+        public Task<IReadOnlyList<SkylightFrame>> ListFramesAsync(CancellationToken ct) => inner.ListFramesAsync(ct);
+
+        public Task<IReadOnlyList<SkylightMessage>> ListMessagesAsync(string frameId, CancellationToken ct) => inner.ListMessagesAsync(frameId, ct);
+
+        public Task DeleteMessageAsync(string frameId, string messageId, CancellationToken ct) => inner.DeleteMessageAsync(frameId, messageId, ct);
+
+        public async Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct) =>
+            (await inner.UploadPhotoAsync(frameIds, path, mime, ct)).Take(1).ToList();
     }
 
     private sealed class FakeHeicConverter : IHeicConverter

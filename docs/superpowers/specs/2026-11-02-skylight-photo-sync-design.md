@@ -222,7 +222,11 @@ max_items_per_run = 25
 max_long_edge = 2048
 jpeg_quality = 88
 
-[email]
+[delivery]                # optional (§6.11)
+method = "email"          # "email" (default) | "api"; "api" cannot send until the upload task (#16) lands
+frames = []               # "api" only: frame names as the app shows them; empty = every frame
+
+[email]                   # [email] and [smtp] are required for method = "email", optional for "api"
 to = ["yourhousehold@ourskylight.com"]
 from = "you@gmail.com"
 max_attachments = 12

@@ -46,6 +46,76 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void MarkSent_records_the_skylight_message_id_when_there_is_one()
+    {
+        _store.MarkSent([MakeItem("a", "m1")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
+        _store.MarkSent([MakeItem("a", "m1")], "frame@example.com", "batch-2", _sentAt);
+
+        Assert.Equal("9001", _store.SentMessageId("a", "skylight:frame:100"));
+        Assert.Null(_store.SentMessageId("a", "frame@example.com"));
+        Assert.Null(_store.SentMessageId("never-sent", "skylight:frame:100"));
+    }
+
+    [Fact]
+    public void Sending_again_replaces_the_message_id()
+    {
+        _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
+
+        _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-2", _sentAt.AddHours(1), messageId: "9002");
+
+        Assert.Equal("9002", _store.SentMessageId("a", "skylight:frame:100"));
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM sent_items"));
+    }
+
+    [Fact]
+    public void WasSentTo_matches_by_id_or_by_md5()
+    {
+        _store.MarkSent([MakeItem("a", "m1")], "frame@example.com", "batch-1", _sentAt);
+
+        Assert.True(_store.WasSentTo(MakeItem("a", "m1"), "frame@example.com"));
+        Assert.True(_store.WasSentTo(MakeItem("copy-of-a", "m1"), "frame@example.com"));
+        Assert.False(_store.WasSentTo(MakeItem("b", "m2"), "frame@example.com"));
+        Assert.False(_store.WasSentTo(MakeItem("a", "m1"), "calendar@example.com"));
+    }
+
+    [Fact]
+    public void Opening_a_database_from_before_message_ids_adds_the_column_and_keeps_the_rows()
+    {
+        var oldPath = Path.Combine(_dir.Path, "old", "state.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(oldPath)!);
+        using (var conn = new SqliteConnection($"Data Source={oldPath};Pooling=False"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                """
+                CREATE TABLE sent_items (
+                    item_id   TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    md5       TEXT,
+                    batch_id  TEXT NOT NULL,
+                    sent_at   TEXT NOT NULL,
+                    PRIMARY KEY (item_id, recipient)
+                );
+                INSERT INTO sent_items VALUES ('old', 'frame@example.com', 'm0', 'batch-0', '2026-11-01T00:00:00.0000000Z');
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        using (var migrated = new StateStore(oldPath))
+        {
+            Assert.True(migrated.IsSent("old", "frame@example.com"));
+            Assert.Null(migrated.SentMessageId("old", "frame@example.com"));
+            migrated.MarkSent([MakeItem("new")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
+            Assert.Equal("9001", migrated.SentMessageId("new", "skylight:frame:100"));
+        }
+
+        // Opening it a second time must not try to add the column again.
+        using var reopened = new StateStore(oldPath);
+        Assert.Equal(2, reopened.TotalSent());
+    }
+
+    [Fact]
     public void Skylight_sign_in_failure_round_trips_and_clears()
     {
         Assert.Null(_store.SkylightSignInFailure());
