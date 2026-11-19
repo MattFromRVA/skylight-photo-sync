@@ -154,6 +154,23 @@ public sealed class StateStore : IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Records a photo uploaded to <paramref name="recipient"/> without marking any item sent: what
+    /// <c>test-upload</c> uses, so rotation can delete the test image later while no real photo is ever
+    /// treated as already sent and the sent totals stay untouched.
+    /// </summary>
+    public void RecordUpload(string recipient, string messageId, string itemId, DateTimeOffset uploadedAt) =>
+        Execute(
+            """
+            INSERT INTO uploaded_messages (recipient, message_id, item_id, uploaded_at)
+            VALUES ($recipient, $messageId, $itemId, $uploadedAt)
+            ON CONFLICT(recipient, message_id) DO NOTHING
+            """,
+            ("$recipient", recipient),
+            ("$messageId", messageId),
+            ("$itemId", itemId),
+            ("$uploadedAt", Format(uploadedAt)));
+
     /// <summary>Drops a recorded upload once its photo was deleted from the frame.</summary>
     public void ForgetUpload(string recipient, string messageId) =>
         Execute(

@@ -5,13 +5,14 @@ using SkylightPhotoSync.Alerts;
 using SkylightPhotoSync.Commands;
 using SkylightPhotoSync.Config;
 using SkylightPhotoSync.Models;
+using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.State;
 using SkylightPhotoSync.Tests.TestSupport;
 
 namespace SkylightPhotoSync.Tests;
 
 /// <summary>
-/// Drives the run, status, test-email, reset and login commands through <see cref="App.RunAsync"/>
+/// Drives the run, status, test-email, test-upload, reset and login commands through <see cref="App.RunAsync"/>
 /// against a temp <c>SKYLIGHT_SYNC_HOME</c>, a written config.toml and redirected stdin.
 /// </summary>
 public sealed class CommandTests : IDisposable
@@ -45,6 +46,7 @@ public sealed class CommandTests : IDisposable
     {
         CommandSupport.AmazonHandlerFactory = null;
         CommandSupport.SkylightHandlerFactory = null;
+        CommandSupport.SkylightClientFactory = null;
         CommandSupport.RotationDelay = null;
         CommandSupport.NotifierFactory = null;
         Console.SetIn(_originalStdin);
@@ -1276,6 +1278,239 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
+    public async Task TestUpload_uploads_one_image_to_every_frame_and_records_it_for_rotation()
+    {
+        WriteConfig();   // [delivery] method = "email": test-upload is how the API is tried before switching
+        WriteSkylightSecrets();
+        var account = FakeSkylight("Hallway");
+
+        var (code, out_, err) = await Run("test-upload");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("Uploaded test image to frame \"Kitchen\"", out_);
+        Assert.Contains("Uploaded test image to frame \"Hallway\"", out_);
+        var upload = Assert.Single(account.Uploads);
+        Assert.Equal(["100", "200"], upload.FrameIds);
+        Assert.Equal(("skylight-sync-test.jpg", "image/jpeg"), (upload.FileName, upload.Mime));
+        using var image = SKBitmap.Decode(Assert.Single(account.UploadedFiles));
+        Assert.NotNull(image);
+        Assert.Equal((800, 600), (image.Width, image.Height));
+        using var store = OpenStore();
+        var kitchen = Assert.Single(store.RecordedUploads("skylight:frame:100"));
+        var hallway = Assert.Single(store.RecordedUploads("skylight:frame:200"));
+        Assert.Equal(("up1", "up2"), (kitchen.MessageId, hallway.MessageId));
+        Assert.True(kitchen.IsTest);
+        Assert.True(hallway.IsTest);
+
+        // Not a sent photo: nothing a later run looks up as "already sent", and not in the totals.
+        Assert.Equal(0, store.TotalSent());
+        Assert.Empty(store.LastSentTimes());
+        Assert.Contains("test image uploaded to frame", File.ReadAllText(Path.Combine(_home.Dir, "sync.log")));
+        Assert.DoesNotContain("skylight-placeholder", out_ + err);
+    }
+
+    [Fact]
+    public async Task TestUpload_uploads_only_to_the_frames_delivery_names()
+    {
+        WriteApiConfig(frames: "\"hallway\"");
+        WriteSkylightSecrets();
+        var account = FakeSkylight("Hallway");
+
+        var (code, out_, err) = await Run("test-upload");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("Uploaded test image to frame \"Hallway\"", out_);
+        Assert.DoesNotContain("Kitchen", out_);
+        Assert.Equal(["200"], Assert.Single(account.Uploads).FrameIds);
+        using var store = OpenStore();
+        Assert.Empty(store.RecordedUploads("skylight:frame:100"));
+        Assert.Single(store.RecordedUploads("skylight:frame:200"));
+    }
+
+    [Fact]
+    public async Task TestUpload_names_a_configured_frame_the_account_does_not_have()
+    {
+        WriteApiConfig(frames: "\"Porch\"");
+        WriteSkylightSecrets();
+        var account = FakeSkylight();
+
+        var (code, out_, err) = await Run("test-upload");
+
+        Assert.Equal(1, code);
+        Assert.Contains("test-upload failed: [delivery] frames names \"Porch\"", err);
+        Assert.Empty(account.Uploads);
+        Assert.Empty(out_);
+    }
+
+    [Fact]
+    public async Task TestUpload_says_the_upload_is_not_built_yet_without_a_stack_trace()
+    {
+        WriteApiConfig();
+        WriteSkylightSecrets();
+        var account = SkylightAccount(ourPhotos: 0);   // the real client: its upload is still a stub
+        CommandSupport.SkylightHandlerFactory = () => account;
+
+        var (code, out_, err) = await Run("test-upload");
+
+        Assert.Equal(1, code);
+        Assert.StartsWith("test-upload failed: Uploading photos through the Skylight API is not built yet (issue #16)", err);
+        Assert.Single(err.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        Assert.DoesNotContain("Uploaded test image", out_);
+        Assert.DoesNotContain(account.Requests, r => r.Method != HttpMethod.Get);
+        using var store = OpenStore();
+        Assert.Empty(store.RecordedUploads("skylight:frame:1"));
+        Assert.DoesNotContain("skylight-placeholder", out_ + err);
+    }
+
+    [Fact]
+    public async Task TestUpload_without_skylight_sign_in_fails_clearly()
+    {
+        WriteConfig();
+        var account = FakeSkylight();
+
+        var (code, _, err) = await Run("test-upload");
+
+        Assert.Equal(1, code);
+        Assert.Contains("test-upload failed: secrets.toml has no [skylight] email and password", err);
+        Assert.Equal(0, account.Calls);
+    }
+
+    [Fact]
+    public async Task TestUpload_reports_a_frame_skylight_returned_no_photo_id_for()
+    {
+        WriteConfig();
+        WriteSkylightSecrets();
+        var account = FakeSkylight("Hallway");
+        account.NoUploadIdFor.Add("200");
+
+        var (code, out_, err) = await Run("test-upload");
+
+        Assert.Equal(1, code);
+        Assert.Contains("Uploaded test image to frame \"Kitchen\"", out_);
+        Assert.DoesNotContain("Hallway", out_);
+        Assert.Contains("test-upload failed: Skylight returned no photo id for the test image on \"Hallway\"", err);
+        using var store = OpenStore();
+        Assert.Single(store.RecordedUploads("skylight:frame:100"));
+        Assert.Empty(store.RecordedUploads("skylight:frame:200"));
+    }
+
+    [Fact]
+    public async Task TestUpload_while_a_run_holds_the_lock_exits_4()
+    {
+        WriteConfig();
+        WriteSkylightSecrets();
+        var account = FakeSkylight();
+        using var held = new FileStream(Path.Combine(_home.Dir, "run.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var (code, _, err) = await Run("test-upload");
+
+        Assert.Equal(4, code);
+        Assert.Contains("Another sync run holds the lock file", err);
+        Assert.Equal(0, account.Calls);
+    }
+
+    [Fact]
+    public async Task TestUpload_that_signs_in_reopens_a_paused_api_delivery()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+        WriteApiConfig();
+        WriteSkylightSecrets();
+        var tokenFile = Path.Combine(_home.Dir, "skylight-token.json");
+        var cachedToken = File.ReadAllText(tokenFile);
+        File.Delete(tokenFile);
+        CommandSupport.SkylightHandlerFactory = SkylightRefusingSignIn;
+        var (_, _, pausedErr) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+        var (_, pausedStatus, _) = await Run("status");
+        File.WriteAllText(tokenFile, cachedToken);   // stands in for "the sign-in works again"
+        CommandSupport.SkylightHandlerFactory = () => SkylightAccount(ourPhotos: 0);
+        FakeSkylight();
+
+        var (code, out_, err) = await Run("test-upload");
+        var (_, status, _) = await Run("status");
+        CommandSupport.SkylightClientFactory = null;
+        var (runCode, _, runErr) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.Contains("skylight-sync test-upload", pausedErr);
+        Assert.Contains("sending photos to the frame is paused", Assert.Single(_notifier.Bodies));
+        Assert.Contains("skylight-sync test-upload", Assert.Single(_notifier.Bodies));
+        Assert.Contains("skylight_needs_login: yes, delivery paused since ", pausedStatus);
+        Assert.True(code == 0, err);
+        Assert.Contains("Skylight sign-in works again; scheduled runs will send photos from now on.", out_);
+        Assert.Contains("Uploaded test image to frame \"Kitchen\"", out_);
+        Assert.Contains("skylight_needs_login: no", status);
+        Assert.True(runCode == 0, runErr);
+    }
+
+    [Fact]
+    public async Task TestUpload_with_a_refused_sign_in_says_so_and_pauses_scheduled_runs()
+    {
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+        WriteApiConfig(rotationKeep: 30);
+        WriteSkylightSecrets();
+        var account = FakeSkylight();
+        account.FailEverythingWith = new SkylightSignInException("Skylight did not accept the sign-in (placeholder).");
+
+        var (code, out_, err) = await Run("test-upload");
+        var (_, status, _) = await Run("status");
+        var (runCode, _, runErr) = await Run("run", "--dry-run", "--source", $"local:{_root.Path}");
+
+        Assert.Equal(1, code);
+        Assert.Empty(out_);
+        Assert.StartsWith("test-upload failed: Skylight did not accept the sign-in (placeholder).", err);
+        Assert.Contains("Delivery is paused until a sign-in works", err);
+        Assert.Equal(2, err.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.Contains("skylight_needs_login: yes, delivery and pruning paused since ", status);
+        Assert.Contains("(Skylight did not accept the sign-in (placeholder).)", status);
+        Assert.Equal(1, runCode);
+        Assert.Contains("run failed: skylight_sign_in_needed", runErr);
+        Assert.Equal(1, account.Calls);   // the paused run did not try the refused password again
+        Assert.Empty(account.Uploads);
+    }
+
+    [Fact]
+    public async Task Status_shows_email_delivery()
+    {
+        WriteConfig();
+
+        var (code, out_, _) = await Run("status");
+
+        Assert.Equal(0, code);
+        Assert.Contains("delivery: email" + Environment.NewLine, out_);
+    }
+
+    [Theory]
+    [InlineData("", "delivery: api (every frame)")]
+    [InlineData("\"Kitchen\", \" Hallway \"", "delivery: api (Kitchen, Hallway)")]
+    public async Task Status_shows_api_delivery_and_its_configured_frames_without_signing_in(string frames, string expected)
+    {
+        WriteApiConfig(frames: frames);
+        WriteSkylightSecrets();
+        var account = FakeSkylight();
+        var handler = SkylightAccount(ourPhotos: 0);
+        CommandSupport.SkylightHandlerFactory = () => handler;
+
+        var (code, out_, _) = await Run("status");
+
+        Assert.Equal(0, code);
+        Assert.Contains(expected + Environment.NewLine, out_);
+        Assert.Equal(0, account.Calls);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Status_reports_a_config_it_cannot_read_on_the_delivery_line()
+    {
+        WriteApiConfig();
+        var configFile = Path.Combine(_home.Dir, "config.toml");
+        File.WriteAllText(configFile, File.ReadAllText(configFile).Replace("method = \"api\"", "method = \"carrier-pigeon\""));
+
+        var (code, out_, _) = await Run("status");
+
+        Assert.Equal(0, code);
+        Assert.Contains("delivery: unknown ([delivery] method must be", out_);
+    }
+
+    [Fact]
     public async Task Prune_dry_run_lists_what_it_would_delete_per_frame()
     {
         WriteConfig();   // rotation off: prune works anyway, so it can be checked before turning rotation on
@@ -1434,6 +1669,22 @@ public sealed class CommandTests : IDisposable
             }));
     }
 
+    /// <summary>
+    /// Makes test-upload talk to an in-memory account instead of the real client, whose upload is not
+    /// built yet: the "Kitchen" frame (id 100) plus <paramref name="moreFrames"/> with ids 200, 300, ….
+    /// </summary>
+    private static FakeSkylightClient FakeSkylight(params string[] moreFrames)
+    {
+        var account = new FakeSkylightClient();
+        for (var i = 0; i < moreFrames.Length; i++)
+        {
+            account.Frames.Add(new SkylightFrame($"{(i + 2) * 100}", moreFrames[i]));
+        }
+
+        CommandSupport.SkylightClientFactory = () => account;
+        return account;
+    }
+
     /// <summary>HAND-WRITTEN PLACEHOLDER Skylight account: one frame, <paramref name="ourPhotos"/> from us and one from grandma.</summary>
     private static ScriptedHandler SkylightAccount(int ourPhotos)
     {
@@ -1489,7 +1740,7 @@ public sealed class CommandTests : IDisposable
     /// <c>[delivery] method = "api"</c> with no <c>[email]</c> and no <c>[smtp]</c>; with
     /// <paramref name="rotationKeep"/>, rotation is on and keeps that many.
     /// </summary>
-    private void WriteApiConfig(int? rotationKeep = null) =>
+    private void WriteApiConfig(int? rotationKeep = null, string frames = "") =>
         File.WriteAllText(
             Path.Combine(_home.Dir, "config.toml"),
             $"""
@@ -1499,6 +1750,7 @@ public sealed class CommandTests : IDisposable
 
             [delivery]
             method = "api"
+            frames = [{frames}]
 
             [rotation]
             enabled = {(rotationKeep is null ? "false" : "true")}

@@ -17,6 +17,12 @@ public sealed class FakeSkylightClient : ISkylightClient
     /// <summary>Every upload that reached the account and was accepted, in order.</summary>
     public List<(IReadOnlyList<string> FrameIds, string FileName, string Mime)> Uploads { get; } = [];
 
+    /// <summary>The bytes of every accepted upload, in order.</summary>
+    public List<byte[]> UploadedFiles { get; } = [];
+
+    /// <summary>Frames an accepted upload returns no photo id for.</summary>
+    public HashSet<string> NoUploadIdFor { get; } = [];
+
     /// <summary>When set, uploads fail with this once <see cref="FailUploadsAfter"/> of them were accepted.</summary>
     public Exception? FailUploadsWith { get; set; }
 
@@ -81,7 +87,8 @@ public sealed class FakeSkylightClient : ISkylightClient
         }
 
         Uploads.Add((frameIds.ToList(), Path.GetFileName(path), mime));
-        var uploads = frameIds.Select(frameId => new SkylightUpload(frameId, $"up{++_nextUpload}")).ToList();
+        UploadedFiles.Add(File.ReadAllBytes(path));
+        var uploads = frameIds.Where(frameId => !NoUploadIdFor.Contains(frameId)).Select(frameId => new SkylightUpload(frameId, $"up{++_nextUpload}")).ToList();
         if (ListUploads)
         {
             foreach (var upload in uploads)

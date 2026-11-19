@@ -68,9 +68,12 @@ public static class AlertTexts
            ~/.config/skylight-photo-sync/secrets.toml.
         3. In Terminal, run:
 
-               skylight-sync prune --dry-run
+               skylight-sync test-upload
 
-        When that command signs in successfully, photos are sent again on the next scheduled run.
+           It signs in and puts one test photo on each frame. To sign in without adding a
+           photo, run "skylight-sync prune --dry-run" instead.
+
+        When either command signs in successfully, photos are sent again on the next scheduled run.
         Changing [skylight] email or password also makes the next run try again.
         """;
 }

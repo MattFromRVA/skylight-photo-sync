@@ -101,6 +101,40 @@ public sealed class SkylightApiDelivery(
         return new DeliveryResult(batches, []);
     }
 
+    /// <summary>
+    /// Uploads <paramref name="file"/>, the <c>test-upload</c> image, once to every frame
+    /// <see cref="DestinationsAsync"/> returns. Each returned photo id is recorded for its frame so
+    /// rotation can delete the image later, but nothing is marked sent: the image is no source item,
+    /// so it cannot make a real photo look already sent. A frame Skylight returned no photo id for is
+    /// in <c>Unconfirmed</c> and has nothing recorded.
+    /// </summary>
+    public async Task<(IReadOnlyList<string> Uploaded, IReadOnlyList<string> Unconfirmed)> UploadTestPhotoAsync(
+        string file, CancellationToken ct)
+    {
+        var frames = await FramesAsync(ct);
+        var uploads = await SkylightAsync(
+            () => client.UploadPhotoAsync(
+                frames.Select(frame => frame.Id).ToList(), file, MimeTypes.GetMimeType(Path.GetFileName(file)), ct),
+            ct);
+        var itemId = RecordedUpload.TestItemPrefix + Guid.NewGuid().ToString("N");
+        var uploaded = new List<string>();
+        var unconfirmed = new List<string>();
+        foreach (var frame in frames)
+        {
+            var messageId = uploads.FirstOrDefault(upload => upload.FrameId == frame.Id)?.MessageId;
+            if (string.IsNullOrWhiteSpace(messageId))
+            {
+                unconfirmed.Add(frame.Name);
+                continue;
+            }
+
+            store.RecordUpload(RecipientFor(frame.Id), messageId, itemId, now());
+            uploaded.Add(frame.Name);
+        }
+
+        return (uploaded, unconfirmed);
+    }
+
     private DeliveryDestination Destination(SkylightFrame frame) => new(RecipientFor(frame.Id), frame.Name, TakesRecycled(frame));
 
     private bool TakesRecycled(SkylightFrame frame) =>
