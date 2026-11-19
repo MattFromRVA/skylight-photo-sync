@@ -1,0 +1,73 @@
+name: Publish to NuGet
+
+# Pushing a tag like v1.2.3 publishes SkylightPhotoSync 1.2.3 to nuget.org.
+# How to cut a release, and the one-time NUGET_API_KEY setup: docs/releasing.md.
+on:
+  push:
+    tags:
+      - "v*"
+
+# Two pushes of the same tag never publish at once; a running publish is left to finish.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Pack and push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Take the version from the tag
+        id: version
+        # The tag reaches the script as an environment variable, never as workflow-interpolated
+        # shell text. The script fails the job unless the tag is "v" + a SemVer version.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(scripts/release-version.sh "$TAG")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing SkylightPhotoSync $version"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet build -c Release -warnaserror --no-restore "-p:Version=$VERSION"
+
+      - name: Format
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Test
+        run: dotnet test -c Release --no-build
+
+      - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          dotnet pack src/SkylightPhotoSync -c Release --no-build "-p:Version=$VERSION" -o artifacts
+          test -f "artifacts/SkylightPhotoSync.$VERSION.nupkg"
+
+      - name: Push to nuget.org
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::The NUGET_API_KEY repository secret is empty or missing, so nothing was pushed. Set it (docs/releasing.md), then re-run this workflow."
+            exit 1
+          fi
+          dotnet nuget push "artifacts/SkylightPhotoSync.$VERSION.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate

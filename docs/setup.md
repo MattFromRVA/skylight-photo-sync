@@ -29,13 +29,15 @@ album and one Skylight address, prove the email path works, send one photo, then
 
 ## 2. Install
 
-Once the package is on NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)):
+From NuGet:
 
 ```bash
 dotnet tool install --global SkylightPhotoSync
 ```
 
-Until then, from a clone:
+This works from the first tagged release onward ([releasing.md](releasing.md)); upgrade later with
+`dotnet tool update --global SkylightPhotoSync`. No version is on NuGet yet, so until the first
+release is cut the command reports that the package cannot be found. Install from a clone instead:
 
 ```bash
 git clone https://github.com/MattFromRVA/skylight-photo-sync.git
@@ -58,7 +60,7 @@ dotnet tool install --global SkylightPhotoSync --add-source ./artifacts
 Check it is on your `PATH` (the installer puts it in `~/.dotnet/tools`):
 
 ```bash
-skylight-sync --version    # skylight-sync 0.1.0
+skylight-sync --version    # skylight-sync 0.1.0 (the version you installed)
 skylight-sync --help
 ```
 

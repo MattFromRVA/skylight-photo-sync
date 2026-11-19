@@ -30,14 +30,18 @@ Every hour (configurable) it:
 The tool is a .NET global tool called `skylight-sync`. You need macOS and the
 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
-**Install.** Once the package is published to NuGet
-([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)) this will be:
+**Install.** From NuGet:
 
 ```bash
 dotnet tool install --global SkylightPhotoSync
+skylight-sync --help
 ```
 
-Until then, pack it from a clone and install from the local package folder:
+> This works from the first tagged release onward. No version is on NuGet yet, so until the first
+> release is cut ([docs/releasing.md](docs/releasing.md)) the command reports that the package
+> cannot be found; use the from-a-clone install below instead.
+
+Or pack it from a clone and install from the local package folder:
 
 ```bash
 git clone https://github.com/MattFromRVA/skylight-photo-sync.git
@@ -71,6 +75,8 @@ skylight-sync status
   photos not appearing on the frame, Gmail app passwords, exit codes.
 - [docs/research-notes.md](docs/research-notes.md): why the design looks like this, with
   sources.
+- [docs/releasing.md](docs/releasing.md): for the maintainer; how a `v*` tag publishes the tool
+  to NuGet, and the one-time API key setup.
 
 ## Configuration at a glance
 
@@ -129,7 +135,10 @@ tested against a redacted recording made by `skylight-sync record-fixtures --aut
 (`tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/exchange_cookies.json`). `login --cookies`
 remains as the fallback.
 
-Planned: publishing to NuGet ([issue #17](https://github.com/MattFromRVA/skylight-photo-sync/issues/17)).
+Publishing to NuGet: pushing a `v*` tag runs the
+[publish workflow](.github/workflows/publish.yml), which packs the tool and pushes it to nuget.org
+([docs/releasing.md](docs/releasing.md)). No release has been tagged yet. A Homebrew tap is a
+follow-up ([issue #49](https://github.com/MattFromRVA/skylight-photo-sync/issues/49)).
 
 Nightly build: [![Nightly](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml/badge.svg)](https://github.com/MattFromRVA/skylight-photo-sync/actions/workflows/nightly.yml)
 builds, formats and tests on Linux and macOS every night (07:00 UTC) and packs the
