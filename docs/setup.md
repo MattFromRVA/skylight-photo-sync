@@ -9,6 +9,12 @@ album and one Skylight address, prove the email path works, send one photo, then
 > README's status section) and the one-time device login (`skylight-sync login`) on 2026-11-10
 > (`login`, `run --dry-run`, `status`); `login --cookies` is the fallback. Everything from
 > `test-email` onward can also be exercised with `run --source local:PATH`.
+>
+> **Coming next (decided 2026-11-16).** Photos will be added through Skylight's app API instead of
+> by email, with email kept as an option; rotation (step 13) already uses that API to delete. This
+> page will gain the API path once it is built
+> ([issue #59](https://github.com/MattFromRVA/skylight-photo-sync/issues/59)); until then, set
+> up email as described here.
 
 ## 1. Prerequisites
 
@@ -104,8 +110,18 @@ max_items_per_run = 25         # default 25
 max_long_edge = 2048           # default 2048
 jpeg_quality = 88              # default 88
 
+[delivery]
+# Optional. How photos reach the frame. "email" (the default) sends them to the addresses in
+# [email]. "api" will upload them through Skylight's app API instead, but that upload is NOT
+# BUILT YET (issue #16): with method = "api" every run fails with "upload_failed: Uploading
+# photos through the Skylight API is not built yet" and sends nothing. Keep "email" for now.
+method = "email"               # default "email"
+frames = []                    # "api" only: frame names as the Skylight app shows them;
+                               # default [] = every frame on the account
+
 [email]
-# Required. One or more Skylight household addresses; every photo goes to each of them.
+# Required with [delivery] method = "email" (the default).
+# One or more Skylight household addresses; every photo goes to each of them.
 to = ["yourhousehold@ourskylight.com"]
 
 # Required. The From address; this is the sender Skylight asks you to approve (step 6).
@@ -119,7 +135,8 @@ max_attachments = 12           # default 12
 max_total_bytes = 17000000     # default 17_000_000
 
 [smtp]
-# Required: host and username. The password goes in secrets.toml (step 5).
+# Required with [delivery] method = "email": host and username. The password goes in
+# secrets.toml (step 5).
 host = "smtp.gmail.com"
 port = 587                     # default 587; STARTTLS is required except for localhost
 username = "you@gmail.com"
@@ -433,12 +450,17 @@ remove them. With `[rotation]` turned on, every run:
 1. Sends up to `[limits] max_items_per_run` photos, as usual. Once the album has nothing new
    left, it fills the run with photos it sent longest ago, so the frame keeps changing. The `keep`
    most recently sent photos are never resent, since they are presumably still on the frame.
-2. Waits, up to `arrival_wait_minutes`, for the photos it just emailed to show up on every frame
+   Under `[delivery] method = "api"` a resent photo is uploaded only to the frames rotation
+   prunes (every frame, or the one `frame_name` names); other `[delivery] frames` still get new
+   photos but never resends, and if rotation prunes none of them nothing is resent.
+2. Waits, up to `arrival_wait_minutes`, for the photos it just sent to show up on every frame
    it rotates. If you set no `frame_name` and the account has a frame this tool doesn't email,
    that frame never receives them, so each run waits the full time; set `frame_name` to avoid it.
 3. Deletes this tool's older photos from each frame, oldest first, keeping the newest `keep`.
-   **Only photos emailed from `[email] from` are ever deleted**; photos anyone added from the
-   Skylight app or their own email are left alone.
+   **Only photos this tool sent are ever deleted**: photos emailed from `[email] from`, and,
+   under `[delivery] method = "api"`, photos whose Skylight id the tool recorded when it uploaded
+   them. Photos anyone added from the Skylight app or their own email are left alone. `keep`
+   counts both kinds together.
 
 For "30 new photos every hour, the old 30 removed", set:
 
@@ -477,12 +499,14 @@ in, and prints what it would do without deleting anything:
 
 ```text
 $ skylight-sync prune --dry-run
-frame "Kitchen": 214 photos from you@gmail.com, would delete 184 (keep 30)
+frame "Kitchen": 214 photos from this tool, would delete 184 (keep 30)
+  uploaded through the API: 0, would delete 0
+  emailed from you@gmail.com: 214, would delete 184
   left alone: 12 from grandma@example.com
 ```
 
-If the count "from you@gmail.com" is 0 even though the frame shows the tool's photos, Skylight
-records a different sender address than `[email] from`; don't enable rotation, and open an issue
-with the "left alone" lines. The first real run with rotation on deletes at most
+If the "emailed from you@gmail.com" count is 0 even though the frame shows photos the tool
+emailed, Skylight records a different sender address than `[email] from`; don't enable rotation,
+and open an issue with the "left alone" lines. The first real run with rotation on deletes at most
 `max_deletes_per_run` per frame, so a large backlog is cleared over a few runs. Run
 `skylight-sync prune` (without `--dry-run`) to clear it right away.

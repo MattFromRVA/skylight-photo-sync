@@ -32,7 +32,10 @@ internal static class CommandSupport
     public const string SkylightLoginMissingMessage =
         "[rotation] is enabled but secrets.toml has no [skylight] email and password; add them or set [rotation] enabled = false.";
 
-    /// <summary>True when the Skylight app sign-in rotation needs is saved.</summary>
+    public const string SkylightLoginMissingForDeliveryMessage =
+        "[delivery] method = \"api\" needs [skylight] email and password in secrets.toml; add them or set [delivery] method = \"email\".";
+
+    /// <summary>True when the Skylight app sign-in that rotation and API delivery need is saved.</summary>
     public static bool HasSkylightLogin(Secrets secrets) =>
         !string.IsNullOrWhiteSpace(secrets.SkylightEmail) && !string.IsNullOrWhiteSpace(secrets.SkylightPassword);
 
@@ -46,6 +49,10 @@ internal static class CommandSupport
 
     public const string SkylightPausedHint =
         "Pruning is paused until a sign-in works: check [skylight] email and password in secrets.toml, "
+        + "sign in once in the Skylight app, then run 'skylight-sync prune --dry-run'.";
+
+    public const string SkylightDeliveryPausedHint =
+        "Delivery is paused until a sign-in works: check [skylight] email and password in secrets.toml, "
         + "sign in once in the Skylight app, then run 'skylight-sync prune --dry-run'.";
 
     /// <summary>

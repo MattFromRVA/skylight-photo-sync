@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Each task below is also a GitHub issue in the v1 milestone; one task per agent session; issue number = task number.
 
-**Goal:** A Mac-scheduled CLI that emails new Amazon Photos (from one album or all photos, within a lookback window) to a Skylight household address, never twice, and alerts once when Amazon cookies expire.
+**Goal:** (v1) A Mac-scheduled CLI that emails new Amazon Photos (from one album or all photos, within a lookback window) to a Skylight household address, never twice, and alerts once when Amazon cookies expire. Phase 2 (below) moves adding photos to Skylight's app API.
 
 **Architecture:** An `IPhotoSource` yields candidate `Item`s; the pipeline filters them through a SQLite sent-state, downloads and normalizes them to JPEG, packs them into size-bounded batches, and hands each batch to an SMTP mailer. Amazon is one `IPhotoSource` implementation built last and verified against live fixtures; `LocalFolderSource` lets everything else be built and tested offline first. Mac-only tools (`sips`, `osascript`, `launchctl`) are called through `IProcessRunner` so tests can fake them.
 
@@ -259,7 +259,7 @@ public class AppTests
 - Produces:
   - `public sealed record RunResult(int Found, int Sent, int Skipped, int Batches, bool DryRun, string? Error, int Recycled = 0, int Pruned = 0, bool PrunePaused = false);` — `Recycled` and `Pruned` came with rotation (issue #43); `PrunePaused` with issue #46: pruning was left out because an earlier Skylight sign-in was refused. All three default, so earlier callers are unaffected.
   - `public sealed class LockHeldException : Exception`
-  - `public sealed class SyncPipeline(AppConfig cfg, IPhotoSource source, StateStore store, ImageNormalizer normalizer, IMailer mailer, Alerter alerter, Func<DateTimeOffset> now, string lockPath, FrameRotator? rotator = null, SkylightSignInGate? signInGate = null, IRunReporter? reporter = null) { Task<RunResult> RunAsync(bool dryRun, int? limit, CancellationToken ct); }` — the optional `rotator` came with rotation (issue #43). The optional `reporter` (issue #34) is `public interface IRunReporter { void Email(EmailReport email); void Skipped(Item item, SkipReason reason, string detail); }` in `Pipeline/IRunReporter.cs`, with `EmailReport(int Number, string Recipient, IReadOnlyList<EmailItemReport> Items, long TotalBytes)` and `EmailItemReport(Item Item, long Bytes, bool Recycled)`: it hears about each email (after the server accepted it, or in a dry run when it would have gone) and each skip, so `run --dry-run` can list them while `RunResult` keeps only the totals. The optional `signInGate` (issue #46) remembers a refused Skylight sign-in: a `SkylightSignInException` from pruning is recorded there, alerted once as `AlertKind.SkylightSignIn` and reported as `Error="skylight_sign_in_failed: …"` (not counted towards `RepeatedFailure`); while the gate is closed, runs send as usual and skip pruning without calling Skylight.
+  - `public sealed class SyncPipeline(AppConfig cfg, IPhotoSource source, StateStore store, ImageNormalizer normalizer, IPhotoDelivery delivery, Alerter alerter, Func<DateTimeOffset> now, string lockPath, FrameRotator? rotator = null, SkylightSignInGate? signInGate = null, IRunReporter? reporter = null) { Task<RunResult> RunAsync(bool dryRun, int? limit, CancellationToken ct); }` — `IPhotoDelivery` replaced `IMailer` with task C (#57; final shapes in its As-built block). The optional `rotator` came with rotation (issue #43). The optional `reporter` (issue #34) is `public interface IRunReporter { void Delivered(DeliveryReport delivery); void Skipped(Item item, SkipReason reason, string detail); }` in `Pipeline/IRunReporter.cs` (`Email(EmailReport)` until #57): it hears about each delivery (after the server accepted it, or in a dry run when it would have gone) and each skip, so `run --dry-run` can list them while `RunResult` keeps only the totals. The optional `signInGate` (issue #46) remembers a refused Skylight sign-in: a `SkylightSignInException` from pruning is recorded there, alerted once as `AlertKind.SkylightSignIn` and reported as `Error="skylight_sign_in_failed: …"` (not counted towards `RepeatedFailure`); while the gate is closed, runs send as usual and skip pruning without calling Skylight.
 - Behavior, in order: open `lockPath` with `FileShare.None` (held for the run), else throw `LockHeldException`. If `store.NeedsLogin()` → return `RunResult` with `Error="needs_login"` without touching the source. `StartRun`. `Window.FromLookback(cfg.Source.LookbackDays, now())`. `ListCandidatesAsync`; drop items `IsSent` for every recipient, `IsSkipped`, or md5 already sent, then collapse byte-identical candidates within the run to the oldest (null `Md5` never collapses); drop videos when `IncludeVideos` is false (record `VideoDisabled` once per item). Take the first `min(limit ?? MaxItemsPerRun, …)`. For each: `DownloadAsync` → `NormalizeAsync` into a temp dir (deleted after the run); failures recorded as `DownloadFailed` / `ProcessingFailed` (and `Oversize` / `UnsupportedType` from the normalizer) and continue. `BatchPacker.Pack`; record its skipped. For each recipient, for each batch: `MessageBuilder.Build`, `SendAsync` unless `dryRun`, then `MarkSent`. On `AuthExpiredException`: `SetNeedsLogin(true, now())`, `AlertAsync(AuthExpired, …)`, `FinishRun(error:"auth_expired")`, return (already-sent items stay sent). On `SendFailedException`: stop sending, finish with error. After `FinishRun`, if `ConsecutiveFailures() >= 3` → `AlertAsync(RepeatedFailure, …)`.
 
 - [x] **Step 1: Write failing tests** using `LocalFolderSource`, a real `StateStore` on temp, `SmtpStub` + `SmtpMailer`, fake notifier, a fake `IHeicConverter`, and a `FailingSource : IPhotoSource` wrapper that throws `AuthExpiredException` after N downloads: `Sends_new_items_and_marks_sent`, `Second_run_sends_nothing`, `Respects_max_items_per_run_oldest_first`, `Dry_run_sends_nothing_and_marks_nothing`, `Needs_login_short_circuits`, `Auth_expired_midrun_keeps_sent_sets_flag_alerts_once` (RF 4), `Lock_prevents_overlap` (RF 1: hold the lock file in the test, expect `LockHeldException`), `Oversize_item_skipped_and_queue_advances` (RF 2), `Mode_switch_does_not_resend` (RF 5), `Three_failures_trigger_repeated_failure_alert`.
@@ -349,12 +349,85 @@ public class AppTests
 - [x] **Step 7 (Matt): live verification** — done 2026-11-10: `skylight-sync login` (`connected as <name>, 52067 items`, device registered, no consent page), `skylight-sync run --dry-run --limit 3` (`found 595, sent 3, skipped 24, batches 1 (dry run)`), `skylight-sync status` (`auth: device login`). The exchange placeholder was replaced by the redacted recording `tests/.../Fixtures/AmazonAuth/exchange_cookies.json` (`record-fixtures --auth`); the register, token and deregister placeholders stay hand-written because the register step runs once per login with a single-use code. Findings in `docs/research-notes.md`.
 ---
 
+## Phase 2: Skylight API delivery (decided 2026-11-16)
+
+**Goal:** add photos through Skylight's app API as well as remove them, with email kept as a fallback. Spec §6.11 has the decisions and open questions; `docs/research-notes.md` ("Skylight upload API") has the three candidate upload flows.
+
+**Order:** #57 → #58 and #59 can be built now against a fake `ISkylightClient`. #16 waits for the live check (#44), which waits for Matt's Skylight sign-in. #60 comes last. Each task is one issue and one PR, as in v1.
+
+### Task A (#44): live check of sign-in, list, delete and upload (needs Matt)
+
+- [ ] **Step 1 (Matt):** sign in once with the tool, and list the frame's messages (`prune --dry-run`).
+- [ ] **Step 2 (Matt):** delete one test photo.
+- [ ] **Step 3 (Matt):** upload one test image with each candidate flow until one appears on the frame and in the app, not stuck in "processing". Record which flow, whether the message id comes back, the uploaded photo's `from_email`/`sender_id`, and any size limit or Plus requirement.
+- [ ] **Step 4:** save redacted fixtures, labelled as recorded live, and replace the placeholders they stand in for. Never try the password sign-in without Matt (lockout risk).
+
+### Task B (#16): upload in `SkylightClient`
+
+**Interfaces:**
+- `ISkylightClient` gains `Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct);` with `public sealed record SkylightUpload(string FrameId, string MessageId);`. It returns only after the bytes are accepted and each frame's message id is known (from the response, or by listing the frame if the proven flow does not return one).
+
+- [ ] **Step 1: Write failing tests** with `ScriptedHandler` and the recorded fixtures from task A: the happy path, a refused upload (`SkylightApiException`), a 401 mid-upload refreshing the token once.
+- [ ] **Step 2–4: fail → implement → green.**
+
+### Task C (#57): delivery seam and `[delivery]` config
+
+**Interfaces:**
+- `public interface IPhotoDelivery { Task<DeliveryResult> DeliverAsync(IReadOnlyList<(Item Item, string File)> prepared, bool dryRun, CancellationToken ct); }` in `Delivery/` (`prepared` is what `BatchPacker.Pack` takes today; `DeliveryResult` lists each delivered item with its destination and message id, and the skipped ones; record the final shape here), with `EmailDelivery` (today's `BatchPacker` + `MessageBuilder` + `IMailer`, behaviour unchanged) and `SkylightApiDelivery` (one `UploadPhotoAsync` per photo, oldest first). `SyncPipeline` takes an `IPhotoDelivery` instead of building emails itself; `IRunReporter` reports deliveries as it reports emails today.
+- Config: `public sealed record DeliveryConfig(DeliveryMethod Method, IReadOnlyList<string> Frames);`, `enum DeliveryMethod { Email, Api }`; TOML `[delivery] method = "email" | "api"` (default `"email"`), `frames = []` (blank = every frame). `[email]` and `[smtp]` are required only for `"email"`.
+- State: `sent_items` gains a nullable `message_id`; API sends use recipient `skylight:frame:<id>`. `MarkSent` takes the message id when there is one.
+- Under `"api"` a refused Skylight sign-in closes the `SkylightSignInGate` and pauses delivery (not only pruning), with the existing single `SkylightSignIn` alert.
+- **As built (#57), final shapes and what changed from the lines above:**
+  - `IPhotoDelivery` also has `Task<IReadOnlyList<DeliveryDestination>> DestinationsAsync(CancellationToken ct);` with `record DeliveryDestination(string Key, string Name)` (`Key` is the `sent_items.recipient` value: the address, or `skylight:frame:<id>`; `Name` is what reports show: the address, or the frame's name). Added because the pipeline decides which items are new per destination before it downloads anything, and because under `"api"` this call is the Skylight sign-in, which must be refused before a run downloads photos it cannot send.
+  - `record DeliveryResult(IReadOnlyList<DeliveredBatch> Batches, IReadOnlyList<DeliverySkip> Skipped, Exception? Failure = null)`; `record DeliveredBatch(DeliveryDestination Destination, IReadOnlyList<DeliveredItem> Items, long TotalBytes)` (one email, or one photo on one frame); `record DeliveredItem(Item Item, long Bytes, string? MessageId)`; `record DeliverySkip(Item Item, SkipReason Reason, string Detail)`. A delivery marks its own items sent and returns a failure in `Failure` instead of throwing, so what was delivered before the failure is still counted; the pipeline rethrows it.
+  - `EmailDelivery(EmailConfig email, SourceConfig source, IMailer mailer, StateStore store, Func<DateTimeOffset> now)`; `SkylightApiDelivery(DeliveryConfig cfg, ISkylightClient client, StateStore store, Func<DateTimeOffset> now)`. One `UploadPhotoAsync` call per photo carries every target frame.
+  - `ISkylightClient.UploadPhotoAsync` and `SkylightUpload` exist as task B specifies them, but the real `SkylightClient` implementation is a stub that fails with "not built yet (issue #16)" until the upload task lands. `[delivery] method = "api"` therefore cannot send anything yet: a real run fails with `upload_failed: …` and marks nothing sent.
+  - `IRunReporter.Email(EmailReport)` became `Delivered(DeliveryReport)`: `record DeliveryReport(int Number, string Destination, IReadOnlyList<DeliveryItemReport> Items, long TotalBytes)`, `record DeliveryItemReport(Item Item, long Bytes, bool Recycled)`.
+  - `AppConfig.Email` and `AppConfig.Smtp` are nullable (null only under `"api"` when the section is absent), `AlertsConfig.Email` is nullable, and `AppConfig.Delivery` is an init property defaulting to email. `test-email` refuses to run without both sections.
+  - `StateStore.MarkSent(items, recipient, batchId, sentAt, string? messageId = null)`, plus `SentMessageId(itemId, recipient)` and `WasSentTo(item, recipient)`. Existing databases get the `message_id` column on open.
+  - New `RunResult.Error` values: `upload_failed: …` and `skylight_sign_in_needed` (a paused `"api"` run; like `needs_login` it records no run). Under `"api"` `skylight_sign_in_failed: …` means nothing was sent.
+  - `SkylightApiDelivery` reports a network failure or an HTTP timeout from Skylight as a `SkylightApiException`, so the run ends with `upload_failed: Could not reach Skylight: …` like any other refused upload.
+  - As #57 shipped, a run under `"api"` with `[rotation] enabled = true` did not top up with recycled items and no rotator was built under `"api"`: without pruning, every resend would have added a second copy to the frame. Task D (#58) built the pruning and turned both on; see its As-built block.
+  - Left for later tasks: status wording and `test-upload` (#59). Until then a `prune` that signs in is what lifts a paused `"api"` delivery.
+
+- [x] **Step 1: Write failing tests** against a fake `ISkylightClient`: API delivery marks each photo sent with its message id; nothing is marked sent when an upload fails; the email path is unchanged (existing tests stay green); a refused sign-in pauses delivery and alerts once; `"api"` without `[smtp]` loads and alerts notification-only.
+- [x] **Step 2–4: fail → implement → green.** Update spec §6.8 config and this plan's Interfaces if names change.
+
+### Task D (#58): rotation by recorded message id
+
+- **As built (PR for #58):**
+  - `state.db` gains `uploaded_messages (recipient, message_id, item_id, uploaded_at, PRIMARY KEY (recipient, message_id))`: one row per photo this tool uploaded to a frame and has not deleted since. `sent_items.message_id` alone is not enough, because it is overwritten when an item is sent again and removed by `reset`, and either would leave a photo on the frame that nothing could delete. `StateStore.MarkSent(…, messageId)` writes the row in the same transaction; a database from #57 gets its `sent_items.message_id` values copied over once, when the table is created. `ResetSent` leaves the table alone.
+  - `StateStore.RecordedUploads(string recipient)` returns `IReadOnlyList<RecordedUpload>`, oldest upload first; `record RecordedUpload(string MessageId, string ItemId, DateTimeOffset UploadedAt)` in `State/RecordedUpload.cs`. `StateStore.ForgetUpload(string recipient, string messageId)` drops a row after the photo was deleted.
+  - `FrameRotator(RotationConfig cfg, string? senderEmail, ISkylightClient client, StateStore store, Func<DateTimeOffset> now, Func<TimeSpan, CancellationToken, Task>? delay = null)`: the sender is nullable (API delivery without `[email]`), and then no photo is matched by `from_email`. `PruneAsync(bool dryRun, int expectedNew, DateTimeOffset sentSince, CancellationToken ct)` is unchanged; `expectedNew` counts emailed photos only (the pipeline passes 0 under `"api"`), and uploads recorded at `sentSince` or later are waited for by id.
+  - `record FramePruneResult(string FrameId, string FrameName, PruneGroup Emailed, PruneGroup Uploaded, IReadOnlyDictionary<string, int> OtherSenders)` with computed `Ours`, `Deleted`, `WouldDelete`; `record PruneGroup(int OnFrame, int Deleted, int WouldDelete)`.
+  - Which photos are this tool's: a listed, not-destroyed photo whose id is recorded for that frame is an upload of ours; otherwise one whose `from_email` is `[email] from` is an emailed one of ours; everything else is left alone. A recorded id that the frame no longer lists (deleted by hand) is never sent a delete and never counted.
+  - **`keep` covers both groups together**: the newest `keep` of this tool's photos on the frame stay, whichever way they arrived. An uploaded photo's age is the time its upload was recorded (Skylight's `created_at` for uploads is unverified until the live check, #44), an emailed photo's is Skylight's `created_at`.
+  - A recycled item is uploaded again as a new photo with a new id. The earlier copy is not deleted at upload; it stays in `uploaded_messages` and, being older than everything kept, is pruned in the same run. So the frame never holds more of this tool's photos than `keep` plus what one run sent, and nothing is orphaned.
+  - `SkylightApiDelivery` uploads an item every frame already has (a recycled one) only to the configured frames rotation prunes: every frame, or the one `[rotation] frame_name` names. A `[delivery] frames` frame rotation does not prune still gets new photos but never a recycled re-upload, since nothing would delete the copies; before, it had no frame to send it to. For this the constructor became `SkylightApiDelivery(DeliveryConfig cfg, RotationConfig rotation, ISkylightClient client, StateStore store, Func<DateTimeOffset> now)` and `DeliveryDestination` gained `bool TakesRecycled = true` (false for such a frame; email recipients keep the default).
+  - `SyncPipeline` recycles under `"api"` only when it was given a rotator and at least one destination `TakesRecycled`, so a `frame_name` outside `[delivery] frames` turns recycling off; `RunCommand` builds one whenever `[rotation] enabled = true`, with or without `[email]`. `prune` always builds one and prints, per frame, a total line, `uploaded through the API: …`, `emailed from <address>: …` (or `emailed: not counted (config.toml has no [email] from)`), then the `left alone` lines.
+  - Not built: a brake on recycling while pruning keeps failing. As under email, a run whose prune fails has still sent its photos; three failed runs raise the "Sync failing" alert.
+
+- [x] **Step 1: Write failing tests:** API-delivered photos are pruned by their stored message ids, oldest send first, keeping the newest `keep`; a photo with no recorded id is never deleted; email-delivered photos still match on `from_email`; `prune --dry-run` lists both groups.
+- [x] **Step 2–4: fail → implement → green.**
+
+### Task E (#59): CLI and docs for API delivery
+
+- [ ] `skylight-sync test-upload` uploads one generated 800×600 JPEG to each configured frame and prints the frame names.
+- [ ] `status` prints `delivery: api (Kitchen, Hallway)` or `delivery: email`.
+- [ ] `docs/setup.md` gains the API path (Skylight sign-in, `[delivery]`, SMTP optional) with email as the alternative; README and `docs/troubleshooting.md` updated.
+
+### Task F (#60): API delivery becomes the default
+
+- [ ] Settle spec §6.11's open questions with Matt.
+- [ ] Default `[delivery] method` to `"api"`; decide the video cap left open in #34 from the upload limit task A found.
+
 ## Post-v1 follow-ups (filed as issues, not in the v1 milestone)
 
 - Family Vault / multi-account reading.
 - Store secrets in macOS Keychain instead of a 0600 file.
-- Optional `SkylightApiSender` using the community-documented private API, as an alternative to email.
+- ~~Optional `SkylightApiSender`~~: now Phase 2 above (#16, #57).
 - Publish the global tool to NuGet (and/or a Homebrew tap).
+- Rotation (PR #42, #43): keep the frame at the newest N photos by deleting the tool's older ones through Skylight's app API. Built; its live check is #44.
 
 ## Self-review
 
