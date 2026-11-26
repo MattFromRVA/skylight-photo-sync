@@ -169,12 +169,27 @@ credentials failed as a salted hash, never the password itself.
 A Skylight outage (HTTP 5xx) or a network error is different: it shows as `prune_failed: …`,
 nothing is paused, and the next run tries again.
 
-## `upload_failed: Uploading photos through the Skylight API is not built yet`
+## `upload_failed: …` under `[delivery] method = "api"`
 
-`config.toml` has `[delivery] method = "api"`. That setting is a placeholder until the upload
-itself is built ([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)):
-every run fails with this message and nothing is sent or marked sent. Set
-`[delivery] method = "email"` or delete the `[delivery]` section.
+`config.toml` has `[delivery] method = "api"`, and an upload through Skylight's app API did not
+finish. The upload is built from the community clients' code but **unverified against a live
+Skylight account** until [issue #44](https://github.com/MattFromRVA/skylight-photo-sync/issues/44),
+so a failure here may simply mean Skylight's unofficial API works differently from what the tool
+expects. Nothing that failed is marked sent; the next run tries again. Set
+`[delivery] method = "email"` (or delete the `[delivery]` section) to go back to email.
+
+- **`Skylight answered HTTP … when trying to start a photo upload`**, **`Skylight refused the
+  photo upload: …`** or **`… without an upload URL; the unofficial API may have changed`**:
+  Skylight did not hand out a place to upload to. Nothing reached the frame.
+- **`Skylight's photo storage answered HTTP …`**: the photo's bytes were refused. Nothing reached
+  the frame.
+- **`Skylight accepted the upload of <name> but returned no photo id for "<frame>"`**: the bytes
+  went in, but within about 30 seconds the tool did not see exactly one new photo on that frame
+  (it finds the new photo's id by listing the frame, since this upload flow does not return it).
+  Either Skylight was still processing it, or another photo arrived at the same moment and the
+  tool would not guess which one was its own. The photo may well be on the frame: check the
+  Skylight app. It is not marked sent, so the next run uploads it again, and rotation never
+  deletes that copy (it has no recorded id); delete it in the app if it is a duplicate.
 
 Under `method = "api"` a refused Skylight sign-in pauses **sending**, not only pruning: one run
 ends with `skylight_sign_in_failed: …`, later runs end with `skylight_sign_in_needed` without
@@ -194,14 +209,16 @@ frame: under `"api"` only frames rotation prunes are sent photos again.
 ## `test-upload` problems
 
 `skylight-sync test-upload` uploads one test image to each frame through Skylight's app API
-([setup step 14](setup.md#14-not-usable-yet-add-photos-through-skylights-app-api)). It always
+([setup step 14](setup.md#14-unverified-add-photos-through-skylights-app-api)). It always
 exits 1 with a single `test-upload failed: …` line when it cannot finish.
 
-- **`Uploading photos through the Skylight API is not built yet (issue #16)`**: expected today.
-  The sign-in and the frame names were fine (it got past both), but the upload call does not exist
-  yet, so nothing was put on any frame. There is nothing to fix on your side; keep
-  `[delivery] method = "email"`. If scheduled runs were paused by a refused sign-in, this run
-  still lifted the pause, and says so first.
+- **An upload error** (`… when trying to start a photo upload`, `Skylight's photo storage
+  answered HTTP …`, `… returned no photo id …`): the sign-in and the frame names were fine (it got
+  past both), but the upload itself failed; see
+  [`upload_failed`](#upload_failed--under-delivery-method--api) above for each message. The upload
+  is unverified against live Skylight until
+  [#44](https://github.com/MattFromRVA/skylight-photo-sync/issues/44). If scheduled runs were
+  paused by a refused sign-in, this run still lifted the pause, and says so first.
 - **`secrets.toml has no [skylight] email and password; test-upload needs both.`** Add the
   `[skylight]` table (setup step 13).
 - **A sign-in refusal** (`did not accept the sign-in`, `asked for a CAPTCHA`, HTTP 429), followed
@@ -222,7 +239,7 @@ exits 1 with a single `test-upload failed: …` line when it cannot finish.
 
 The last line of a successful `test-upload` says, per frame, whether rotation removes the test
 image or it stays until you delete it in the Skylight app; see
-[setup step 14](setup.md#14-not-usable-yet-add-photos-through-skylights-app-api) for how rotation
+[setup step 14](setup.md#14-unverified-add-photos-through-skylights-app-api) for how rotation
 treats it.
 
 ## Photos not appearing on the frame

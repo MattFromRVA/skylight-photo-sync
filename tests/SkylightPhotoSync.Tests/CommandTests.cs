@@ -48,6 +48,7 @@ public sealed class CommandTests : IDisposable
         CommandSupport.SkylightHandlerFactory = null;
         CommandSupport.SkylightClientFactory = null;
         CommandSupport.RotationDelay = null;
+        CommandSupport.UploadDelay = null;
         CommandSupport.NotifierFactory = null;
         Console.SetIn(_originalStdin);
         _root.Dispose();
@@ -1126,24 +1127,43 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Run_with_api_delivery_says_upload_is_not_built_yet_and_marks_nothing_sent()
+    public async Task Run_with_api_delivery_uploads_through_the_real_client_and_records_the_listed_id()
     {
         WriteApiConfig();
         WriteSkylightSecrets();
-        var account = SkylightAccount(ourPhotos: 0);
+        var account = AcceptingUploads(SkylightAccount(ourPhotos: 0), newMessageId: "new-1");
+        CommandSupport.SkylightHandlerFactory = () => account;
+        _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
+
+        var (code, out_, err) = await Run("run", "--source", $"local:{_root.Path}");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("found 1, sent 1, skipped 0, batches 1", out_);
+        Assert.Single(account.RequestsTo("/api/message_upload_urls"));
+        Assert.Single(account.Requests, r => r.Method == HttpMethod.Put);
+        using var store = OpenStore();
+        Assert.Equal(1, store.TotalSent());
+        Assert.Equal("new-1", Assert.Single(store.RecordedUploads("skylight:frame:1")).MessageId);
+        Assert.DoesNotContain("skylight-placeholder", out_ + err);
+    }
+
+    [Fact]
+    public async Task Run_with_api_delivery_marks_nothing_sent_when_the_photo_never_shows_up()
+    {
+        WriteApiConfig();
+        WriteSkylightSecrets();
+        var account = AcceptingUploads(SkylightAccount(ourPhotos: 0), newMessageId: null);
         CommandSupport.SkylightHandlerFactory = () => account;
         _root.AddFixture("tiny.png", $"{_album}/a.png", DateTime.UtcNow.AddDays(-1));
 
         var (code, out_, err) = await Run("run", "--source", $"local:{_root.Path}");
 
         Assert.Equal(1, code);
-        Assert.Contains("run failed: upload_failed: Uploading photos through the Skylight API is not built yet (issue #16)", err);
-        Assert.Contains("[delivery] method = \"email\"", err);
+        Assert.Contains("run failed: upload_failed: Skylight accepted the upload of a.png but returned no photo id for \"Kitchen\"", err);
         Assert.Contains("found 1, sent 0, skipped 0, batches 0", out_);
         using var store = OpenStore();
         Assert.Equal(0, store.TotalSent());
-        Assert.DoesNotContain(account.Requests, r => r.Method != HttpMethod.Get);
-        Assert.DoesNotContain("skylight-placeholder", out_ + err);
+        Assert.Empty(store.RecordedUploads("skylight:frame:1"));
     }
 
     [Fact]
@@ -1364,20 +1384,39 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
-    public async Task TestUpload_says_the_upload_is_not_built_yet_without_a_stack_trace()
+    public async Task TestUpload_through_the_real_client_uploads_and_records_the_listed_id()
     {
         WriteApiConfig();
         WriteSkylightSecrets();
-        var account = SkylightAccount(ourPhotos: 0);   // the real client: its upload is still a stub
+        var account = AcceptingUploads(SkylightAccount(ourPhotos: 0), newMessageId: "new-1");
+        CommandSupport.SkylightHandlerFactory = () => account;
+
+        var (code, out_, err) = await Run("test-upload");
+
+        Assert.True(code == 0, err);
+        Assert.Contains("Uploaded test image to frame \"Kitchen\"", out_);
+        Assert.Single(account.Requests, r => r.Method == HttpMethod.Put);
+        using var store = OpenStore();
+        Assert.Equal("new-1", Assert.Single(store.RecordedUploads("skylight:frame:1")).MessageId);
+        Assert.DoesNotContain("skylight-placeholder", out_ + err);
+    }
+
+    [Fact]
+    public async Task TestUpload_refused_by_skylight_fails_in_one_line_without_a_stack_trace()
+    {
+        WriteApiConfig();
+        WriteSkylightSecrets();
+        var account = AcceptingUploads(SkylightAccount(ourPhotos: 0), newMessageId: "new-1")
+            .On("/api/message_upload_urls", _ => ScriptedHandler.Status(HttpStatusCode.UnprocessableEntity));
         CommandSupport.SkylightHandlerFactory = () => account;
 
         var (code, out_, err) = await Run("test-upload");
 
         Assert.Equal(1, code);
-        Assert.StartsWith("test-upload failed: Uploading photos through the Skylight API is not built yet (issue #16)", err);
+        Assert.StartsWith("test-upload failed: Skylight answered HTTP 422 when trying to start a photo upload.", err);
         Assert.Single(err.Split('\n', StringSplitOptions.RemoveEmptyEntries));
         Assert.DoesNotContain("Uploaded test image", out_);
-        Assert.DoesNotContain(account.Requests, r => r.Method != HttpMethod.Get);
+        Assert.DoesNotContain(account.Requests, r => r.Method == HttpMethod.Put);
         using var store = OpenStore();
         Assert.Empty(store.RecordedUploads("skylight:frame:1"));
         Assert.DoesNotContain("skylight-placeholder", out_ + err);
@@ -1713,8 +1752,8 @@ public sealed class CommandTests : IDisposable
     }
 
     /// <summary>
-    /// Makes test-upload talk to an in-memory account instead of the real client, whose upload is not
-    /// built yet: the "Kitchen" frame (id 100) plus <paramref name="moreFrames"/> with ids 200, 300, ….
+    /// Makes test-upload talk to an in-memory account instead of the real client: the "Kitchen" frame
+    /// (id 100) plus <paramref name="moreFrames"/> with ids 200, 300, ….
     /// </summary>
     private static FakeSkylightClient FakeSkylight(params string[] moreFrames)
     {
@@ -1739,6 +1778,32 @@ public sealed class CommandTests : IDisposable
             .On("/api/frames", _ => ScriptedHandler.JsonBody("""{"data":[{"id":"1","attributes":{"name":"Kitchen"}}]}"""))
             .On("/api/frames/1/messages", _ => ScriptedHandler.JsonBody(page))
             .On(r => r.Method == HttpMethod.Delete, _ => new HttpResponseMessage(HttpStatusCode.NoContent));
+    }
+
+    /// <summary>
+    /// HAND-WRITTEN PLACEHOLDER upload routes on top of <see cref="SkylightAccount"/>, shaped after
+    /// jakewilkins/skylight-frame (none recorded live yet, #44): <c>message_upload_urls</c> hands out a
+    /// presigned URL, the PUT is accepted, and from then on frame 1 also lists <paramref name="newMessageId"/>
+    /// (or nothing new when it is null). Upload listings do not wait.
+    /// </summary>
+    private static ScriptedHandler AcceptingUploads(ScriptedHandler account, string? newMessageId)
+    {
+        CommandSupport.UploadDelay = (_, _) => Task.CompletedTask;
+        var uploaded = false;
+        return account
+            .On("/api/message_upload_urls", _ => ScriptedHandler.JsonBody(
+                """{"data":{"upload_urls":[{"url":"https://placeholder-bucket.s3.amazonaws.com/k?X-Amz-Signature=placeholder"}]}}"""))
+            .On(r => r.Method == HttpMethod.Put, _ =>
+            {
+                uploaded = true;
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            })
+            .On(r => uploaded && newMessageId is not null && r.RequestUri!.AbsolutePath == "/api/frames/1/messages", _ =>
+                ScriptedHandler.JsonBody(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    data = new[] { new { id = newMessageId, attributes = new { created_at = DateTime.UtcNow, from_email = (string?)null } } },
+                    meta = new { current_page = 1, num_pages = 1 },
+                })));
     }
 
     private static async Task<(int Code, string Out, string Err)> Run(params string[] args)

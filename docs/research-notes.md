@@ -182,6 +182,19 @@ https://github.com/adn77/alexa-cookie-cli, https://github.com/airbone42/immich-a
 
 ## Skylight upload API (read from source code 2026-11-16, not yet tried live)
 
+**Built (#16, 2026-11-25), still unverified live (#44):** `SkylightClient.UploadPhotoAsync` uses
+the jakewilkins/skylight-frame flow below: list the frame, `POST /api/message_upload_urls`
+(`{frame_ids, messages: [{ext, caption: "", local_file_id: <sha256 hex>}]}`, one message carrying
+every target frame), `PUT` the bytes as `application/octet-stream` to `data.upload_urls[0].url`
+(no Skylight token sent with it), then list each frame up to 10 times, 3 s apart, and take the
+id only when exactly one new, not-destroyed photo appears. No `POST /api/messages/uploads`
+finalize call: in the only client that calls it, its body is the S3 object from the separate STS
+flow. The fetch of `photo_methods.rb` on 2026-11-25 confirmed that the gem makes no
+`messages/uploads` call. Its test responses are hand-written placeholders. The live check must
+confirm: the photo appears on the frame and in the app (not stuck in "processing"); that
+`frame_ids` as strings and several frames in one request are accepted; that the new photo is
+listed (with a `created_at`) within ~30 s; and what `from_email` it shows.
+
 Matt chose on 2026-11-16 to add photos through Skylight's app API instead of email (spec §6.11).
 Nobody has documented upload in prose; these are read from the community clients' code, and
 **they use three different flows**. The live check (#44) decides which one this tool uses.
