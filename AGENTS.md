@@ -14,7 +14,7 @@ cannot do them.
 ## Read first
 
 1. `docs/superpowers/specs/2026-11-02-skylight-photo-sync-design.md`: what we are building and why
-   (API delivery is §6.11 once #45 lands).
+   (API delivery is §6.11).
 2. `docs/superpowers/plans/2026-11-02-skylight-photo-sync-v1.md`: the task breakdown and the exact
    interface names. v1 issues map to its numbered tasks; post-v1 issues (#44 on) do not, so go by
    the issue's own description and the plan section it names.
