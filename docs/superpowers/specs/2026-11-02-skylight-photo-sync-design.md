@@ -76,8 +76,8 @@ Full notes with sources: [`docs/research-notes.md`](../../research-notes.md).
   (issue #30) is a one-time browser sign-in that registers the tool as an Amazon device and
   refreshes its own session; pasted cookies (`login --cookies`) are only a fallback.
 - **(Matt, 2026-11-11)** Storing the *Skylight* password is accepted: the Skylight API has no
-  app passwords or keys, so `secrets.toml` (0600) holds `[skylight] email` and `password`.
-  Keychain storage is the follow-up (#15).
+  app passwords or keys, so it is saved with the other secrets (`[skylight] email` and
+  `password`; in the macOS Keychain since #15, see §6.8).
 
 ## 5. Anti-goals (what would make this a failure even if it "works")
 
@@ -186,8 +186,8 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
   `at_main`/`ubid_main` cookie spellings. Sequential requests; on HTTP 429 back off 60 s,
   max 3 retries; on 401 raise `AuthExpired` immediately (no retries).
 - Cookies are entered with `skylight-sync login`, which accepts either the three cookie
-  values or a pasted "Copy as cURL" from browser dev tools, and writes
-  `~/.config/skylight-photo-sync/secrets.toml` with mode 0600.
+  values or a pasted "Copy as cURL" from browser dev tools, and saves them like every secret
+  (§6.8: the macOS Keychain, with `secrets.toml` at mode 0600 as the fallback).
 - The client is behind a `PhotoSource` protocol (`list_candidates(window) ->
   Iterable[Item]`, `download(item, dest)`) so a different source (local folder, iCloud,
   Immich) could be added later. A `LocalFolderSource` is included for testing and as a
@@ -207,7 +207,16 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
 
 ### 6.8 Configuration
 
-`~/.config/skylight-photo-sync/config.toml` (non-secret) and `secrets.toml` (0600).
+`~/.config/skylight-photo-sync/config.toml` (non-secret). Secrets (#15) live in the macOS login
+keychain, one generic-password item per value (account `skylight-photo-sync`, service
+`skylight-photo-sync.<table>.<key>`, e.g. `skylight-photo-sync.smtp.password`), read and written
+with the `security` CLI behind an `IKeychain` interface; values go to `security -i` on stdin, never
+on a command line. `secrets.toml` (0600, the layout below) stays as the fallback: the Keychain wins
+key by key and the file fills gaps; a Keychain that cannot be read falls back to the file (an
+error only when there is no file); off macOS and whenever `SKYLIGHT_SYNC_HOME` is set (tests) only
+the file is used. `login` and `logout` save to the Keychain and delete the file, so they move
+anything left in it; `import-secrets` moves an existing or hand-edited file in, its values
+replacing the Keychain's.
 
 ```toml
 # config.toml
@@ -262,6 +271,7 @@ password = "app-password-here"
 ```
 skylight-sync login            # one-time browser device login (issue #30); --cookies pastes cookies instead; clears needs_login
 skylight-sync logout           # remove the device from the Amazon account; sets needs_login
+skylight-sync import-secrets   # move secrets.toml into the macOS Keychain, then delete it (issue #15)
 skylight-sync run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N]
 skylight-sync status
 skylight-sync test-email [--size-probe]   # one small test image; probe sends growing sizes
@@ -385,7 +395,7 @@ only Matt can provide, and the reference library is two years stale. Therefore:
 - Whether to use raw `HttpClient` + `System.Text.Json` or a small typed client wrapper.
 - Fixture recording approach and redaction of real node ids.
 - Whether `install-launchd` uses `StartInterval` or `StartCalendarInterval`.
-- Keychain storage for secrets (optional follow-up; file with 0600 is acceptable for v1).
+- ~~Keychain storage for secrets~~: done in #15 (§6.8).
 - Whether to create the rotated-HEIC test fixture with `sips` on a Mac or commit a static
   file; either is fine as long as it has EXIF orientation 6.
 

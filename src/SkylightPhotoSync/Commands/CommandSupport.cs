@@ -76,14 +76,37 @@ internal static class CommandSupport
             ? "Skylight sign-in works again; scheduled runs will send photos from now on."
             : "Skylight sign-in works again; scheduled runs will prune from now on.";
 
+    /// <summary>Test hook: the Keychain every command uses instead of the real one (or none).</summary>
+    internal static Func<IKeychain?>? KeychainFactory { get; set; }
+
     /// <summary>
-    /// The secrets file when it exists, otherwise all-empty secrets: a dry run against a local folder
-    /// must work before the user has logged in. A present but unreadable file still fails loudly.
+    /// The macOS Keychain through <c>security</c>, or null for secrets.toml only: on any other OS,
+    /// and whenever <see cref="AppPaths.HomeEnvVar"/> is set, so tests never touch the real Keychain.
     /// </summary>
-    public static Secrets LoadSecretsIfPresent(AppPaths paths) =>
-        File.Exists(paths.SecretsFile)
-            ? ConfigLoader.LoadSecrets(paths.SecretsFile)
-            : new Secrets(null, null, null, null);
+    public static IKeychain? CreateKeychain()
+    {
+        if (KeychainFactory is not null)
+        {
+            return KeychainFactory();
+        }
+
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(AppPaths.HomeEnvVar)))
+        {
+            return null;
+        }
+
+        return SecurityCliKeychain.IsSupported ? new SecurityCliKeychain() : null;
+    }
+
+    /// <summary>Where secrets are read from and written to: the Keychain first, secrets.toml as the fallback.</summary>
+    public static SecretStore CreateSecretStore(AppPaths paths) => new(paths.SecretsFile, CreateKeychain());
+
+    /// <summary>
+    /// The saved secrets (see <see cref="SecretStore.LoadAsync"/>), all empty when there are none: a dry
+    /// run against a local folder must work before the user has logged in.
+    /// </summary>
+    public static Task<Secrets> LoadSecretsAsync(AppPaths paths, CancellationToken ct) =>
+        CreateSecretStore(paths).LoadAsync(ct);
 
     /// <summary>The Amazon storefront the tool signs in to and reads from.</summary>
     public const string AmazonTld = "com";

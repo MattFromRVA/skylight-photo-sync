@@ -12,7 +12,8 @@ namespace SkylightPhotoSync.Commands;
 /// reads the <c>/ap/maplanding</c> address the browser lands on, registers this tool as a device
 /// (<see cref="AmazonDeviceAuth.RegisterAsync"/>), proves the resulting refresh token against
 /// Amazon Photos (<see cref="AmazonPhotosSource.WhoAmIAsync"/>, which mints the first cookies),
-/// and only then writes the refresh token and device serial to secrets.toml (0600) and clears
+/// and only then saves the refresh token and device serial (to the macOS Keychain, or to the 0600
+/// secrets.toml where there is none; see <see cref="SecretStore"/>) and clears
 /// <c>needs_login</c>. If anything fails after registration the device is deregistered again and
 /// nothing is written. <c>login --cookies</c> is the fallback: the Amazon session cookies from
 /// stdin, either from a pasted "Copy as cURL" command or as three lines (session-id, ubid-main,
@@ -53,7 +54,7 @@ public static partial class LoginCommand
     public const string PasteAddressPrompt = "Paste the address of the /ap/maplanding page: ";
 
     public const string RejectedMessage =
-        "login failed: Amazon Photos rejected the cookies (they are saved in secrets.toml anyway). They may be expired or incomplete: "
+        "login failed: Amazon Photos rejected the cookies (they are saved anyway). They may be expired or incomplete: "
         + "copy a fresh 'Copy as cURL' from a signed-in Amazon Photos tab and run login again.";
 
     public const string PastePrompt =
@@ -135,7 +136,8 @@ public static partial class LoginCommand
         try
         {
             var paths = AppPaths.Resolve();
-            var existing = CommandSupport.LoadSecretsIfPresent(paths);
+            var secretStore = CommandSupport.CreateSecretStore(paths);
+            var existing = await secretStore.LoadForUpdateAsync(ct);
             var previousSecretsFile = File.Exists(paths.SecretsFile) ? File.ReadAllBytes(paths.SecretsFile) : null;
             using var auth = CommandSupport.CreateDeviceAuth();
 
@@ -152,7 +154,6 @@ public static partial class LoginCommand
 
             string displayName;
             long count;
-            var written = false;
             try
             {
                 // The device login replaces any pasted cookies; the SMTP password is kept.
@@ -172,21 +173,20 @@ public static partial class LoginCommand
                 }
 
                 using var store = new StateStore(paths.StateDb);
-                ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
-                written = true;
+                await secretStore.SaveAsync(secrets, ct);
                 store.SetNeedsLogin(false, null);
                 displayName = registration.CustomerName.Length > 0 ? registration.CustomerName : name;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
-                var restored = !written || RestoreSecretsFile(paths.SecretsFile, previousSecretsFile);
+                var restored = !secretStore.HasWritten || await RestoreSecretsAsync(secretStore, existing, paths.SecretsFile, previousSecretsFile);
                 var removed = await TryDeregisterAsync(auth, registration.AccessToken, ct);
 
                 stderr.WriteLine(
                     $"login failed: the new device login could not be completed ({ex.Message}). "
                     + (restored
                         ? "Nothing was changed; "
-                        : "secrets.toml could not be put back as it was and may be damaged: check it, re-add the SMTP password if it is missing, and run login again; ")
+                        : "the saved secrets may not have been put back as they were: check them, re-add the SMTP password if it is missing, and run login again; ")
                     + (removed
                         ? "the tool removed the device again."
                         : $"the tool could not remove the device, so remove \"{AmazonDeviceAuth.DeviceDisplayName}\" under Manage Your Content and Devices."));
@@ -230,9 +230,25 @@ public static partial class LoginCommand
         }
     }
 
-    /// <summary>Best effort: puts secrets.toml back exactly as it was before a failed login (absent when it did not exist).</summary>
-    private static bool RestoreSecretsFile(string path, byte[]? previous)
+    /// <summary>
+    /// Best effort: puts the secrets back as they were before a failed login. In the Keychain that is
+    /// saving <paramref name="previousSecrets"/> again; secrets.toml goes back byte for byte (absent when it did not exist).
+    /// </summary>
+    private static async Task<bool> RestoreSecretsAsync(SecretStore store, Secrets previousSecrets, string path, byte[]? previous)
     {
+        if (store.UsesKeychain)
+        {
+            try
+            {
+                await store.SaveAsync(previousSecrets, CancellationToken.None);
+                return true;
+            }
+            catch (Exception ex) when (ex is ConfigException or IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
         try
         {
             if (previous is null)
@@ -305,7 +321,8 @@ public static partial class LoginCommand
         try
         {
             var paths = AppPaths.Resolve();
-            var existing = CommandSupport.LoadSecretsIfPresent(paths);
+            var secretStore = CommandSupport.CreateSecretStore(paths);
+            var existing = await secretStore.LoadForUpdateAsync(ct);
 
             // Pasted cookies replace a device login, whose device is removed from the account.
             var secrets = new Secrets(
@@ -315,7 +332,7 @@ public static partial class LoginCommand
                 existing.SmtpPassword,
                 SkylightEmail: existing.SkylightEmail,
                 SkylightPassword: existing.SkylightPassword);
-            ConfigLoader.WriteSecrets(paths.SecretsFile, secrets);
+            await secretStore.SaveAsync(secrets, ct);
             await DeregisterPreviousDeviceAsync(existing, stderr, ct);
 
             string name;
@@ -332,7 +349,7 @@ public static partial class LoginCommand
             }
             catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or ArgumentException)
             {
-                stderr.WriteLine($"login failed: could not verify the cookies with Amazon Photos (they are saved in secrets.toml anyway): {ex.Message}");
+                stderr.WriteLine($"login failed: could not verify the cookies with Amazon Photos (they are saved anyway): {ex.Message}");
                 return 1;
             }
 

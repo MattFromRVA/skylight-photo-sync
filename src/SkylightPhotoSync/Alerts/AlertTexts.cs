@@ -38,8 +38,10 @@ public static class AlertTexts
 
         1. Sign in once in the Skylight app or at https://app.ourskylight.com to confirm the
            email and password work (and to clear any CAPTCHA or lockout).
-        2. Check [skylight] email and password in
-           ~/.config/skylight-photo-sync/secrets.toml.
+        2. Put the right [skylight] email and password in
+           ~/.config/skylight-photo-sync/secrets.toml, then run
+           "skylight-sync import-secrets" to move them into the macOS Keychain
+           (a value in the Keychain wins over the file).
         3. In Terminal, run:
 
                skylight-sync prune --dry-run
@@ -64,8 +66,10 @@ public static class AlertTexts
 
         1. Sign in once in the Skylight app or at https://app.ourskylight.com to confirm the
            email and password work (and to clear any CAPTCHA or lockout).
-        2. Check [skylight] email and password in
-           ~/.config/skylight-photo-sync/secrets.toml.
+        2. Put the right [skylight] email and password in
+           ~/.config/skylight-photo-sync/secrets.toml, then run
+           "skylight-sync import-secrets" to move them into the macOS Keychain
+           (a value in the Keychain wins over the file).
         3. In Terminal, run:
 
                skylight-sync test-upload

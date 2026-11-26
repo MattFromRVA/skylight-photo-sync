@@ -7,7 +7,7 @@ using SkylightPhotoSync.State;
 
 namespace SkylightPhotoSync.Commands;
 
-/// <summary><c>status</c>: last run, totals, how photos are delivered, rotation, the Skylight and Amazon <c>needs_login</c> flags, how Amazon is authenticated, and the launchd schedule.</summary>
+/// <summary><c>status</c>: last run, totals, how photos are delivered, rotation, the Skylight and Amazon <c>needs_login</c> flags, where secrets are kept, how Amazon is authenticated, and the launchd schedule.</summary>
 public static class StatusCommand
 {
     public static Command Create()
@@ -29,7 +29,9 @@ public static class StatusCommand
                 stdout.WriteLine($"rotation: {DescribeRotation(cfg, configError, store)}");
                 stdout.WriteLine($"skylight_needs_login: {DescribeSkylightSignIn(cfg, store)}");
                 stdout.WriteLine($"needs_login: {(store.NeedsLogin() ? "yes" : "no")}");
-                stdout.WriteLine($"auth: {DescribeAuth(paths)}");
+                var (auth, secretsLocation) = await DescribeSecretsAsync(paths, ct);
+                stdout.WriteLine($"secrets: {secretsLocation}");
+                stdout.WriteLine($"auth: {auth}");
                 stdout.WriteLine($"launchd: {await DescribeLaunchdAsync(ct)}");
                 return 0;
             }
@@ -44,18 +46,28 @@ public static class StatusCommand
     }
 
     /// <summary>
-    /// <c>device login</c>, <c>pasted cookies</c> or <c>not logged in</c>; a secrets file that
-    /// cannot be read (wrong mode, bad TOML) is reported rather than failing the whole command.
+    /// How Amazon is authenticated (<c>device login</c>, <c>pasted cookies</c> or <c>not logged in</c>)
+    /// and where secrets are kept: <c>macOS Keychain</c>, or <c>secrets.toml</c> (with why, when the
+    /// Keychain could not be read). Secrets that cannot be read (wrong file mode, bad TOML, a locked
+    /// Keychain and no file) are reported rather than failing the whole command.
     /// </summary>
-    private static string DescribeAuth(AppPaths paths)
+    private static async Task<(string Auth, string Location)> DescribeSecretsAsync(AppPaths paths, CancellationToken ct)
     {
+        var store = CommandSupport.CreateSecretStore(paths);
+        var location = store.UsesKeychain ? "macOS Keychain" : "secrets.toml";
         try
         {
-            return CommandSupport.DescribeAmazonAuth(CommandSupport.LoadSecretsIfPresent(paths));
+            var auth = CommandSupport.DescribeAmazonAuth(await store.LoadAsync(ct));
+            if (store.KeychainProblem is not null)
+            {
+                location = $"secrets.toml (Keychain unavailable: {store.KeychainProblem})";
+            }
+
+            return (auth, location);
         }
         catch (ConfigException ex)
         {
-            return $"unknown ({ex.Message})";
+            return ($"unknown ({ex.Message})", location);
         }
     }
 

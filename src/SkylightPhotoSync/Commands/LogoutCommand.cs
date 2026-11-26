@@ -7,8 +7,8 @@ namespace SkylightPhotoSync.Commands;
 
 /// <summary>
 /// <c>logout</c>: removes the registered device from the Amazon account (<c>/auth/token</c> then
-/// <c>/auth/deregister</c>), drops every Amazon key from secrets.toml (the <c>[smtp]</c> password
-/// stays) and sets <c>needs_login</c> so scheduled runs stop without contacting Amazon. Pasted
+/// <c>/auth/deregister</c>), drops every Amazon secret from the Keychain and secrets.toml (the SMTP and
+/// Skylight ones stay) and sets <c>needs_login</c> so scheduled runs stop without contacting Amazon. Pasted
 /// cookies are simply forgotten. If Amazon cannot be reached the local state is cleared anyway and
 /// the command exits 1, telling the user to remove the device by hand. Nothing secret is printed.
 /// </summary>
@@ -29,7 +29,8 @@ public static class LogoutCommand
             try
             {
                 var paths = AppPaths.Resolve();
-                var secrets = CommandSupport.LoadSecretsIfPresent(paths);
+                var secretStore = CommandSupport.CreateSecretStore(paths);
+                var secrets = await secretStore.LoadForUpdateAsync(ct);
                 if (!CommandSupport.HasAmazonAuth(secrets))
                 {
                     stdout.WriteLine(NotLoggedInMessage);
@@ -51,14 +52,14 @@ public static class LogoutCommand
                     }
                 }
 
-                ConfigLoader.WriteSecrets(paths.SecretsFile, secrets with
+                await secretStore.SaveAsync(secrets with
                 {
                     AmazonRefreshToken = null,
                     AmazonDeviceSerial = null,
                     AmazonSessionId = null,
                     AmazonUbid = null,
                     AmazonAt = null,
-                });
+                }, ct);
                 using (var store = new StateStore(paths.StateDb))
                 {
                     store.SetNeedsLogin(true, null);

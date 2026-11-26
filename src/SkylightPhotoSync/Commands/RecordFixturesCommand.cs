@@ -56,7 +56,7 @@ public static class RecordFixturesCommand
         try
         {
             var paths = AppPaths.Resolve();
-            var secrets = CommandSupport.LoadSecretsIfPresent(paths);
+            var secrets = await CommandSupport.LoadSecretsAsync(paths, ct);
             if (authOnly)
             {
                 if (!CommandSupport.HasDeviceLogin(secrets))

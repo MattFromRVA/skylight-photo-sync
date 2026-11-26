@@ -206,39 +206,68 @@ Saved. Run 'skylight-sync run --dry-run' to verify.
 Clear this terminal window's scrollback now (Terminal: Cmd-K); the address you pasted contains a single-use sign-in code.
 ```
 
-`login` registers the device, checks the new login against Amazon Photos, and only then writes
-`refresh_token` and `device_serial` to `~/.config/skylight-photo-sync/secrets.toml` with mode
-`0600` and clears the `needs_login` flag. If the check fails it removes the device again and
-writes nothing. `skylight-sync logout` removes the device and the keys again.
+`login` registers the device, checks the new login against Amazon Photos, and only then saves
+`refresh_token` and `device_serial` in the macOS Keychain (see [Where secrets are
+kept](#where-secrets-are-kept) below) and clears the `needs_login` flag. If the check fails it
+removes the device again and saves nothing. `skylight-sync logout` removes the device and deletes
+those Keychain items again.
 
 If the device login does not work for you, `skylight-sync login --cookies` takes the three
 session cookies copied from a signed-in browser instead ([cookies.md](cookies.md#pasted-cookies-fallback)).
 
-## 5. Add the SMTP password to secrets.toml
+## 5. Add the SMTP password
 
-`login` does not know your mail password; add it by hand to the same file. Open
-`~/.config/skylight-photo-sync/secrets.toml` and add an `[smtp]` table, keeping the `[amazon]`
-table `login` wrote:
-
-```toml
-[amazon]
-refresh_token = "..."    # written by `skylight-sync login`
-device_serial = "..."
-
-[smtp]
-password = "your-gmail-app-password"
-```
-
-(`login --cookies` writes `session_id`, `ubid_main` and `at_main` instead; the dashed spellings
-`session-id`, `ubid-main`, `at-main` are accepted too.) Running `login` again later rewrites the
-`[amazon]` table and keeps your `[smtp] password`.
-
-If you created the file yourself, make sure only you can read it, or `run`, `test-email`, `login`,
-`logout` and `record-fixtures` will refuse to start:
+`login` does not know your mail password. Put it in `~/.config/skylight-photo-sync/secrets.toml`,
+make sure only you can read the file, then move it into the Keychain:
 
 ```bash
+mkdir -p ~/.config/skylight-photo-sync
+cat > ~/.config/skylight-photo-sync/secrets.toml <<'TOML'
+[smtp]
+password = "your-gmail-app-password"
+TOML
 chmod 600 ~/.config/skylight-photo-sync/secrets.toml
+skylight-sync import-secrets
+# Moved 1 secret into the macOS Keychain and deleted ~/.config/skylight-photo-sync/secrets.toml.
 ```
+
+Running `login` again later replaces only the Amazon secrets and keeps your SMTP password.
+
+### Where secrets are kept
+
+Every secret is its own "application password" item in your login keychain, with the account
+`skylight-photo-sync` and one service name per value:
+
+| Secret | Keychain service |
+|---|---|
+| `[amazon] refresh_token`, `device_serial` (device login) | `skylight-photo-sync.amazon.refresh_token`, `skylight-photo-sync.amazon.device_serial` |
+| `[amazon] session_id`, `ubid_main`, `at_main` (`login --cookies`) | `skylight-photo-sync.amazon.session_id`, `.amazon.ubid_main`, `.amazon.at_main` |
+| `[smtp] password` | `skylight-photo-sync.smtp.password` |
+| `[skylight] email`, `password` (step 13) | `skylight-photo-sync.skylight.email`, `skylight-photo-sync.skylight.password` |
+
+The tool reads and writes them with the macOS `security` command; a value is passed to it on
+stdin, never on its command line. `skylight-sync status` shows `secrets: macOS Keychain`.
+
+`~/.config/skylight-photo-sync/secrets.toml` (mode `0600`, same table and key names as the left
+column) is still read as a fallback:
+
+- **Both have a value: the Keychain wins.** The file only supplies keys the Keychain lacks.
+- **Moving the file in:** `skylight-sync import-secrets` copies every value in the file into the
+  Keychain, replacing what is there, and deletes the file. Use it after upgrading from a version
+  that kept secrets in the file (it keeps working until you do), and whenever you change a
+  password: edit the file, then import it. `login` and `logout` also move everything left in the
+  file into the Keychain when they save.
+- **Keychain not available:** if the Keychain cannot be read (for example it is locked and macOS
+  will not ask), the tool uses the file alone and `status` says `secrets: secrets.toml (Keychain
+  unavailable: ...)`; with no file, the command fails and says so. `login`, `logout` and
+  `import-secrets` always stop instead, so they never save from the file alone. On any OS other than macOS, and
+  whenever `SKYLIGHT_SYNC_HOME` is set (the tests), the Keychain is never used and everything is
+  read from and written to the file, as before.
+
+A file you create yourself must be mode `0600`, or `run`, `test-email`, `login`, `logout` and
+`record-fixtures` will refuse to start (`chmod 600 ~/.config/skylight-photo-sync/secrets.toml`).
+To look at or delete an item by hand use Keychain Access, or for example
+`security find-generic-password -a skylight-photo-sync -s skylight-photo-sync.smtp.password -w`.
 
 ## 6. Send a test email and approve the sender
 
@@ -369,7 +398,8 @@ it wakes. Two overlapping runs cannot happen: the second exits at once with exit
 | What | Path |
 |---|---|
 | Config | `~/.config/skylight-photo-sync/config.toml` |
-| Secrets (mode 0600) | `~/.config/skylight-photo-sync/secrets.toml` |
+| Secrets | macOS login keychain, `skylight-photo-sync.*` items ([step 5](#where-secrets-are-kept)) |
+| Secrets fallback (mode 0600) | `~/.config/skylight-photo-sync/secrets.toml` |
 | Skylight API tokens, for `[rotation]`, `test-upload` and `[delivery] method = "api"` (mode 0600) | `~/Library/Application Support/skylight-photo-sync/skylight-token.json` |
 | Sent-state database (SQLite) | `~/Library/Application Support/skylight-photo-sync/state.db` |
 | Run lock | `~/Library/Application Support/skylight-photo-sync/run.lock` |
@@ -377,9 +407,9 @@ it wakes. Two overlapping runs cannot happen: the second exits at once with exit
 | LaunchAgent plist | `~/Library/LaunchAgents/com.mattfromrva.skylight-photo-sync.plist` |
 | Scratch downloads (deleted after each run) | `$TMPDIR/skylight-photo-sync/run-<id>/` |
 
-Setting the environment variable `SKYLIGHT_SYNC_HOME` puts all of the first six in one directory
-instead (`config.toml`, `secrets.toml`, `skylight-token.json`, `state.db`, `run.lock`, `sync.log`
-directly under it).
+Setting the environment variable `SKYLIGHT_SYNC_HOME` puts the files in one directory instead
+(`config.toml`, `secrets.toml`, `skylight-token.json`, `state.db`, `run.lock`, `sync.log` directly
+under it) and turns the Keychain off, so secrets come only from that `secrets.toml`.
 That is how the tests isolate themselves and is handy for trying a second configuration.
 
 The log records each run's start (mode, album, lookback, limit, source), its summary line and any
@@ -486,7 +516,8 @@ keep = 30
 > fails (`prune_failed: …` in `status` and the log, and the "Sync failing" alert after three
 > runs), but sending keeps working.
 
-**Sign-in.** Add your Skylight account's email and password to `secrets.toml`:
+**Sign-in.** Add your Skylight account's email and password to `secrets.toml`, then run
+`skylight-sync import-secrets` to move them into the Keychain ([step 5](#where-secrets-are-kept)):
 
 ```toml
 [skylight]
@@ -497,7 +528,7 @@ password = "your-skylight-password"
 The tool signs in once and caches the tokens in `skylight-token.json` (mode 0600), refreshing
 them as they expire, so it does not sign in with your password every hour. The cache records
 which account it belongs to; if you change `[skylight] email`, the old tokens are ignored and the
-next run signs in to the new account. `login` keeps this table when it rewrites `secrets.toml`.
+next run signs in to the new account. `login` and `logout` keep these values.
 
 If Skylight refuses the sign-in, the tool does not keep trying: it alerts once and pauses pruning
 until you fix it (step 11, "Skylight sign-in failed").
@@ -550,7 +581,7 @@ What differs from the email path:
 | Supported by Skylight | Yes | No: unofficial, can change without notice |
 
 **1. Skylight sign-in.** Add your Skylight account's email and password to `secrets.toml`, the
-same `[skylight]` table rotation uses (step 13):
+same `[skylight]` table rotation uses (step 13), and run `skylight-sync import-secrets`:
 
 ```toml
 [skylight]
