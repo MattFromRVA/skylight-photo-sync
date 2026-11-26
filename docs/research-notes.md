@@ -203,6 +203,21 @@ Nobody has documented upload in prose; these are read from the community clients
   `POST /api/message_upload_urls` and `GET /api/messages/cloud_upload_credentials` by name only.
   dknowles2/pyskylight has no upload code.
 
+## Family Vault and a second Amazon account (issue #14): spike 2026-11-25, not tried live
+
+Full write-up: [`superpowers/specs/2026-11-25-family-vault-spike.md`](superpowers/specs/2026-11-25-family-vault-spike.md).
+
+- Family Vault: up to six members including the Prime owner; members add photos on purpose or via
+  an auto-add setting; one vault per person (Amazon help pages, linked in the spike).
+- No community client reads the vault. `amazon-photos` only adds to and removes from it
+  (`POST /drive/v1/familyArchive/`) and lists `searchContext=family` as a `search` value without
+  using it. Whether that returns, and lets this account download, photos other members added is
+  unverified; the spike lists a read-only live check.
+- `createdBy` on a node is the uploading *application*, not the person, so the recorded fixtures
+  don't show who added a photo to a shared album.
+- A second device login for another person's account uses the same verified flow, but needs their
+  consent and sign-in and multi-account config, secrets and state.
+
 ## Prior art (same shape of problem)
 
 - MChartier/immich-skylight-mailer (TypeScript, MIT): Immich album → JPEG via sharp →
