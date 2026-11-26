@@ -10,7 +10,7 @@ namespace SkylightPhotoSync.Skylight;
 /// Stops scheduled runs from trying a Skylight password that was already refused. After a
 /// <see cref="SkylightSignInException"/> the failure is recorded and <see cref="ShouldAttempt"/> is
 /// false until <c>[skylight]</c> email or password changes, or a sign-in succeeds (for example a
-/// manual <c>skylight-sync prune --dry-run</c>). Repeating a bad password every hour could lock the
+/// manual <c>skylight-sync prune --dry-run</c> or <c>skylight-sync test-upload</c>). Repeating a bad password every hour could lock the
 /// account, and a CAPTCHA never clears on its own.
 /// </summary>
 public sealed class SkylightSignInGate(StateStore store, string email, string password, Func<DateTimeOffset> now)

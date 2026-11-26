@@ -1,20 +1,33 @@
 using SkylightPhotoSync.Config;
+using SkylightPhotoSync.Delivery;
 using SkylightPhotoSync.State;
 
 namespace SkylightPhotoSync.Skylight;
 
+/// <summary>One group of this tool's photos on a frame: how many are there and what rotation did to them.</summary>
+/// <param name="OnFrame">Photos of the group on the frame before pruning.</param>
+/// <param name="Deleted">Photos of the group deleted this run.</param>
+/// <param name="WouldDelete">In a dry run, the photos of the group that would have been deleted; otherwise 0.</param>
+public sealed record PruneGroup(int OnFrame, int Deleted, int WouldDelete);
+
 /// <summary>What rotation did (or, in a dry run, would do) on one frame.</summary>
-/// <param name="Ours">Photos on the frame that this tool emailed in (matched on <c>from_email</c>).</param>
-/// <param name="Deleted">Photos deleted this run.</param>
-/// <param name="WouldDelete">In a dry run, the photos that would have been deleted; otherwise 0.</param>
+/// <param name="Emailed">Photos this tool emailed in (matched on <c>from_email</c>).</param>
+/// <param name="Uploaded">Photos this tool uploaded through the API (matched on the photo ids recorded at upload).</param>
 /// <param name="OtherSenders">Photos from anyone else, by sender address; never touched, listed so a dry run shows what was matched.</param>
 public sealed record FramePruneResult(
     string FrameId,
     string FrameName,
-    int Ours,
-    int Deleted,
-    int WouldDelete,
-    IReadOnlyDictionary<string, int> OtherSenders);
+    PruneGroup Emailed,
+    PruneGroup Uploaded,
+    IReadOnlyDictionary<string, int> OtherSenders)
+{
+    /// <summary>This tool's photos on the frame, both groups together; <c>keep</c> applies to this number.</summary>
+    public int Ours => Emailed.OnFrame + Uploaded.OnFrame;
+
+    public int Deleted => Emailed.Deleted + Uploaded.Deleted;
+
+    public int WouldDelete => Emailed.WouldDelete + Uploaded.WouldDelete;
+}
 
 /// <summary>Rotation's outcome over every frame it looked at.</summary>
 public sealed record PruneResult(IReadOnlyList<FramePruneResult> Frames)
@@ -26,14 +39,20 @@ public sealed record PruneResult(IReadOnlyList<FramePruneResult> Frames)
 
 /// <summary>
 /// Keeps each frame at the newest <see cref="RotationConfig.Keep"/> photos this tool sent: after a run
-/// emails new photos it waits (up to <see cref="RotationConfig.ArrivalWaitMinutes"/>) for them to show up
+/// sends new photos it waits (up to <see cref="RotationConfig.ArrivalWaitMinutes"/>) for them to show up
 /// on the frame, then deletes this tool's older photos, oldest first, at most
-/// <see cref="RotationConfig.MaxDeletesPerRun"/> per frame. Photos anyone else added are never touched:
-/// only photos whose <c>from_email</c> is <c>[email] from</c> count as this tool's.
+/// <see cref="RotationConfig.MaxDeletesPerRun"/> per frame. Photos anyone else added are never touched.
+/// Two kinds of photo count as this tool's: one uploaded through the API whose photo id was recorded
+/// for that frame at upload (<see cref="StateStore.RecordedUploads"/>), and, when
+/// <paramref name="senderEmail"/> is given, one whose <c>from_email</c> is that address
+/// (<c>[email] from</c>). <c>keep</c> counts both kinds together. An uploaded photo's age is the time
+/// its upload was recorded, an emailed photo's the time Skylight received it. A <c>test-upload</c>
+/// image counts as older than everything else, so it is the first photo to go once a frame is over
+/// <c>keep</c> and never pushes a real photo off the frame.
 /// </summary>
 public sealed class FrameRotator(
     RotationConfig cfg,
-    string senderEmail,
+    string? senderEmail,
     ISkylightClient client,
     StateStore store,
     Func<DateTimeOffset> now,
@@ -47,23 +66,25 @@ public sealed class FrameRotator(
     private const string _unknownSender = "(no sender)";
 
     private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? Task.Delay;
-    private readonly string _sender = NormalizeEmail(senderEmail) ?? throw new ArgumentException("A sender address is required.", nameof(senderEmail));
+    private readonly string? _sender = NormalizeEmail(senderEmail);
 
     /// <summary>
     /// Prunes every target frame. <paramref name="expectedNew"/> photos were emailed at
     /// <paramref name="sentSince"/> or later; when it is positive (and this is not a dry run) the
-    /// rotator first waits until every target frame shows that many of this tool's photos newer than
-    /// <paramref name="sentSince"/> (each frame is emailed the same photos, so the count is per frame,
+    /// rotator first waits until every target frame shows that many of this tool's emailed photos newer
+    /// than <paramref name="sentSince"/> (each frame is emailed the same photos, so the count is per frame,
     /// not a total), so no frame is pruned down to photos that are about to be replaced anyway. It
     /// prunes after the wait whether or not they all arrived; a target frame that was not emailed
     /// therefore costs the full wait, which <see cref="RotationConfig.FrameName"/> avoids.
+    /// Uploads need no count: the rotator waits the same way until every upload recorded for a frame at
+    /// <paramref name="sentSince"/> or later is in that frame's listing.
     /// </summary>
     public async Task<PruneResult> PruneAsync(bool dryRun, int expectedNew, DateTimeOffset sentSince, CancellationToken ct)
     {
         var frames = await TargetFramesAsync(ct);
         var listings = await ListAsync(frames, ct);
 
-        if (!dryRun && expectedNew > 0 && cfg.ArrivalWaitMinutes > 0)
+        if (!dryRun && cfg.ArrivalWaitMinutes > 0)
         {
             var polls = (int)Math.Ceiling(TimeSpan.FromMinutes(cfg.ArrivalWaitMinutes) / PollInterval);
             for (var poll = 0; poll < polls && !AllArrived(listings, expectedNew, sentSince); poll++)
@@ -101,44 +122,99 @@ public sealed class FrameRotator(
         return text.Length == 0 ? null : text.ToLowerInvariant();
     }
 
-    private bool IsOurs(SkylightMessage message) =>
-        !message.Destroyed && NormalizeEmail(message.FromEmail) == _sender;
+    private bool IsEmailed(SkylightMessage message) =>
+        _sender is not null && !message.Destroyed && NormalizeEmail(message.FromEmail) == _sender;
 
     private bool AllArrived(
         IReadOnlyList<(SkylightFrame Frame, IReadOnlyList<SkylightMessage> Messages)> listings, int expectedNew, DateTimeOffset sentSince) =>
-        listings.All(listing => listing.Messages.Count(m => IsOurs(m) && m.CreatedAt >= sentSince - ClockSkew) >= expectedNew);
+        listings.All(listing =>
+        {
+            var emailed = _sender is null
+                || listing.Messages.Count(m => IsEmailed(m) && m.CreatedAt >= sentSince - ClockSkew) >= expectedNew;
+            var listed = listing.Messages.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+            return emailed && store.RecordedUploads(SkylightApiDelivery.RecipientFor(listing.Frame.Id))
+                .Where(upload => upload.UploadedAt >= sentSince)
+                .All(upload => listed.Contains(upload.MessageId));
+        });
 
     private async Task<FramePruneResult> PruneFrameAsync(
         SkylightFrame frame, IReadOnlyList<SkylightMessage> messages, bool dryRun, CancellationToken ct)
     {
-        var ours = messages
-            .Where(IsOurs)
-            .OrderByDescending(m => m.CreatedAt)
-            .ThenByDescending(m => m.Id.Length)
-            .ThenByDescending(m => m.Id, StringComparer.Ordinal)
+        // Only an id recorded for this frame makes a photo an upload of ours; a recorded id that is no
+        // longer listed (deleted by hand) has nothing to match and is simply not there to delete.
+        var recipient = SkylightApiDelivery.RecipientFor(frame.Id);
+        var recorded = store.RecordedUploads(recipient)
+            .Select((upload, order) => (upload, order))
+            .ToDictionary(
+                pair => pair.upload.MessageId,
+                pair => (At: pair.upload.IsTest ? DateTimeOffset.MinValue : pair.upload.UploadedAt, Order: pair.order),
+                StringComparer.Ordinal);
+
+        var ours = new List<(SkylightMessage Message, bool Uploaded, DateTimeOffset At, int Order)>();
+        var others = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var message in messages.Where(m => !m.Destroyed))
+        {
+            if (recorded.TryGetValue(message.Id, out var upload))
+            {
+                ours.Add((message, true, upload.At, upload.Order));
+            }
+            else if (IsEmailed(message))
+            {
+                ours.Add((message, false, message.CreatedAt, -1));
+            }
+            else
+            {
+                var sender = NormalizeEmail(message.FromEmail) ?? _unknownSender;
+                others[sender] = others.GetValueOrDefault(sender) + 1;
+            }
+        }
+
+        var newestFirst = ours
+            .OrderByDescending(photo => photo.At)
+            .ThenByDescending(photo => photo.Order)
+            .ThenByDescending(photo => photo.Message.Id.Length)
+            .ThenByDescending(photo => photo.Message.Id, StringComparer.Ordinal)
             .ToList();
-        var others = messages
-            .Where(m => !m.Destroyed && !IsOurs(m))
-            .GroupBy(m => NormalizeEmail(m.FromEmail) ?? _unknownSender, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
 
         // Oldest first, so a run stopped by the safety brake still removes the stalest photos.
-        var excess = ours.Skip(cfg.Keep).Reverse().Take(cfg.MaxDeletesPerRun).ToList();
+        var excess = newestFirst.Skip(cfg.Keep).Reverse().Take(cfg.MaxDeletesPerRun).ToList();
+        var emailed = ours.Count(photo => !photo.Uploaded);
+        var uploaded = ours.Count - emailed;
         if (dryRun)
         {
-            return new FramePruneResult(frame.Id, frame.Name, ours.Count, Deleted: 0, WouldDelete: excess.Count, others);
+            var wouldDeleteEmailed = excess.Count(photo => !photo.Uploaded);
+            return new FramePruneResult(
+                frame.Id,
+                frame.Name,
+                new PruneGroup(emailed, Deleted: 0, wouldDeleteEmailed),
+                new PruneGroup(uploaded, Deleted: 0, excess.Count - wouldDeleteEmailed),
+                others);
         }
 
-        var deleted = 0;
-        foreach (var message in excess)
+        var deletedEmailed = 0;
+        var deletedUploaded = 0;
+        foreach (var photo in excess)
         {
             ct.ThrowIfCancellationRequested();
-            await client.DeleteMessageAsync(frame.Id, message.Id, ct);
-            store.MarkPruned(frame.Id, message.Id, message.CreatedAt, now());
-            deleted++;
+            await client.DeleteMessageAsync(frame.Id, photo.Message.Id, ct);
+            store.MarkPruned(frame.Id, photo.Message.Id, photo.Message.CreatedAt, now());
+            if (photo.Uploaded)
+            {
+                store.ForgetUpload(recipient, photo.Message.Id);
+                deletedUploaded++;
+            }
+            else
+            {
+                deletedEmailed++;
+            }
         }
 
-        return new FramePruneResult(frame.Id, frame.Name, ours.Count, deleted, WouldDelete: 0, others);
+        return new FramePruneResult(
+            frame.Id,
+            frame.Name,
+            new PruneGroup(emailed, deletedEmailed, WouldDelete: 0),
+            new PruneGroup(uploaded, deletedUploaded, WouldDelete: 0),
+            others);
     }
 
     private async Task<IReadOnlyList<SkylightFrame>> TargetFramesAsync(CancellationToken ct)

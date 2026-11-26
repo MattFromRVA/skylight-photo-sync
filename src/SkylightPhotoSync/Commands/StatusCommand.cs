@@ -7,7 +7,7 @@ using SkylightPhotoSync.State;
 
 namespace SkylightPhotoSync.Commands;
 
-/// <summary><c>status</c>: last run, totals, rotation, the Skylight and Amazon <c>needs_login</c> flags, how Amazon is authenticated, and the launchd schedule.</summary>
+/// <summary><c>status</c>: last run, totals, how photos are delivered, rotation, the Skylight and Amazon <c>needs_login</c> flags, how Amazon is authenticated, and the launchd schedule.</summary>
 public static class StatusCommand
 {
     public static Command Create()
@@ -24,8 +24,10 @@ public static class StatusCommand
                 using var store = new StateStore(paths.StateDb);
                 stdout.WriteLine($"last run: {DescribeLastRun(store.LastRun())}");
                 stdout.WriteLine($"total sent: {store.TotalSent()}");
-                stdout.WriteLine($"rotation: {DescribeRotation(paths, store)}");
-                stdout.WriteLine($"skylight_needs_login: {DescribeSkylightSignIn(store)}");
+                var (cfg, configError) = LoadConfig(paths);
+                stdout.WriteLine($"delivery: {DescribeDelivery(cfg, configError)}");
+                stdout.WriteLine($"rotation: {DescribeRotation(cfg, configError, store)}");
+                stdout.WriteLine($"skylight_needs_login: {DescribeSkylightSignIn(cfg, store)}");
                 stdout.WriteLine($"needs_login: {(store.NeedsLogin() ? "yes" : "no")}");
                 stdout.WriteLine($"auth: {DescribeAuth(paths)}");
                 stdout.WriteLine($"launchd: {await DescribeLaunchdAsync(ct)}");
@@ -57,27 +59,71 @@ public static class StatusCommand
         }
     }
 
-    /// <summary><c>off</c>, or the keep count and how many photos rotation has deleted so far.</summary>
-    private static string DescribeRotation(AppPaths paths, StateStore store)
+    /// <summary>The config, or why it cannot be read: the lines that need it then say so instead of failing the command.</summary>
+    private static (AppConfig? Config, string? Error) LoadConfig(AppPaths paths)
     {
         try
         {
-            var rotation = ConfigLoader.LoadConfig(paths.ConfigFile).Rotation;
-            return rotation.Enabled
-                ? $"on, keep {rotation.Keep} per frame, {store.TotalPruned()} pruned so far"
-                : "off";
+            return (ConfigLoader.LoadConfig(paths.ConfigFile), null);
         }
         catch (ConfigException ex)
         {
-            return $"unknown ({ex.Message})";
+            return (null, ex.Message);
         }
     }
 
-    /// <summary><c>no</c>, or since when rotation's pruning has been paused by a refused Skylight sign-in and why.</summary>
-    private static string DescribeSkylightSignIn(StateStore store) =>
-        store.SkylightSignInFailure() is { } failure
-            ? $"yes, pruning paused since {Format(failure.FailedAt)} ({failure.Reason})"
-            : "no";
+    /// <summary>
+    /// <c>email</c>, or <c>api</c> with the frames <c>[delivery] frames</c> names (<c>every frame</c> when
+    /// it names none). Straight from config.toml: status never signs in to Skylight, so the names are
+    /// the configured ones, not checked against the account.
+    /// </summary>
+    private static string DescribeDelivery(AppConfig? cfg, string? configError)
+    {
+        if (cfg is null)
+        {
+            return $"unknown ({configError})";
+        }
+
+        if (cfg.Delivery.Method != DeliveryMethod.Api)
+        {
+            return "email";
+        }
+
+        return cfg.Delivery.Frames.Count == 0 ? "api (every frame)" : $"api ({string.Join(", ", cfg.Delivery.Frames)})";
+    }
+
+    /// <summary><c>off</c>, or the keep count and how many photos rotation has deleted so far.</summary>
+    private static string DescribeRotation(AppConfig? cfg, string? configError, StateStore store)
+    {
+        if (cfg is null)
+        {
+            return $"unknown ({configError})";
+        }
+
+        return cfg.Rotation.Enabled
+            ? $"on, keep {cfg.Rotation.Keep} per frame, {store.TotalPruned()} pruned so far"
+            : "off";
+    }
+
+    /// <summary>
+    /// <c>no</c>, or what a refused Skylight sign-in has paused, since when and why: delivery under
+    /// <c>[delivery] method = "api"</c> (and pruning too when rotation is on), otherwise rotation's pruning.
+    /// </summary>
+    private static string DescribeSkylightSignIn(AppConfig? cfg, StateStore store)
+    {
+        if (store.SkylightSignInFailure() is not { } failure)
+        {
+            return "no";
+        }
+
+        var paused = cfg switch
+        {
+            { Delivery.Method: DeliveryMethod.Api, Rotation.Enabled: true } => "delivery and pruning paused",
+            { Delivery.Method: DeliveryMethod.Api } => "delivery paused",
+            _ => "pruning paused",
+        };
+        return $"yes, {paused} since {Format(failure.FailedAt)} ({failure.Reason})";
+    }
 
     internal static string DescribeLastRun(RunRecord? run)
     {
