@@ -260,7 +260,8 @@ column) is still read as a fallback:
   file into the Keychain when they save.
 - **Keychain not available:** if the Keychain cannot be read (for example it is locked and macOS
   will not ask), the tool uses the file alone and `status` says `secrets: secrets.toml (Keychain
-  unavailable: ...)`; with no file, the command fails and says so. On any OS other than macOS, and
+  unavailable: ...)`; with no file, the command fails and says so. `login`, `logout` and
+  `import-secrets` always stop instead, so they never save from the file alone. On any OS other than macOS, and
   whenever `SKYLIGHT_SYNC_HOME` is set (the tests), the Keychain is never used and everything is
   read from and written to the file, as before.
 

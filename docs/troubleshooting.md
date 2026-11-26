@@ -316,8 +316,14 @@ from on its `secrets:` line.
   so this run used the file alone. It works if the file has everything; otherwise commands say a
   secret is missing. Unlock the login keychain (log in, or `security unlock-keychain`) and run
   `status` again.
+  A `security` call that gets no answer within 30 seconds (an unlock dialog nobody answered)
+  counts as unreadable too.
 - **`Could not read secrets from the macOS Keychain: ...`** The same, but there is no
   `secrets.toml` to fall back on, so the command stops. A scheduled run records it as a failed run.
+- **`Could not read secrets from the macOS Keychain (...), so saving could lose values only it
+  holds.`** from `login`, `logout` or `import-secrets`: the Keychain could not be read, so the
+  command stopped before contacting Amazon or changing anything. Unlock the login keychain and try
+  again.
 - **`Could not save secrets to the macOS Keychain: ...`** from `login`, `logout` or
   `import-secrets`: a write was refused, usually because the keychain is locked. Nothing was
   deleted from `secrets.toml`. Unlock it and try again.
