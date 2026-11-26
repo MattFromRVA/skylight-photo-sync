@@ -123,7 +123,7 @@ public static class TestEmailCommand
                     throw new ConfigException("config.toml has no [email] and [smtp] sections; test-email needs both.");
                 }
 
-                var mailer = CommandSupport.CreateMailer(cfg.Smtp, CommandSupport.LoadSecretsIfPresent(paths));
+                var mailer = CommandSupport.CreateMailer(cfg.Smtp, await CommandSupport.LoadSecretsAsync(paths, ct));
                 if (sizeProbe)
                 {
                     var accepted = await SendProbesAsync(email, mailer, log, stdout, stderr, ct);

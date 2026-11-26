@@ -437,10 +437,18 @@ public class AppTests
 ## Post-v1 follow-ups (filed as issues, not in the v1 milestone)
 
 - Family Vault / multi-account reading.
-- Store secrets in macOS Keychain instead of a 0600 file.
+- ~~Store secrets in macOS Keychain instead of a 0600 file~~: done in #15, see "Keychain secrets (#15)" below.
 - ~~Optional `SkylightApiSender`~~: now Phase 2 above (#16, #57).
 - Publish the global tool to NuGet (and/or a Homebrew tap).
 - Rotation (PR #42, #43): keep the frame at the newest N photos by deleting the tool's older ones through Skylight's app API. Built; its live check is #44.
+
+### Keychain secrets (#15)
+
+- [x] `login` writes to the Keychain; `logout` removes the Amazon items; `run` and every command that reads secrets read the Keychain first; the 0600 `secrets.toml` stays as the fallback and is all the tests use.
+- **As built:** `Config/IKeychain.cs` (`Task<string?> FindAsync(string service, CancellationToken ct)`, `Task SetAsync(string service, string value, CancellationToken ct)`, `Task DeleteAsync(string service, CancellationToken ct)`, plus `KeychainException`); `Config/SecurityCliKeychain.cs` runs `/usr/bin/security` (`find-generic-password -a skylight-photo-sync -s <service> -g`, parsing the plain or `0x` hex `password:` line; `add-generic-password -U` sent to `security -i` on stdin and read back to confirm, since `-i` exits 0 on failure; `delete-generic-password`, exit 44 = not found); `Config/SecretStore.cs` (`SecretStore(string secretsFile, IKeychain? keychain)` with `LoadAsync`, `SaveAsync`, `ImportFileAsync`, `UsesKeychain`, `KeychainProblem`, `static string ServiceFor(SecretKey key)`). `ConfigLoader.LoadSecrets`/`WriteSecrets` are unchanged and are the file half.
+- `CommandSupport.LoadSecretsIfPresent(AppPaths)` became `Task<Secrets> LoadSecretsAsync(AppPaths, CancellationToken)` (the Keychain is I/O); `CreateSecretStore(AppPaths)` and `CreateKeychain()` are new; test hook `CommandSupport.KeychainFactory` (`Func<IKeychain?>?`). `CreateKeychain()` returns null off macOS and whenever `SKYLIGHT_SYNC_HOME` is set.
+- Precedence: Keychain wins per key. Migration: `login`/`logout` save everything to the Keychain and delete `secrets.toml`; new command `import-secrets` moves the file in with its values winning. `status` gains `secrets: macOS Keychain | secrets.toml | secrets.toml (Keychain unavailable: …)`.
+- Tests: `SecretStoreTests`, `KeychainCommandTests` (both with `FakeKeychain`), `SecurityCliKeychainTests` (parsing on every OS; one `[MacOnlyFact]` round trip against a throwaway keychain file, never the login keychain).
 
 ## Self-review
 

@@ -50,7 +50,7 @@ public static class TestUploadCommand
             try
             {
                 var cfg = ConfigLoader.LoadConfig(paths.ConfigFile);
-                var secrets = CommandSupport.LoadSecretsIfPresent(paths);
+                var secrets = await CommandSupport.LoadSecretsAsync(paths, ct);
                 if (!CommandSupport.HasSkylightLogin(secrets))
                 {
                     throw new ConfigException("secrets.toml has no [skylight] email and password; test-upload needs both.");

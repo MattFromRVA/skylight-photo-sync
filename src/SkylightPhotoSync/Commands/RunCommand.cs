@@ -171,7 +171,7 @@ public static class RunCommand
         try
         {
             loaded = ConfigLoader.LoadConfig(paths.ConfigFile);
-            secrets = CommandSupport.LoadSecretsIfPresent(paths);
+            secrets = await CommandSupport.LoadSecretsAsync(paths, ct);
         }
         catch (ConfigException ex)
         {

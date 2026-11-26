@@ -64,7 +64,7 @@ skylight-sync --help
 mkdir -p ~/.config/skylight-photo-sync
 # 1. Write config.toml (album, Skylight address, SMTP server); see docs/setup.md for a full example.
 skylight-sync login             # 2. sign in to Amazon once in your browser (docs/cookies.md)
-# 3. Add the SMTP password to secrets.toml
+# 3. Add the SMTP password to secrets.toml, then: skylight-sync import-secrets
 skylight-sync test-email        # 4. one test image; approve the sender in Skylight when asked
 skylight-sync run --dry-run     # 5. lists what would be sent, sends nothing
 skylight-sync run --limit 1     # 6. sends one photo
@@ -117,8 +117,9 @@ Skylight's app API instead) exists but is **not usable yet**: the upload itself 
 [setup step 14](docs/setup.md#14-not-usable-yet-add-photos-through-skylights-app-api) describes
 the API path as it will work.
 
-Secrets (the Amazon device login's refresh token, SMTP password) live in a separate
-`secrets.toml` with `0600` permissions and are never committed. The full list of keys and defaults is in
+Secrets (the Amazon device login's refresh token, SMTP password, Skylight sign-in) live in the
+macOS Keychain, with a `0600` `secrets.toml` as the fallback, and are never committed
+([where secrets are kept](docs/setup.md#where-secrets-are-kept)). The full list of keys and defaults is in
 [docs/setup.md](docs/setup.md#3-write-configtoml).
 
 ## Requirements

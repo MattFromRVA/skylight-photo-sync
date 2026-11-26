@@ -9,7 +9,7 @@ tail -n 100 ~/Library/Logs/skylight-photo-sync/sync.log
 
 `status` shows the last run's outcome and counts, how much has ever been sent, how photos are
 delivered (`delivery: email` or `delivery: api (…)`, read from `config.toml` without contacting
-Skylight), whether a login is needed, and when launchd will run next. The log has each run's parameters, summary and error.
+Skylight), where secrets are kept (`secrets: macOS Keychain` or `secrets.toml`), whether a login is needed, and when launchd will run next. The log has each run's parameters, summary and error.
 Per-item reasons for skipped files are in the state database:
 
 ```bash
@@ -41,7 +41,8 @@ a macOS notification.
 Three messages share this exit code.
 
 **`run failed: not logged in to Amazon Photos; run 'skylight-sync login' first.`** You have not
-run `login` yet, you ran `logout`, or `secrets.toml` lost its `[amazon]` table. Follow
+run `login` yet, you ran `logout`, or the Amazon items are gone from the Keychain (and from
+`secrets.toml`; see [Keychain](#keychain)). Follow
 [cookies.md](cookies.md).
 
 **`run failed: needs_login`** A previous run was rejected by Amazon (or you ran `logout`) and the
@@ -89,10 +90,12 @@ no secrets) and use `login --cookies` meanwhile.
 
 **`login failed: the new device login could not be completed (...)`** Registration worked
 but a later step failed, usually because Amazon Photos rejected the fresh session (or Amazon did
-not answer in time, or `secrets.toml` could not be written). The tool removed the device again and
-wrote nothing. Try once more; then fall back to `login --cookies`. If the message instead says
-`secrets.toml could not be put back as it was and may be damaged`, open `secrets.toml`, re-add
-the `[smtp] password` if it is missing, and run `login` again.
+not answer in time, or the secrets could not be saved to the Keychain or `secrets.toml`). The tool
+removed the device again and saved nothing. Try once more; then fall back to `login --cookies`. If
+the message instead says `the saved secrets could not be put back as they were and may be damaged`,
+check `skylight-sync status` and the `skylight-photo-sync.*` items in Keychain Access, re-add the
+SMTP password if it is missing ([setup step 5](setup.md#5-add-the-smtp-password)), and run `login`
+again.
 
 **`warning: the previous device login could not be removed from your Amazon account`** A new
 `login` (device or `--cookies`) replaced a saved device login and tried to remove the old device,
@@ -103,8 +106,8 @@ but Amazon could not be reached. The new login is saved and works; remove the ol
 already rotated between copying and pasting, or a cookie was truncated. Reload the Amazon Photos
 page in the browser, copy again, paste again. Better: use the device login.
 
-**`logout` says the device could not be removed.** The Amazon keys were removed from
-`secrets.toml` anyway and `needs_login` is set. Remove "Skylight Photo Sync" by hand under
+**`logout` says the device could not be removed.** The Amazon secrets were removed from the
+Keychain and `secrets.toml` anyway and `needs_login` is set. Remove "Skylight Photo Sync" by hand under
 Account > Manage Your Content and Devices > Devices on amazon.com.
 
 ## HTTP 429 (rate limited)
@@ -134,8 +137,8 @@ with `run failed: skylight_sign_in_failed: …`, `status` showing
 
 Skylight refused the sign-in the prune step uses. The reason is in the alert and in `status`:
 
-- **"did not accept the sign-in"**: wrong `[skylight] email` or `password` in `secrets.toml`, or
-  the account is locked.
+- **"did not accept the sign-in"**: wrong `[skylight] email` or `password` saved (Keychain or
+  `secrets.toml`), or the account is locked.
 - **"asked for a CAPTCHA"**: Skylight wants a human; the tool cannot answer it.
 - **"rate-limiting sign-in attempts (HTTP 429)"**: too many attempts; wait before trying again.
 - **"Could not find the Skylight sign-in form"** or a redirect message: Skylight changed its
@@ -149,7 +152,9 @@ To recover:
 
 1. Sign in once in the Skylight app or at <https://app.ourskylight.com> with the same email and
    password. This confirms them and clears a CAPTCHA or lockout.
-2. Correct `[skylight]` in `~/.config/skylight-photo-sync/secrets.toml` if it was wrong.
+2. If it was wrong, put the right `[skylight]` email and password in
+   `~/.config/skylight-photo-sync/secrets.toml` and run `skylight-sync import-secrets`. Editing the
+   file alone is not enough when the Keychain already has a value: the Keychain wins.
 3. Run `skylight-sync prune --dry-run`. Run by hand, `prune` always tries the sign-in. When it
    works it prints `Skylight sign-in works again` and scheduled runs prune again; when it does
    not, it says why and the pause stays. Each manual run is one real sign-in attempt, so do not
@@ -263,7 +268,8 @@ Gmail does not accept your Google account password over SMTP. You need an **app 
 1. Turn on 2-Step Verification for the Google account.
 2. Go to <https://myaccount.google.com/apppasswords>, create one named e.g. "Skylight sync".
 3. Put the 16-character password (spaces optional) in `secrets.toml` under
-   `[smtp] password`, and make sure `[smtp] username` and `[email] from` are the full Gmail
+   `[smtp] password` and run `skylight-sync import-secrets` (the Keychain wins over the file, so a
+   new password left only in the file is ignored), and make sure `[smtp] username` and `[email] from` are the full Gmail
    address.
 4. `skylight-sync test-email`.
 
@@ -295,6 +301,31 @@ predates the fix: `git pull` and reinstall with the from-clone upgrade steps in
 - `secrets.toml is accessible by other users; it must be mode 0600.` Run
   `chmod 600 ~/.config/skylight-photo-sync/secrets.toml`. `run`, `test-email`, `login`, `logout`
   and `record-fixtures` refuse a loosely permissioned secrets file.
+
+## Keychain
+
+Secrets live in the login keychain as `skylight-photo-sync.*` items, with `secrets.toml` as a
+fallback ([setup](setup.md#where-secrets-are-kept)). `skylight-sync status` prints where they came
+from on its `secrets:` line.
+
+- **A changed password has no effect.** The Keychain wins over `secrets.toml`. Run
+  `skylight-sync import-secrets` after editing the file; it replaces the Keychain values with the
+  file's and deletes the file.
+- **`secrets: secrets.toml (Keychain unavailable: ...)`** The Keychain could not be read (usually
+  locked, with no way to ask you, such as a scheduled run before you have logged in to the Mac),
+  so this run used the file alone. It works if the file has everything; otherwise commands say a
+  secret is missing. Unlock the login keychain (log in, or `security unlock-keychain`) and run
+  `status` again.
+- **`Could not read secrets from the macOS Keychain: ...`** The same, but there is no
+  `secrets.toml` to fall back on, so the command stops. A scheduled run records it as a failed run.
+- **`Could not save secrets to the macOS Keychain: ...`** from `login`, `logout` or
+  `import-secrets`: a write was refused, usually because the keychain is locked. Nothing was
+  deleted from `secrets.toml`. Unlock it and try again.
+- **macOS asks whether `security` may use a `skylight-photo-sync` item.** Items the tool created
+  are readable by `/usr/bin/security` without asking; one you created or edited in Keychain Access
+  may not be. Choose "Always Allow", or delete the item and recreate it with `import-secrets`.
+- **Starting over:** delete the items in Keychain Access (search `skylight-photo-sync`), or for
+  one item `security delete-generic-password -a skylight-photo-sync -s skylight-photo-sync.smtp.password`.
 
 ## Lock held (exit code 4)
 
