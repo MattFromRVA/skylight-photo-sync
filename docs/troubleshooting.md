@@ -7,8 +7,9 @@ skylight-sync status
 tail -n 100 ~/Library/Logs/skylight-photo-sync/sync.log
 ```
 
-`status` shows the last run's outcome and counts, how much has ever been sent, whether a login
-is needed, and when launchd will run next. The log has each run's parameters, summary and error.
+`status` shows the last run's outcome and counts, how much has ever been sent, how photos are
+delivered (`delivery: email` or `delivery: api (…)`, read from `config.toml` without contacting
+Skylight), whether a login is needed, and when launchd will run next. The log has each run's parameters, summary and error.
 Per-item reasons for skipped files are in the state database:
 
 ```bash
@@ -27,6 +28,9 @@ foreground, with the log lines echoed to stderr.
 | 1 | Error: config problem, SMTP failure, Amazon returned an error, unknown `--source` | Read the `run failed: ...` line |
 | 3 | `needs_login`: not logged in, the device was removed from the Amazon account, or the cookies expired | `skylight-sync login` ([below](#needs_login-exit-code-3)) |
 | 4 | Lock held: another run is still going | Wait, or see [below](#lock-held-exit-code-4) |
+
+`prune`, `test-email` and `test-upload` use the same codes: 1 with a `<command> failed: …` line,
+and 4 from `prune` and `test-upload` when a run holds the lock.
 
 Under launchd nobody sees the exit code, so the same facts arrive as `status` output, log lines,
 and (for 3, for a refused Skylight sign-in and for three consecutive failures) an alert email and
@@ -151,6 +155,13 @@ To recover:
    not, it says why and the pause stays. Each manual run is one real sign-in attempt, so do not
    repeat it blindly.
 
+Under `[delivery] method = "api"` the same refusal pauses sending too; `status` then shows
+`skylight_needs_login: yes, delivery paused since …` (`delivery and pruning paused` with rotation
+on). The steps are the same, and in step 3 `skylight-sync test-upload` works as well: it signs in
+the same way and then puts one test image on each frame. Use `prune --dry-run` if you do not want
+a test image. Either prints `Skylight sign-in works again; scheduled runs will send photos from
+now on.`
+
 Changing `[skylight] email` or `password` also lifts the pause: the next scheduled run tries the
 new credentials once, and alerts again if they are refused too. `state.db` remembers which
 credentials failed as a salted hash, never the password itself.
@@ -167,7 +178,8 @@ every run fails with this message and nothing is sent or marked sent. Set
 
 Under `method = "api"` a refused Skylight sign-in pauses **sending**, not only pruning: one run
 ends with `skylight_sign_in_failed: …`, later runs end with `skylight_sign_in_needed` without
-contacting Skylight, and the recovery steps above (`skylight-sync prune --dry-run`) lift the pause.
+contacting Skylight, and the recovery steps above (`skylight-sync test-upload` or
+`skylight-sync prune --dry-run`) lift the pause.
 
 Under `method = "api"` a network error or timeout reaching Skylight ends the run with
 `upload_failed: Could not reach Skylight: …`; nothing is paused and the next run tries again.
@@ -178,6 +190,40 @@ photo of the tool's that you delete in the Skylight app yourself is simply skipp
 not forget these ids, so the old copies are still pruned once the photos are sent again.
 If a frame gets new photos but never resent ones, `[rotation] frame_name` names a different
 frame: under `"api"` only frames rotation prunes are sent photos again.
+
+## `test-upload` problems
+
+`skylight-sync test-upload` uploads one test image to each frame through Skylight's app API
+([setup step 14](setup.md#14-not-usable-yet-add-photos-through-skylights-app-api)). It always
+exits 1 with a single `test-upload failed: …` line when it cannot finish.
+
+- **`Uploading photos through the Skylight API is not built yet (issue #16)`**: expected today.
+  The sign-in and the frame names were fine (it got past both), but the upload call does not exist
+  yet, so nothing was put on any frame. There is nothing to fix on your side; keep
+  `[delivery] method = "email"`. If scheduled runs were paused by a refused sign-in, this run
+  still lifted the pause, and says so first.
+- **`secrets.toml has no [skylight] email and password; test-upload needs both.`** Add the
+  `[skylight]` table (setup step 13).
+- **A sign-in refusal** (`did not accept the sign-in`, `asked for a CAPTCHA`, HTTP 429), followed
+  by a line starting `Delivery is paused` or `Pruning is paused`: see
+  [Skylight sign-in failed](#skylight-sign-in-failed-pruning-paused). The refusal is recorded, so
+  scheduled runs stop trying that password.
+- **`[delivery] frames names "Porch", but the Skylight account has no frame called that. Its
+  frames: …`**: fix the name in `config.toml`; nothing was uploaded.
+- **`The Skylight account has no frames to upload to.`** The account you signed in with has no
+  frame; check `[skylight] email`.
+- **`Skylight returned no photo id for the test image on "Hallway". …`**: Skylight accepted the
+  upload but the tool could not learn the photo's id for that frame, so rotation will never
+  remove it. If the image shows on that frame, delete it in the Skylight app. Frames listed as
+  `Uploaded test image to frame …` before the error are recorded normally.
+- **`Could not reach Skylight: …`**: network error or timeout; nothing is paused, try again.
+- **`Another sync run holds the lock file …`** (exit code 4): a run is going; wait for it
+  ([below](#lock-held-exit-code-4)).
+
+The last line of a successful `test-upload` says, per frame, whether rotation removes the test
+image or it stays until you delete it in the Skylight app; see
+[setup step 14](setup.md#14-not-usable-yet-add-photos-through-skylights-app-api) for how rotation
+treats it.
 
 ## Photos not appearing on the frame
 
@@ -254,7 +300,7 @@ predates the fix: `git pull` and reinstall with the from-clone upgrade steps in
 
 `Another sync run holds the lock file /Users/you/Library/Application Support/skylight-photo-sync/run.lock.`
 
-Two runs tried to overlap (a manual `run` while the hourly one is going, or an hourly run that is
+Two runs tried to overlap (a manual `run`, `prune` or `test-upload` while the hourly one is going, or an hourly run that is
 still downloading a large backlog when the next interval fires). The second one exits
 immediately with code 4 without sending anything, which is the intended behaviour. Wait for the
 running one to finish; `status` shows `in progress` for the last run while it is.

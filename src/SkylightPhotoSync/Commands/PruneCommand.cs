@@ -76,17 +76,13 @@ public static class PruneCommand
                 {
                     gate.RecordFailure(ex.Message);
                     stderr.WriteLine($"prune failed: {ex.Message}");
-                    stderr.WriteLine(cfg.Delivery.Method == DeliveryMethod.Api
-                        ? CommandSupport.SkylightDeliveryPausedHint
-                        : CommandSupport.SkylightPausedHint);
+                    stderr.WriteLine(CommandSupport.SkylightPausedHintFor(cfg));
                     return RunCommand.ExitError;
                 }
 
                 if (gate.RecordSuccess())
                 {
-                    stdout.WriteLine(cfg.Delivery.Method == DeliveryMethod.Api
-                        ? "Skylight sign-in works again; scheduled runs will send photos from now on."
-                        : "Skylight sign-in works again; scheduled runs will prune from now on.");
+                    stdout.WriteLine(CommandSupport.SkylightSignInRestoredMessage(cfg));
                 }
 
                 foreach (var frame in result.Frames)

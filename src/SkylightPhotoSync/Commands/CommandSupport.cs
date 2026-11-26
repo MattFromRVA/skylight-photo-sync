@@ -21,6 +21,12 @@ internal static class CommandSupport
     /// <summary>Test hook: the handler every <see cref="SkylightClient"/> a command builds uses instead of the network.</summary>
     internal static Func<HttpMessageHandler>? SkylightHandlerFactory { get; set; }
 
+    /// <summary>
+    /// Test hook: the Skylight account <c>test-upload</c> talks to instead of a <see cref="SkylightClient"/>,
+    /// whose upload is not built yet (issue #16).
+    /// </summary>
+    internal static Func<ISkylightClient>? SkylightClientFactory { get; set; }
+
     /// <summary>Test hook: replaces the pause between "have the new photos arrived?" checks.</summary>
     internal static Func<TimeSpan, CancellationToken, Task>? RotationDelay { get; set; }
 
@@ -43,6 +49,10 @@ internal static class CommandSupport
     public static SkylightClient CreateSkylightClient(Secrets secrets, AppPaths paths) =>
         new(secrets.SkylightEmail!, secrets.SkylightPassword!, paths.SkylightTokenFile, SkylightHandlerFactory?.Invoke());
 
+    /// <summary>The account <c>test-upload</c> uploads to: <see cref="CreateSkylightClient"/> unless a test replaced it.</summary>
+    public static ISkylightClient CreateSkylightApi(Secrets secrets, AppPaths paths) =>
+        SkylightClientFactory?.Invoke() ?? CreateSkylightClient(secrets, paths);
+
     /// <summary>The gate that remembers a refused Skylight sign-in for the saved credentials.</summary>
     public static SkylightSignInGate CreateSkylightSignInGate(Secrets secrets, State.StateStore store) =>
         new(store, secrets.SkylightEmail!, secrets.SkylightPassword!, () => DateTimeOffset.UtcNow);
@@ -53,7 +63,18 @@ internal static class CommandSupport
 
     public const string SkylightDeliveryPausedHint =
         "Delivery is paused until a sign-in works: check [skylight] email and password in secrets.toml, "
-        + "sign in once in the Skylight app, then run 'skylight-sync prune --dry-run'.";
+        + "sign in once in the Skylight app, then run 'skylight-sync test-upload' "
+        + "(or 'skylight-sync prune --dry-run', which signs in without adding a test photo).";
+
+    /// <summary>The hint that follows a refused sign-in: what is paused under this config and how to lift it.</summary>
+    public static string SkylightPausedHintFor(AppConfig cfg) =>
+        cfg.Delivery.Method == DeliveryMethod.Api ? SkylightDeliveryPausedHint : SkylightPausedHint;
+
+    /// <summary>What a command prints when its sign-in lifted the pause a refused one had left.</summary>
+    public static string SkylightSignInRestoredMessage(AppConfig cfg) =>
+        cfg.Delivery.Method == DeliveryMethod.Api
+            ? "Skylight sign-in works again; scheduled runs will send photos from now on."
+            : "Skylight sign-in works again; scheduled runs will prune from now on.";
 
     /// <summary>
     /// The secrets file when it exists, otherwise all-empty secrets: a dry run against a local folder

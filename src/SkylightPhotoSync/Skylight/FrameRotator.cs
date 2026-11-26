@@ -46,7 +46,9 @@ public sealed record PruneResult(IReadOnlyList<FramePruneResult> Frames)
 /// for that frame at upload (<see cref="StateStore.RecordedUploads"/>), and, when
 /// <paramref name="senderEmail"/> is given, one whose <c>from_email</c> is that address
 /// (<c>[email] from</c>). <c>keep</c> counts both kinds together. An uploaded photo's age is the time
-/// its upload was recorded, an emailed photo's the time Skylight received it.
+/// its upload was recorded, an emailed photo's the time Skylight received it. A <c>test-upload</c>
+/// image counts as older than everything else, so it is the first photo to go once a frame is over
+/// <c>keep</c> and never pushes a real photo off the frame.
 /// </summary>
 public sealed class FrameRotator(
     RotationConfig cfg,
@@ -143,7 +145,10 @@ public sealed class FrameRotator(
         var recipient = SkylightApiDelivery.RecipientFor(frame.Id);
         var recorded = store.RecordedUploads(recipient)
             .Select((upload, order) => (upload, order))
-            .ToDictionary(pair => pair.upload.MessageId, pair => (pair.upload.UploadedAt, Order: pair.order), StringComparer.Ordinal);
+            .ToDictionary(
+                pair => pair.upload.MessageId,
+                pair => (At: pair.upload.IsTest ? DateTimeOffset.MinValue : pair.upload.UploadedAt, Order: pair.order),
+                StringComparer.Ordinal);
 
         var ours = new List<(SkylightMessage Message, bool Uploaded, DateTimeOffset At, int Order)>();
         var others = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -151,7 +156,7 @@ public sealed class FrameRotator(
         {
             if (recorded.TryGetValue(message.Id, out var upload))
             {
-                ours.Add((message, true, upload.UploadedAt, upload.Order));
+                ours.Add((message, true, upload.At, upload.Order));
             }
             else if (IsEmailed(message))
             {

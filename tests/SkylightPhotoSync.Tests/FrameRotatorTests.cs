@@ -209,6 +209,46 @@ public sealed class FrameRotatorTests : IDisposable
     }
 
     [Fact]
+    public async Task A_test_upload_is_the_first_photo_pruned_however_recently_it_was_uploaded()
+    {
+        Upload("u1", _t0.AddHours(-3));
+        Upload("u2", _t0.AddHours(-2));
+        Upload("u3", _t0.AddHours(-1));
+        TestUpload("t1", _t0);
+
+        var result = await Rotator(keep: 3, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0.AddHours(1), CancellationToken.None);
+
+        // Without this the newest photo, the test image, would stay and the real u1 would go.
+        Assert.Equal(["t1"], _client.Deleted.Select(d => d.MessageId));
+        Assert.Equal(["u1", "u2", "u3"], _store.RecordedUploads(_recipient).Select(u => u.MessageId));
+        Assert.Equal(new PruneGroup(OnFrame: 4, Deleted: 1, WouldDelete: 0), Assert.Single(result.Frames).Uploaded);
+    }
+
+    [Fact]
+    public async Task A_test_upload_stays_while_the_frame_is_not_over_keep()
+    {
+        Upload("u1", _t0.AddHours(-3));
+        Upload("u2", _t0.AddHours(-2));
+        TestUpload("t1", _t0);
+
+        await Rotator(keep: 3, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0.AddHours(1), CancellationToken.None);
+
+        Assert.Empty(_client.Deleted);
+        Assert.Equal(["u1", "u2", "t1"], _store.RecordedUploads(_recipient).Select(u => u.MessageId));
+    }
+
+    [Fact]
+    public async Task A_test_upload_goes_before_emailed_photos_too()
+    {
+        _client.Add(_us, 3, _t0.AddHours(-5), idPrefix: "mail");
+        TestUpload("t1", _t0);
+
+        await Rotator(keep: 3).PruneAsync(dryRun: false, expectedNew: 0, _t0.AddHours(1), CancellationToken.None);
+
+        Assert.Equal(["t1"], _client.Deleted.Select(d => d.MessageId));
+    }
+
+    [Fact]
     public async Task A_photo_with_no_recorded_id_is_never_deleted()
     {
         // Same account, same look as an upload, but nothing recorded it: someone added it in the app.
@@ -361,6 +401,13 @@ public sealed class FrameRotatorTests : IDisposable
         }
 
         list.Add(new SkylightMessage(messageId, listedAt ?? uploadedAt, null, Destroyed: false));
+    }
+
+    /// <summary>What <c>test-upload</c> leaves behind: a recorded photo on the frame that is no sent item.</summary>
+    private void TestUpload(string messageId, DateTimeOffset uploadedAt, string frameId = "100")
+    {
+        _store.RecordUpload(SkylightApiDelivery.RecipientFor(frameId), messageId, RecordedUpload.TestItemPrefix + messageId, uploadedAt);
+        _client.Messages[frameId].Add(new SkylightMessage(messageId, uploadedAt, null, Destroyed: false));
     }
 
     private FrameRotator Rotator(int keep, int maxDeletes = 100, string? frameName = null, int waitMinutes = 10, string? sender = _us) =>

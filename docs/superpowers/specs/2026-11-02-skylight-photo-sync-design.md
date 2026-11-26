@@ -265,6 +265,7 @@ skylight-sync logout           # remove the device from the Amazon account; sets
 skylight-sync run [--dry-run] [--mode album|all] [--lookback-days N] [--limit N]
 skylight-sync status
 skylight-sync test-email [--size-probe]   # one small test image; probe sends growing sizes
+skylight-sync test-upload      # one small test image to each [delivery] frame through the app API (§6.11, issue #59)
 skylight-sync install-launchd  # writes and loads the LaunchAgent plist
 skylight-sync uninstall-launchd
 skylight-sync reset --yes

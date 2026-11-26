@@ -84,6 +84,22 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void Recording_an_upload_on_its_own_makes_it_prunable_without_marking_anything_sent()
+    {
+        var testItem = RecordedUpload.TestItemPrefix + "abc";
+        _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
+
+        _store.RecordUpload("skylight:frame:100", "9002", testItem, _sentAt.AddHours(1));
+
+        var uploads = _store.RecordedUploads("skylight:frame:100");
+        Assert.Equal([new RecordedUpload("9001", "a", _sentAt), new RecordedUpload("9002", testItem, _sentAt.AddHours(1))], uploads);
+        Assert.Equal([false, true], uploads.Select(upload => upload.IsTest));
+        Assert.False(_store.IsSent(testItem, "skylight:frame:100"));
+        Assert.Equal(1, _store.TotalSent());
+        Assert.Equal(["a"], _store.LastSentTimes().Keys);
+    }
+
+    [Fact]
     public void Forgetting_an_upload_removes_only_that_photo_on_that_frame()
     {
         _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
