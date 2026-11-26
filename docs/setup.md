@@ -110,8 +110,18 @@ max_items_per_run = 25         # default 25
 max_long_edge = 2048           # default 2048
 jpeg_quality = 88              # default 88
 
+[delivery]
+# Optional. How photos reach the frame. "email" (the default) sends them to the addresses in
+# [email]. "api" will upload them through Skylight's app API instead, but that upload is NOT
+# BUILT YET (issue #16): with method = "api" every run fails with "upload_failed: Uploading
+# photos through the Skylight API is not built yet" and sends nothing. Keep "email" for now.
+method = "email"               # default "email"
+frames = []                    # "api" only: frame names as the Skylight app shows them;
+                               # default [] = every frame on the account
+
 [email]
-# Required. One or more Skylight household addresses; every photo goes to each of them.
+# Required with [delivery] method = "email" (the default).
+# One or more Skylight household addresses; every photo goes to each of them.
 to = ["yourhousehold@ourskylight.com"]
 
 # Required. The From address; this is the sender Skylight asks you to approve (step 6).
@@ -125,7 +135,8 @@ max_attachments = 12           # default 12
 max_total_bytes = 17000000     # default 17_000_000
 
 [smtp]
-# Required: host and username. The password goes in secrets.toml (step 5).
+# Required with [delivery] method = "email": host and username. The password goes in
+# secrets.toml (step 5).
 host = "smtp.gmail.com"
 port = 587                     # default 587; STARTTLS is required except for localhost
 username = "you@gmail.com"
@@ -143,6 +154,7 @@ interval_minutes = 60          # default 60
 # Optional, off by default: keep only the newest photos this tool sent on the frame, deleting
 # older ones after each run, and resend old photos once the album has nothing new. Needs
 # [skylight] email and password in secrets.toml. See step 13 before turning it on.
+# Under [delivery] method = "api" old photos are not resent yet (issue #58).
 enabled = false                # default false
 keep = 30                      # default 30; photos from this tool kept on each frame
 max_deletes_per_run = 100      # default 100; safety brake per frame per run

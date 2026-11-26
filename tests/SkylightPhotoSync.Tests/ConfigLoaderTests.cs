@@ -19,6 +19,12 @@ public class ConfigLoaderTests
         email = "me@example.com"
         """;
 
+    private const string _albumSource = """
+        [source]
+        mode = "album"
+        album_name = "Skylight"
+        """;
+
     [Fact]
     public void Album_mode_defaults_lookback_to_zero()
     {
@@ -125,13 +131,13 @@ public class ConfigLoaderTests
         Assert.Equal(5, config.Limits.MaxItemsPerRun);
         Assert.Equal(1024, config.Image.MaxLongEdge);
         Assert.Equal(70, config.Image.JpegQuality);
-        Assert.Equal(["a@ourskylight.com", "b@ourskylight.com"], config.Email.To);
-        Assert.Equal("me@example.com", config.Email.From);
-        Assert.Equal(4, config.Email.MaxAttachments);
-        Assert.Equal(5_000_000L, config.Email.MaxTotalBytes);
-        Assert.Equal("smtp.example.com", config.Smtp.Host);
-        Assert.Equal(465, config.Smtp.Port);
-        Assert.Equal("me@example.com", config.Smtp.Username);
+        Assert.Equal(["a@ourskylight.com", "b@ourskylight.com"], config.Email!.To);
+        Assert.Equal("me@example.com", config.Email!.From);
+        Assert.Equal(4, config.Email!.MaxAttachments);
+        Assert.Equal(5_000_000L, config.Email!.MaxTotalBytes);
+        Assert.Equal("smtp.example.com", config.Smtp!.Host);
+        Assert.Equal(465, config.Smtp!.Port);
+        Assert.Equal("me@example.com", config.Smtp!.Username);
         Assert.Equal("alerts@example.com", config.Alerts.Email);
         Assert.Equal(15, config.Schedule.IntervalMinutes);
     }
@@ -151,9 +157,9 @@ public class ConfigLoaderTests
         Assert.Equal(25, config.Limits.MaxItemsPerRun);
         Assert.Equal(2048, config.Image.MaxLongEdge);
         Assert.Equal(88, config.Image.JpegQuality);
-        Assert.Equal(12, config.Email.MaxAttachments);
-        Assert.Equal(17_000_000L, config.Email.MaxTotalBytes);
-        Assert.Equal(587, config.Smtp.Port);
+        Assert.Equal(12, config.Email!.MaxAttachments);
+        Assert.Equal(17_000_000L, config.Email!.MaxTotalBytes);
+        Assert.Equal(587, config.Smtp!.Port);
         Assert.Equal(60, config.Schedule.IntervalMinutes);
     }
 
@@ -460,6 +466,142 @@ public class ConfigLoaderTests
             """);
 
         Assert.Equal(message, Assert.Throws<ConfigException>(() => ConfigLoader.LoadConfig(path)).Message);
+    }
+
+    [Fact]
+    public void Delivery_defaults_to_email_and_every_frame()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource);
+
+        var config = ConfigLoader.LoadConfig(path);
+
+        Assert.Equal(DeliveryMethod.Email, config.Delivery.Method);
+        Assert.Empty(config.Delivery.Frames);
+    }
+
+    [Theory]
+    [InlineData("email", DeliveryMethod.Email)]
+    [InlineData("api", DeliveryMethod.Api)]
+    [InlineData("API", DeliveryMethod.Api)]
+    public void Delivery_method_reads_both_values(string text, DeliveryMethod expected)
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + $"""
+
+            [delivery]
+            method = "{text}"
+            """);
+
+        Assert.Equal(expected, ConfigLoader.LoadConfig(path).Delivery.Method);
+    }
+
+    [Fact]
+    public void Delivery_method_rejects_anything_else()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + """
+
+            [delivery]
+            method = "carrier-pigeon"
+            """);
+
+        var ex = Assert.Throws<ConfigException>(() => ConfigLoader.LoadConfig(path));
+
+        Assert.Equal("[delivery] method must be \"email\" or \"api\", got \"carrier-pigeon\".", ex.Message);
+    }
+
+    [Fact]
+    public void Delivery_frames_are_read_trimmed()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + """
+
+            [delivery]
+            method = "api"
+            frames = [" Kitchen ", "Grandma's frame"]
+            """);
+
+        Assert.Equal(["Kitchen", "Grandma's frame"], ConfigLoader.LoadConfig(path).Delivery.Frames);
+    }
+
+    [Theory]
+    [InlineData("frames = \"Kitchen\"", "[delivery] frames must be an array of strings.")]
+    [InlineData("frames = [\"Kitchen\", \"\"]", "[delivery] frames must be an array of non-empty strings.")]
+    public void Delivery_frames_reject_bad_values(string line, string message)
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + $"""
+
+            [delivery]
+            {line}
+            """);
+
+        Assert.Equal(message, Assert.Throws<ConfigException>(() => ConfigLoader.LoadConfig(path)).Message);
+    }
+
+    [Fact]
+    public void Api_delivery_loads_without_email_and_smtp()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + """
+
+            [delivery]
+            method = "api"
+            """, appendRest: false);
+
+        var config = ConfigLoader.LoadConfig(path);
+
+        Assert.Equal(DeliveryMethod.Api, config.Delivery.Method);
+        Assert.Null(config.Email);
+        Assert.Null(config.Smtp);
+        Assert.Null(config.Alerts.Email);
+    }
+
+    [Fact]
+    public void Api_delivery_still_reads_email_and_smtp_when_they_are_there()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + """
+
+            [delivery]
+            method = "api"
+            """);
+
+        var config = ConfigLoader.LoadConfig(path);
+
+        Assert.Equal("me@example.com", config.Email!.From);
+        Assert.Equal("smtp.example.com", config.Smtp!.Host);
+        Assert.Equal("me@example.com", config.Alerts.Email);
+    }
+
+    [Fact]
+    public void Api_delivery_still_rejects_a_half_written_smtp_table()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + """
+
+            [delivery]
+            method = "api"
+
+            [smtp]
+            host = "smtp.example.com"
+            """, appendRest: false);
+
+        Assert.Equal("[smtp] username is required.", Assert.Throws<ConfigException>(() => ConfigLoader.LoadConfig(path)).Message);
+    }
+
+    [Fact]
+    public void Email_delivery_still_needs_email_and_smtp()
+    {
+        using var home = new TestHome();
+        var path = WriteConfig(home, _albumSource + """
+
+            [delivery]
+            method = "email"
+            """, appendRest: false);
+
+        Assert.Throws<ConfigException>(() => ConfigLoader.LoadConfig(path));
     }
 
     [Fact]
