@@ -15,8 +15,10 @@ namespace SkylightPhotoSync.Pipeline;
 /// One sync run (spec §6.3, §6.5, §6.7): list candidates, drop what was already sent or permanently
 /// skipped, download and normalize the oldest ones into a temp directory and hand them to
 /// <paramref name="delivery"/>, which emails or uploads them and marks each sent once it was accepted.
-/// With <c>[rotation]</c> enabled under email delivery, a run that runs out of new items tops up with the
-/// items sent longest ago (API delivery does not recycle until rotation can delete what it uploaded), and <paramref name="rotator"/> (when given) then prunes the frame down to the newest photos.
+/// With <c>[rotation]</c> enabled, a run that runs out of new items tops up with the items sent longest
+/// ago, and <paramref name="rotator"/> (when given) then prunes the frame down to the newest photos.
+/// API delivery only tops up when there is a rotator: every resend is a new photo on the frame, and
+/// without pruning they would pile up.
 /// A refused Skylight sign-in is recorded in <paramref name="signInGate"/> and alerted once. Under email
 /// delivery later runs keep sending but leave pruning out until the gate opens again; under
 /// <c>[delivery] method = "api"</c> nothing can be sent without the sign-in, so later runs stop before
@@ -184,7 +186,7 @@ public sealed class SyncPipeline(
         var take = Math.Min(max, queue.Count);
         var picked = queue.Take(take).ToList();
         var recycled = new HashSet<string>(StringComparer.Ordinal);
-        if (cfg.Rotation.Enabled && !ApiDelivery && picked.Count < max)
+        if (cfg.Rotation.Enabled && (!ApiDelivery || rotator is not null) && destinations.Any(d => d.TakesRecycled) && picked.Count < max)
         {
             foreach (var item in Recyclable(candidates, fresh).Take(max - picked.Count))
             {
@@ -279,7 +281,8 @@ public sealed class SyncPipeline(
 
         try
         {
-            var result = await rotator.PruneAsync(dryRun, counts.SentIds.Count, startedAt, ct);
+            // Uploads are waited for by their recorded ids; only emailed photos have to be counted in.
+            var result = await rotator.PruneAsync(dryRun, ApiDelivery ? 0 : counts.SentIds.Count, startedAt, ct);
             counts.Pruned = dryRun ? result.WouldDelete : result.Deleted;
             signInGate?.RecordSuccess();
             return null;
@@ -287,7 +290,8 @@ public sealed class SyncPipeline(
         catch (SkylightSignInException ex)
         {
             signInGate?.RecordFailure(ex.Message);
-            await alerter.AlertAsync(AlertKind.SkylightSignIn, SkylightSignInTitle, AlertTexts.SkylightSignInBody(ex.Message), ct);
+            var body = ApiDelivery ? AlertTexts.SkylightSignInDeliveryBody(ex.Message) : AlertTexts.SkylightSignInBody(ex.Message);
+            await alerter.AlertAsync(AlertKind.SkylightSignIn, SkylightSignInTitle, body, ct);
             return SkylightSignInFailedErrorPrefix + ex.Message;
         }
         catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))

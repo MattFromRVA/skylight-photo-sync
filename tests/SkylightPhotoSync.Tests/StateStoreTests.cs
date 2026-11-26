@@ -68,6 +68,85 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void Every_upload_stays_recorded_after_the_item_is_sent_again_oldest_first()
+    {
+        _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
+        _store.MarkSent([MakeItem("b")], "skylight:frame:100", "batch-2", _sentAt.AddHours(1), messageId: "9002");
+        _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-3", _sentAt.AddHours(2), messageId: "9003");
+        _store.MarkSent([MakeItem("a")], "skylight:frame:200", "batch-3", _sentAt.AddHours(2), messageId: "9004");
+        _store.MarkSent([MakeItem("c")], "frame@example.com", "batch-4", _sentAt.AddHours(3));
+
+        Assert.Equal(
+            [new RecordedUpload("9001", "a", _sentAt), new RecordedUpload("9002", "b", _sentAt.AddHours(1)), new RecordedUpload("9003", "a", _sentAt.AddHours(2))],
+            _store.RecordedUploads("skylight:frame:100"));
+        Assert.Equal("9004", Assert.Single(_store.RecordedUploads("skylight:frame:200")).MessageId);
+        Assert.Empty(_store.RecordedUploads("frame@example.com"));
+    }
+
+    [Fact]
+    public void Forgetting_an_upload_removes_only_that_photo_on_that_frame()
+    {
+        _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
+        _store.MarkSent([MakeItem("b")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9002");
+        _store.MarkSent([MakeItem("a")], "skylight:frame:200", "batch-1", _sentAt, messageId: "9001");
+
+        _store.ForgetUpload("skylight:frame:100", "9001");
+
+        Assert.Equal("9002", Assert.Single(_store.RecordedUploads("skylight:frame:100")).MessageId);
+        Assert.Single(_store.RecordedUploads("skylight:frame:200"));
+        Assert.True(_store.IsSent("a", "skylight:frame:100"));
+    }
+
+    [Fact]
+    public void ResetSent_keeps_recorded_uploads_so_those_photos_can_still_be_pruned()
+    {
+        _store.MarkSent([MakeItem("a")], "skylight:frame:100", "batch-1", _sentAt, messageId: "9001");
+
+        _store.ResetSent();
+
+        Assert.False(_store.IsSent("a", "skylight:frame:100"));
+        Assert.Equal("9001", Assert.Single(_store.RecordedUploads("skylight:frame:100")).MessageId);
+    }
+
+    [Fact]
+    public void Opening_a_database_from_before_recorded_uploads_carries_the_message_ids_over_once()
+    {
+        var oldPath = Path.Combine(_dir.Path, "old-uploads", "state.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(oldPath)!);
+        using (var conn = new SqliteConnection($"Data Source={oldPath};Pooling=False"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                """
+                CREATE TABLE sent_items (
+                    item_id    TEXT NOT NULL,
+                    recipient  TEXT NOT NULL,
+                    md5        TEXT,
+                    batch_id   TEXT NOT NULL,
+                    sent_at    TEXT NOT NULL,
+                    message_id TEXT,
+                    PRIMARY KEY (item_id, recipient)
+                );
+                INSERT INTO sent_items VALUES ('a', 'skylight:frame:100', NULL, 'batch-0', '2026-11-01T00:00:00.0000000Z', '9001');
+                INSERT INTO sent_items VALUES ('e', 'frame@example.com', NULL, 'batch-0', '2026-11-01T00:00:00.0000000Z', NULL);
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        using (var migrated = new StateStore(oldPath))
+        {
+            var upload = Assert.Single(migrated.RecordedUploads("skylight:frame:100"));
+            Assert.Equal(("9001", "a", new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero)), (upload.MessageId, upload.ItemId, upload.UploadedAt));
+            migrated.ForgetUpload("skylight:frame:100", "9001");
+        }
+
+        // A forgotten (deleted) photo must not come back from sent_items on the next open.
+        using var reopened = new StateStore(oldPath);
+        Assert.Empty(reopened.RecordedUploads("skylight:frame:100"));
+    }
+
+    [Fact]
     public void WasSentTo_matches_by_id_or_by_md5()
     {
         _store.MarkSent([MakeItem("a", "m1")], "frame@example.com", "batch-1", _sentAt);

@@ -1,4 +1,6 @@
 using SkylightPhotoSync.Config;
+using SkylightPhotoSync.Delivery;
+using SkylightPhotoSync.Models;
 using SkylightPhotoSync.Skylight;
 using SkylightPhotoSync.State;
 using SkylightPhotoSync.Tests.TestSupport;
@@ -8,6 +10,7 @@ namespace SkylightPhotoSync.Tests;
 public sealed class FrameRotatorTests : IDisposable
 {
     private const string _us = "sync@example.com";
+    private const string _recipient = "skylight:frame:100";
     private static readonly DateTimeOffset _t0 = new(2026, 11, 11, 15, 0, 0, TimeSpan.Zero);
 
     private readonly TempDir _dir = new();
@@ -184,6 +187,158 @@ public sealed class FrameRotatorTests : IDisposable
         Assert.Contains("\"Kitchen\"", ex.Message);
     }
 
+    [Fact]
+    public async Task Uploaded_photos_are_pruned_by_recorded_id_oldest_upload_first()
+    {
+        // Skylight's own timestamps say the opposite order; the recorded upload order decides.
+        for (var i = 1; i <= 5; i++)
+        {
+            Upload($"u{i}", _t0.AddHours(-10 + i), listedAt: _t0.AddDays(-i));
+        }
+
+        var result = await Rotator(keep: 3, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Equal(["u1", "u2"], _client.Deleted.Select(d => d.MessageId));
+        Assert.Equal(["u3", "u4", "u5"], _client.Messages["100"].Select(m => m.Id));
+        var frame = Assert.Single(result.Frames);
+        Assert.Equal(new PruneGroup(OnFrame: 5, Deleted: 2, WouldDelete: 0), frame.Uploaded);
+        Assert.Equal(new PruneGroup(0, 0, 0), frame.Emailed);
+        Assert.Equal((5, 2, 0), (frame.Ours, frame.Deleted, frame.WouldDelete));
+        Assert.Equal(["u3", "u4", "u5"], _store.RecordedUploads(_recipient).Select(u => u.MessageId));
+        Assert.Equal(2, _store.TotalPruned());
+    }
+
+    [Fact]
+    public async Task A_photo_with_no_recorded_id_is_never_deleted()
+    {
+        // Same account, same look as an upload, but nothing recorded it: someone added it in the app.
+        Upload("u1", _t0.AddHours(-3));
+        Upload("u2", _t0.AddHours(-2));
+        _client.Messages["100"].Add(new SkylightMessage("app1", _t0.AddDays(-30), null, Destroyed: false));
+        _client.Add("grandma@example.com", 4, _t0.AddDays(-20), idPrefix: "gma");
+
+        var result = await Rotator(keep: 1, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Equal(["u1"], _client.Deleted.Select(d => d.MessageId));
+        var frame = Assert.Single(result.Frames);
+        Assert.Equal(1, frame.OtherSenders["(no sender)"]);
+        Assert.Equal(4, frame.OtherSenders["grandma@example.com"]);
+    }
+
+    [Fact]
+    public async Task Without_a_sender_address_emailed_photos_are_left_alone()
+    {
+        _client.Add(_us, 5, _t0);
+
+        var result = await Rotator(keep: 1, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Empty(_client.Deleted);
+        Assert.Equal(5, Assert.Single(result.Frames).OtherSenders[_us]);
+    }
+
+    [Fact]
+    public async Task A_recorded_id_recorded_for_another_frame_is_not_deleted_here()
+    {
+        _client.Frames.Add(new SkylightFrame("200", "Living Room"));
+        Upload("u1", _t0.AddHours(-3), frameId: "200");
+        Upload("u2", _t0.AddHours(-2), frameId: "200");
+        _client.Messages["100"].Add(new SkylightMessage("u1", _t0, null, Destroyed: false));
+        _client.Messages["100"].Add(new SkylightMessage("u2", _t0, null, Destroyed: false));
+
+        await Rotator(keep: 1, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Equal([("200", "u1")], _client.Deleted);
+    }
+
+    [Fact]
+    public async Task A_recorded_photo_someone_deleted_by_hand_is_skipped_without_a_delete_call()
+    {
+        for (var i = 1; i <= 4; i++)
+        {
+            Upload($"u{i}", _t0.AddHours(-10 + i));
+        }
+
+        _client.Messages["100"].RemoveAll(m => m.Id == "u1");
+        _client.Messages["100"][0] = _client.Messages["100"][0] with { Destroyed = true };   // u2, deleted in the app
+
+        var result = await Rotator(keep: 1, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Equal(["u3"], _client.Deleted.Select(d => d.MessageId));
+        Assert.Equal(new PruneGroup(OnFrame: 2, Deleted: 1, WouldDelete: 0), Assert.Single(result.Frames).Uploaded);
+    }
+
+    [Fact]
+    public async Task Emailed_photos_still_match_on_from_email_and_keep_counts_both_groups_together()
+    {
+        // Emailed e1..e3 are older than uploaded u1..u3; keep 4 leaves the newest four of the six.
+        _client.Add(_us, 3, _t0.AddDays(-2), idPrefix: "e");
+        _client.Add("grandma@example.com", 2, _t0.AddDays(-9), idPrefix: "gma");
+        for (var i = 1; i <= 3; i++)
+        {
+            Upload($"u{i}", _t0.AddHours(-10 + i));
+        }
+
+        var result = await Rotator(keep: 4).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Equal(["e1", "e2"], _client.Deleted.Select(d => d.MessageId));
+        var frame = Assert.Single(result.Frames);
+        Assert.Equal(new PruneGroup(OnFrame: 3, Deleted: 2, WouldDelete: 0), frame.Emailed);
+        Assert.Equal(new PruneGroup(OnFrame: 3, Deleted: 0, WouldDelete: 0), frame.Uploaded);
+        Assert.Equal(6, frame.Ours);
+        Assert.Equal(2, frame.OtherSenders["grandma@example.com"]);
+    }
+
+    [Fact]
+    public async Task Dry_run_reports_both_groups_and_deletes_nothing()
+    {
+        _client.Add(_us, 3, _t0.AddDays(-2), idPrefix: "e");
+        for (var i = 1; i <= 4; i++)
+        {
+            Upload($"u{i}", _t0.AddHours(-10 + i));
+        }
+
+        var result = await Rotator(keep: 2).PruneAsync(dryRun: true, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Empty(_client.Deleted);
+        var frame = Assert.Single(result.Frames);
+        Assert.Equal(new PruneGroup(OnFrame: 3, Deleted: 0, WouldDelete: 3), frame.Emailed);
+        Assert.Equal(new PruneGroup(OnFrame: 4, Deleted: 0, WouldDelete: 2), frame.Uploaded);
+        Assert.Equal(5, result.WouldDelete);
+        Assert.Equal(4, _store.RecordedUploads(_recipient).Count);
+    }
+
+    [Fact]
+    public async Task Waits_for_this_runs_uploads_to_be_listed_before_pruning()
+    {
+        Upload("u1", _t0.AddHours(-2));
+        Upload("u2", _t0.AddHours(-1));
+        _store.MarkSent([Photo("u3")], _recipient, "b", _t0, "u3");   // uploaded this run, not listed yet
+        _client.BeforeListing = listing =>
+        {
+            if (listing == 3)
+            {
+                _client.Messages["100"].Add(new SkylightMessage("u3", _t0, null, Destroyed: false));
+            }
+        };
+
+        var result = await Rotator(keep: 2, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Equal(2, _delays.Count);
+        Assert.Equal(["u1"], _client.Deleted.Select(d => d.MessageId));
+        Assert.Equal(1, result.Deleted);
+    }
+
+    [Fact]
+    public async Task Does_not_wait_for_uploads_recorded_before_this_run()
+    {
+        Upload("u1", _t0.AddHours(-2));
+        _store.MarkSent([Photo("gone")], _recipient, "b", _t0.AddHours(-1), "gone");   // deleted by hand since
+
+        await Rotator(keep: 2, sender: null).PruneAsync(dryRun: false, expectedNew: 0, _t0, CancellationToken.None);
+
+        Assert.Empty(_delays);
+    }
+
     [Theory]
     [InlineData("a@b.com", "a@b.com")]
     [InlineData("  A@B.com ", "a@b.com")]
@@ -193,10 +348,25 @@ public sealed class FrameRotatorTests : IDisposable
     public void NormalizeEmail(string? input, string? expected) =>
         Assert.Equal(expected, FrameRotator.NormalizeEmail(input));
 
-    private FrameRotator Rotator(int keep, int maxDeletes = 100, string? frameName = null, int waitMinutes = 10) =>
+    private static Item Photo(string name) =>
+        new($"album/{name}.jpg", $"{name}.jpg", ItemKind.Photo, _t0.AddDays(-40), 10, null, "image/jpeg");
+
+    /// <summary>Records an upload of its own photo to the frame and puts it on the frame.</summary>
+    private void Upload(string messageId, DateTimeOffset uploadedAt, DateTimeOffset? listedAt = null, string frameId = "100")
+    {
+        _store.MarkSent([Photo(messageId)], SkylightApiDelivery.RecipientFor(frameId), "batch", uploadedAt, messageId);
+        if (!_client.Messages.TryGetValue(frameId, out var list))
+        {
+            _client.Messages[frameId] = list = [];
+        }
+
+        list.Add(new SkylightMessage(messageId, listedAt ?? uploadedAt, null, Destroyed: false));
+    }
+
+    private FrameRotator Rotator(int keep, int maxDeletes = 100, string? frameName = null, int waitMinutes = 10, string? sender = _us) =>
         new(
             new RotationConfig(Enabled: true, keep, maxDeletes, frameName, waitMinutes),
-            _us,
+            sender,
             _client,
             _store,
             () => _t0,

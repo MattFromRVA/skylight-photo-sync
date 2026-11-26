@@ -6,7 +6,8 @@ using SkylightPhotoSync.Models;
 namespace SkylightPhotoSync.State;
 
 /// <summary>
-/// The SQLite state behind <c>state.db</c>: what was sent to whom, what was skipped, run history,
+/// The SQLite state behind <c>state.db</c>: what was sent to whom, which uploaded photos are on which
+/// frame, what was skipped, run history,
 /// the <c>needs_login</c> flag, a Skylight sign-in failure and the last alert time per kind. Opening the store creates the
 /// schema when needed and switches the file to WAL mode. Timestamps are stored as ISO-8601 UTC text.
 /// </summary>
@@ -75,6 +76,8 @@ public sealed class StateStore : IDisposable
     /// <c>skylight:frame:&lt;id&gt;</c> for an API upload. Sending an item again (rotation's recycling)
     /// keeps one row and moves its <c>sent_at</c>, <c>batch_id</c> and <c>message_id</c> to the latest send.
     /// <paramref name="messageId"/> is the Skylight photo id an API upload returned; email has none.
+    /// Every such id is also kept as a <see cref="RecordedUpload"/>, so the copy an earlier send left
+    /// on the frame stays known after the row moves on to the newer one.
     /// </summary>
     public void MarkSent(IReadOnlyList<Item> items, string recipient, string batchId, DateTimeOffset sentAt, string? messageId = null)
     {
@@ -104,8 +107,59 @@ public sealed class StateStore : IDisposable
             command.ExecuteNonQuery();
         }
 
+        if (messageId is not null)
+        {
+            using var upload = _connection.CreateCommand();
+            upload.Transaction = transaction;
+            upload.CommandText =
+                """
+                INSERT INTO uploaded_messages (recipient, message_id, item_id, uploaded_at)
+                VALUES ($recipient, $messageId, $itemId, $uploadedAt)
+                ON CONFLICT(recipient, message_id) DO NOTHING
+                """;
+            var uploadItemIdParam = upload.Parameters.Add("$itemId", SqliteType.Text);
+            upload.Parameters.AddWithValue("$recipient", recipient);
+            upload.Parameters.AddWithValue("$messageId", messageId);
+            upload.Parameters.AddWithValue("$uploadedAt", Format(sentAt));
+            foreach (var item in items)
+            {
+                uploadItemIdParam.Value = item.Id;
+                upload.ExecuteNonQuery();
+            }
+        }
+
         transaction.Commit();
     }
+
+    /// <summary>
+    /// Every photo this tool uploaded to <paramref name="recipient"/> (<c>skylight:frame:&lt;id&gt;</c>)
+    /// that it has not deleted again, oldest upload first. These ids are the only API-delivered
+    /// photos rotation may delete. A photo someone removed from the frame by hand stays listed.
+    /// </summary>
+    public IReadOnlyList<RecordedUpload> RecordedUploads(string recipient)
+    {
+        using var command = CreateCommand(
+            """
+            SELECT message_id, item_id, uploaded_at FROM uploaded_messages
+            WHERE recipient = $recipient ORDER BY uploaded_at, rowid
+            """,
+            [("$recipient", recipient)]);
+        using var reader = command.ExecuteReader();
+        var result = new List<RecordedUpload>();
+        while (reader.Read())
+        {
+            result.Add(new RecordedUpload(reader.GetString(0), reader.GetString(1), Parse(reader.GetString(2))));
+        }
+
+        return result;
+    }
+
+    /// <summary>Drops a recorded upload once its photo was deleted from the frame.</summary>
+    public void ForgetUpload(string recipient, string messageId) =>
+        Execute(
+            "DELETE FROM uploaded_messages WHERE recipient = $recipient AND message_id = $messageId",
+            ("$recipient", recipient),
+            ("$messageId", messageId));
 
     public void MarkSkipped(string itemId, SkipReason reason, string detail) =>
         Execute(
@@ -318,7 +372,8 @@ public sealed class StateStore : IDisposable
 
     /// <summary>
     /// Starts over: forgets every sent item for every recipient and every skipped item.
-    /// Returns the number of sent-item rows removed.
+    /// Returns the number of sent-item rows removed. Recorded uploads are kept: those photos are
+    /// still on the frame, and rotation has to be able to delete them once they are sent again.
     /// </summary>
     public int ResetSent()
     {
@@ -350,6 +405,7 @@ public sealed class StateStore : IDisposable
 
     private void CreateSchema()
     {
+        var hadUploads = Scalar("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'uploaded_messages'") is not null;
         Execute(
             """
             CREATE TABLE IF NOT EXISTS sent_items (
@@ -400,12 +456,29 @@ public sealed class StateStore : IDisposable
                 pruned_at  TEXT NOT NULL,
                 PRIMARY KEY (frame_id, message_id)
             );
+            CREATE TABLE IF NOT EXISTS uploaded_messages (
+                recipient   TEXT NOT NULL,
+                message_id  TEXT NOT NULL,
+                item_id     TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL,
+                PRIMARY KEY (recipient, message_id)
+            );
             """);
 
         // state.db files from before API delivery have no message_id; CREATE TABLE IF NOT EXISTS leaves them as they were.
         if (Scalar("SELECT 1 FROM pragma_table_info('sent_items') WHERE name = 'message_id'") is null)
         {
             Execute("ALTER TABLE sent_items ADD COLUMN message_id TEXT");
+        }
+
+        // A state.db that recorded message ids before uploaded_messages existed: carry them over, once.
+        if (!hadUploads)
+        {
+            Execute(
+                """
+                INSERT OR IGNORE INTO uploaded_messages (recipient, message_id, item_id, uploaded_at)
+                SELECT recipient, message_id, item_id, sent_at FROM sent_items WHERE message_id IS NOT NULL
+                """);
         }
     }
 

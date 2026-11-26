@@ -41,7 +41,8 @@ public static class ConfigLoader
         var delivery = ReadDelivery(Table(root, "delivery"));
 
         // Email delivery cannot work without both tables. API delivery needs neither, but a table that
-        // is there is still read in full: [smtp] sends alert emails and [email] from is what pruning matches.
+        // is there is still read in full: [smtp] sends alert emails and [email] from is how pruning
+        // matches emailed photos.
         var emailRequired = delivery.Method == DeliveryMethod.Email;
         var hasSmtp = emailRequired || smtp is not null;
 
