@@ -42,7 +42,7 @@ public static class PruneCommand
             var secrets = await CommandSupport.LoadSecretsAsync(paths, ct);
             if (!CommandSupport.HasSkylightLogin(secrets))
             {
-                stderr.WriteLine("prune failed: secrets.toml has no [skylight] email and password.");
+                stderr.WriteLine("prune failed: no [skylight] email and password are saved (Keychain or secrets.toml).");
                 return RunCommand.ExitError;
             }
 

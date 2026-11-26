@@ -41,6 +41,9 @@ public sealed class SecretStore
     /// <summary>Why the last <see cref="LoadAsync"/> fell back to secrets.toml, or null when it did not.</summary>
     public string? KeychainProblem { get; private set; }
 
+    /// <summary>True once a <see cref="SaveAsync"/> has changed anything stored (a Keychain item or secrets.toml).</summary>
+    public bool HasWritten { get; private set; }
+
     /// <summary>The Keychain service name of one secret, e.g. <c>skylight-photo-sync.smtp.password</c>.</summary>
     public static string ServiceFor(SecretKey key) => _servicePrefix + key switch
     {
@@ -102,6 +105,7 @@ public sealed class SecretStore
         if (_keychain is null)
         {
             ConfigLoader.WriteSecrets(_secretsFile, secrets);
+            HasWritten = true;
             return;
         }
 
@@ -117,6 +121,8 @@ public sealed class SecretStore
                 {
                     await _keychain.DeleteAsync(ServiceFor(key), ct);
                 }
+
+                HasWritten = true;
             }
         }
         catch (KeychainException ex)
@@ -128,6 +134,7 @@ public sealed class SecretStore
         if (File.Exists(_secretsFile))
         {
             File.Delete(_secretsFile);
+            HasWritten = true;
         }
     }
 

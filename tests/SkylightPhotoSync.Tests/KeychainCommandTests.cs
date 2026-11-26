@@ -99,6 +99,23 @@ public sealed class KeychainCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Device_login_says_nothing_changed_when_the_keychain_refuses_every_write()
+    {
+        ConfigLoader.WriteSecrets(SecretsFile, new Secrets(null, null, null, "app-password"));
+        var before = File.ReadAllBytes(SecretsFile);
+        Console.SetIn(new StringReader(_landing + "\n"));
+        CommandSupport.KeychainFactory = () => new RefusingWritesKeychain();
+
+        var (code, out_, err) = await Run("login");
+
+        Assert.Equal(1, code);
+        Assert.Contains("Nothing was changed", err);
+        Assert.DoesNotContain("may be damaged", err);
+        Assert.Equal(before, File.ReadAllBytes(SecretsFile));
+        Assert.DoesNotContain(_refresh, out_ + err);
+    }
+
+    [Fact]
     public async Task Logout_removes_the_amazon_items_from_the_keychain()
     {
         Seed(SecretKey.AmazonRefreshToken, _refresh);
@@ -240,6 +257,6 @@ public sealed class KeychainCommandTests : IDisposable
 
         public Task SetAsync(string service, string value, CancellationToken ct) => throw new KeychainException("write refused");
 
-        public Task DeleteAsync(string service, CancellationToken ct) => Task.CompletedTask;
+        public Task DeleteAsync(string service, CancellationToken ct) => throw new KeychainException("write refused");
     }
 }

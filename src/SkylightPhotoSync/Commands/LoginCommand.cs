@@ -154,7 +154,6 @@ public static partial class LoginCommand
 
             string displayName;
             long count;
-            var written = false;
             try
             {
                 // The device login replaces any pasted cookies; the SMTP password is kept.
@@ -174,18 +173,13 @@ public static partial class LoginCommand
                 }
 
                 using var store = new StateStore(paths.StateDb);
-
-                // A file write is all or nothing; Keychain items are written one by one, so a failed
-                // save may have changed some of them and is put back too.
-                written = secretStore.UsesKeychain;
                 await secretStore.SaveAsync(secrets, ct);
-                written = true;
                 store.SetNeedsLogin(false, null);
                 displayName = registration.CustomerName.Length > 0 ? registration.CustomerName : name;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
-                var restored = !written || await RestoreSecretsAsync(secretStore, existing, paths.SecretsFile, previousSecretsFile);
+                var restored = !secretStore.HasWritten || await RestoreSecretsAsync(secretStore, existing, paths.SecretsFile, previousSecretsFile);
                 var removed = await TryDeregisterAsync(auth, registration.AccessToken, ct);
 
                 stderr.WriteLine(

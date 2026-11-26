@@ -19,6 +19,9 @@ public sealed class SecurityCliKeychain : IKeychain
     /// <summary><c>errSecItemNotFound</c>, the exit code for a missing item.</summary>
     private const int _notFoundExitCode = 44;
 
+    /// <summary>How long one <c>security</c> call may take; a locked keychain can otherwise wait on an unlock dialog forever.</summary>
+    private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(30);
+
     private readonly string? _keychainPath;
 
     /// <param name="keychainPath">A keychain file to use instead of the user's default (login) keychain; tests pass a throwaway one.</param>
@@ -163,17 +166,20 @@ public sealed class SecurityCliKeychain : IKeychain
             throw new KeychainException($"could not run {_securityPath}: {ex.Message}", ex);
         }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(_timeout);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
         try
         {
             if (stdin is not null)
             {
-                await process.StandardInput.WriteAsync(stdin.AsMemory(), ct);
+                await process.StandardInput.WriteAsync(stdin.AsMemory(), timeout.Token);
             }
 
             process.StandardInput.Close();
-            await process.WaitForExitAsync(ct);
+            await process.WaitForExitAsync(timeout.Token);
+            await Task.WhenAll(stdoutTask, stderrTask);
         }
         catch (OperationCanceledException)
         {
@@ -186,11 +192,11 @@ public sealed class SecurityCliKeychain : IKeychain
                 // Already exited.
             }
 
-            throw;
+            ct.ThrowIfCancellationRequested();
+            throw new KeychainException(
+                $"{_securityPath} did not answer within {_timeout.TotalSeconds:0} seconds; is the login keychain locked?");
         }
 
-        await stdoutTask;
-        var stderr = await stderrTask;
-        return (process.ExitCode, stderr);
+        return (process.ExitCode, await stderrTask);
     }
 }
