@@ -84,7 +84,7 @@ tests/SkylightPhotoSync.Tests/
 
 **Interfaces:**
 - Produces:
-  - `public static class App { public static Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct = default); public const string Version = "0.1.0"; }` — `--version` prints `skylight-sync 0.1.0`, exit 0.
+  - `public static class App { public static Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct = default); public static string Version { get; } }` — reads the assembly informational version (without the `+<commit>` suffix), so `--version` prints `skylight-sync <version>`, exit 0: the csproj `Version` (`0.1.0`) locally, or the release tag when Task 48's publish workflow passes `-p:Version=`.
   - `public interface IProcessRunner { Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> args, CancellationToken ct = default); }` and `public sealed record ProcessResult(int ExitCode, string StdOut, string StdErr);` with `ProcessRunner` using `System.Diagnostics.Process`.
   - Tests: `MacOnlyFactAttribute : FactAttribute` (sets `Skip` when not macOS); `TestHome : IDisposable` (creates a temp dir, sets `SKYLIGHT_SYNC_HOME`, exposes `Dir`); `FakeProcessRunner : IProcessRunner` recording calls and returning scripted results.
 

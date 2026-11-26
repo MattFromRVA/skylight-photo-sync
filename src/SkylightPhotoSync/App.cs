@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Reflection;
 using SkylightPhotoSync.Commands;
 
 namespace SkylightPhotoSync;
@@ -10,7 +11,20 @@ namespace SkylightPhotoSync;
 public static class App
 {
     public const string Name = "skylight-sync";
-    public const string Version = "0.1.0";
+
+    /// <summary>
+    /// The version this build was stamped with: the csproj <c>Version</c>, or the release tag
+    /// when the publish workflow passes <c>-p:Version=</c>.
+    /// </summary>
+    public static string Version { get; } = DisplayVersion(
+        typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
+
+    /// <summary>Drops the <c>+&lt;commit&gt;</c> suffix the SDK appends to the informational version.</summary>
+    internal static string DisplayVersion(string? informationalVersion)
+    {
+        var version = informationalVersion?.Split('+')[0];
+        return string.IsNullOrEmpty(version) ? "unknown" : version;
+    }
 
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr, CancellationToken ct = default)
     {
@@ -29,7 +43,7 @@ public static class App
         var root = new RootCommand("Emails new Amazon Photos to a Skylight Calendar on a Mac schedule.");
 
         // Replace the built-in version option so the output goes to the supplied writer
-        // and uses the tool's own name and version rather than the assembly's.
+        // and uses the tool's own name rather than the assembly's.
         foreach (var builtIn in root.Options.OfType<VersionOption>().ToList())
         {
             root.Options.Remove(builtIn);
