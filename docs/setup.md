@@ -9,6 +9,12 @@ album and one Skylight address, prove the email path works, send one photo, then
 > README's status section) and the one-time device login (`skylight-sync login`) on 2026-11-10
 > (`login`, `run --dry-run`, `status`); `login --cookies` is the fallback. Everything from
 > `test-email` onward can also be exercised with `run --source local:PATH`.
+>
+> **Coming next (decided 2026-11-16).** Photos will be added through Skylight's app API instead of
+> by email, with email kept as an option; rotation (step 13) already uses that API to delete. This
+> page will gain the API path once it is built
+> ([issue #59](https://github.com/MattFromRVA/skylight-photo-sync/issues/59)); until then, set
+> up email as described here.
 
 ## 1. Prerequisites
 

@@ -1,7 +1,8 @@
 # Skylight Photo Sync — Design
 
 **Date:** 2026-11-02
-**Status:** Draft for approval (builder-check applied 2026-11-02; switched to C#/.NET 2026-11-04)
+**Status:** Draft for approval (builder-check applied 2026-11-02; switched to C#/.NET 2026-11-04;
+**direction changed 2026-11-16: photos are added and removed through Skylight's app API**, see §6.11)
 **Owner:** Matt (MattFromRVA)
 
 ## 1. Intent
@@ -9,8 +10,10 @@
 Matt's family photos land in Amazon Photos automatically from their phones. Their
 Skylight Calendar shows a photo screensaver when idle, but today getting a photo onto it
 means opening the Skylight app or forwarding an email by hand. This tool removes that
-step: a background job on Matt's Mac notices new Amazon Photos and emails them to the
-Skylight household address on a schedule, so the frame keeps itself fresh.
+step: a background job on Matt's Mac notices new Amazon Photos and puts them on the
+Skylight frame on a schedule, so the frame keeps itself fresh. v1 does this by email. From
+2026-11-16 the direction is to upload through Skylight's app API instead, and to use the same
+API to remove older photos so the frame holds a rolling set (§6.11).
 
 Success looks like: Matt drops a photo into an album on his phone (or just takes one, in
 "all photos" mode), and within the hour it is on the Calendar, with no further action.
@@ -27,7 +30,9 @@ Full notes with sources: [`docs/research-notes.md`](../../research-notes.md).
   JPEG/HEIC/PNG and MP4/MOV/GIF accepted. New senders need one-time approval by the owner
   when privacy is set to "Senders who I approve".
 - **Skylight has no public API.** A community-documented private API exists
-  (`app.ourskylight.com/api`, OAuth PKCE). We do not build on it in v1.
+  (`app.ourskylight.com/api`, OAuth PKCE). v1 did not build on it. Rotation (PR #42) now uses
+  it to list and delete photos, and **(Matt, 2026-11-16)** it becomes the way photos are added
+  too (§6.11). It is unofficial and can change without notice; email stays as a fallback.
 - **Amazon Photos has no public API** and discontinued desktop two-way sync in Feb 2024.
   The only automated read path is the web app's private endpoints, authenticated with
   cookies copied from a logged-in browser (`session-id`, `ubid-main`, `at-main`). The
@@ -40,7 +45,8 @@ Full notes with sources: [`docs/research-notes.md`](../../research-notes.md).
 
 ## 3. Goals
 
-1. Automatically email new Amazon Photos to a Skylight household address on a schedule.
+1. Automatically put new Amazon Photos on a Skylight frame on a schedule: by email in v1, by
+   Skylight's app API once §6.11 is built.
 2. Two source modes, switchable in config: **one curated album** or **all photos**.
 3. A configurable lookback window (e.g. last 30 / 60 / 90 days) that bounds what is
    considered "new", in both modes.
@@ -55,17 +61,23 @@ Full notes with sources: [`docs/research-notes.md`](../../research-notes.md).
   (Superseded after v1 by the optional `[rotation]` feature, which deletes the tool's own older
   photos through Skylight's unofficial app API; see `2026-11-10-skylight-rotation-spike.md`.
   Mirroring album deletions is still out of scope.)
-- Using Skylight's private API. The sender is behind an interface so it could be added.
+- ~~Using Skylight's private API.~~ Superseded: rotation uses it to list and delete the tool's
+  own photos (PR #42), and **(Matt, 2026-11-16)** it becomes the main way photos are added too.
+  See §6.11. Email is kept as a fallback.
 - Windows or Linux support. It will likely work, but the Mac is the target and only
   launchd scheduling is provided.
 - Uploading *to* Amazon Photos.
 - Reading other family members' Amazon accounts or the Family Vault. **(call)** v1 reads
-  exactly one Amazon account: the one whose cookies are pasted. Photos other people add
+  exactly one Amazon account: the one signed in with `skylight-sync login`. Photos other people add
   to a *shared album* owned by that account are included; photos that only exist in
   another member's account are not. Family Vault support is a follow-up issue.
 - A GUI. This is a CLI plus a scheduled job.
-- Automating Amazon login (no password handling, no headless browser). Cookies are
-  pasted by the user.
+- Storing or typing the Amazon password, or driving a headless browser. The default login
+  (issue #30) is a one-time browser sign-in that registers the tool as an Amazon device and
+  refreshes its own session; pasted cookies (`login --cookies`) are only a fallback.
+- **(Matt, 2026-11-11)** Storing the *Skylight* password is accepted: the Skylight API has no
+  app passwords or keys, so `secrets.toml` (0600) holds `[skylight] email` and `password`.
+  Keychain storage is the follow-up (#15).
 
 ## 5. Anti-goals (what would make this a failure even if it "works")
 
@@ -74,7 +86,9 @@ Full notes with sources: [`docs/research-notes.md`](../../research-notes.md).
   (mitigated by album mode being the recommended default and by the lookback cap).
 - Silently stopping. A frame that quietly stops updating is worse than one that alerts.
 - Leaking location data: GPS EXIF is stripped before sending.
-- Storing Amazon cookies or the SMTP password in the repo or in world-readable files.
+- Storing Amazon cookies, the SMTP password or the Skylight password in the repo or in
+  world-readable files.
+- Deleting a photo this tool did not put on the frame.
 
 ## 6. Decisions
 
@@ -95,7 +109,7 @@ Decisions marked **(Matt)** were made by Matt in conversation. Decisions marked
   by `skylight-sync install-launchd`, default interval 60 minutes.
 - **(call)** Delivery via SMTP to the Skylight household address. Default example is
   Gmail with an app password; any SMTP server works. Email is the officially supported
-  Skylight path.
+  Skylight path. (v1. Superseded as the main path by §6.11; email stays as a fallback.)
 
 ### 6.2 Source modes and windows
 
@@ -265,6 +279,43 @@ skylight-sync reset --skipped  # only the skipped items; no --yes needed (issue 
 - Work is tracked as GitHub issues sized for a single agent session each, labelled by
   area, with a milestone for v1.
 
+### 6.11 Delivery through the Skylight API (2026-11-16)
+
+- **(Matt)** Photos are added *and* removed through Skylight's unofficial app API, the same one
+  the Skylight apps use. Rotation (PR #42) already signs in, lists and deletes; adding means
+  uploading through it instead of emailing.
+- **(call)** Email stays as a fallback, chosen in config: `[delivery] method = "api" | "email"`.
+  There is no automatic switch between them in a run: an email-delivered and an API-delivered
+  copy of the same photo would both land on the frame, and rotation would only know about one.
+- **(call)** The default stays `"email"` until the live check (#44, plan Phase 2 task A) has shown
+  an upload, a list and a delete working on Matt's account. The flip to `"api"` is its own task.
+- **(call)** Under `"api"` the destination is a Skylight frame, not an address. `[delivery]
+  frames` names frames as the app shows them (blank = every frame on the account, like
+  `[rotation] frame_name`). State is still per destination: `sent_items.recipient` holds
+  `skylight:frame:<id>` for API sends. Whether photos already emailed to that frame count as
+  delivered when an install switches methods is open question 2 below.
+- **(call)** An upload is marked sent only once the bytes are accepted and the new photo's
+  message id is known, and that id is stored with the sent row. Which upload flow works, and
+  whether it returns the id, is settled by the live check: the community clients use three
+  different flows (research notes, "Skylight upload API"); if none returns the id, the client
+  finds it by listing the frame after the upload. Rotation then deletes API-delivered photos
+  **by recorded message id**, which is stricter than matching `from_email`; email-delivered
+  photos keep the `from_email` match.
+- **(call)** Image processing (§6.4) is unchanged: photos are still re-encoded upright, resized
+  and stripped of EXIF/GPS before upload. Email batching (§6.5) does not apply to API uploads;
+  each photo is uploaded on its own. The per-file size limit for uploads is unknown until the
+  live check, and the video cap (#34) is decided after it.
+- **(call)** SMTP becomes optional under `"api"`. When `[smtp]` is configured, alerts still
+  go by email as well as by notification; without it they are notification-only.
+- **(call)** A refused Skylight sign-in pauses **delivery** under `"api"` (not only pruning),
+  alerts once through the existing `SkylightSignIn` gate (#46), and never retries the same
+  password on its own. The frame then simply stops changing until the sign-in is fixed.
+- Open questions for Matt, to settle before the default flips:
+  1. Keep the frames' Skylight email address in config at all once API delivery works, or drop
+     the email path entirely after a quiet month?
+  2. When switching an existing install from email to API, treat photos already emailed as
+     already on the frame (no resend), or start the API state fresh?
+
 ## 7. First-run experience (acceptance walkthrough)
 
 1. `dotnet tool install --global SkylightPhotoSync` (or pack from a clone and install with
@@ -313,3 +364,6 @@ only Matt can provide, and the reference library is two years stale. Therefore:
 | Amazon rate limits / blocks | Medium | Sequential requests, 60 s backoff, hourly cadence, small per-run cap |
 | Skylight changes email limits | Low | Config-driven batching |
 | Gmail blocks SMTP | Low | App password docs; any SMTP works |
+| Skylight changes or blocks the unofficial app API | Medium | Thin client behind `ISkylightClient`, recorded fixtures, loud failure, email fallback (§6.11) |
+| Skylight sign-in lockout or CAPTCHA | Unknown | Token cache and refresh so password sign-ins are rare; one alert and a pause, never a retry loop (#46) |
+| Upload needs Plus, or has a lower size limit than email | Unknown | Live check before the default flips (#44) |
