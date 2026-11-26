@@ -92,10 +92,10 @@ no secrets) and use `login --cookies` meanwhile.
 but a later step failed, usually because Amazon Photos rejected the fresh session (or Amazon did
 not answer in time, or the secrets could not be saved to the Keychain or `secrets.toml`). The tool
 removed the device again and saved nothing. Try once more; then fall back to `login --cookies`. If
-the message instead says `the saved secrets could not be put back as they were and may be damaged`,
-check `skylight-sync status` and the `skylight-photo-sync.*` items in Keychain Access, re-add the
-SMTP password if it is missing ([setup step 5](setup.md#5-add-the-smtp-password)), and run `login`
-again.
+the message instead says `the saved secrets may not have been put back as they were` (for example
+the Keychain is locked and refused every write), check `skylight-sync status` and the
+`skylight-photo-sync.*` items in Keychain Access, re-add the SMTP password if it is missing
+([setup step 5](setup.md#5-add-the-smtp-password)), and run `login` again.
 
 **`warning: the previous device login could not be removed from your Amazon account`** A new
 `login` (device or `--cookies`) replaced a saved device login and tried to remove the old device,

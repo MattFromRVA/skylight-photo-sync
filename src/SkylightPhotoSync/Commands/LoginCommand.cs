@@ -186,7 +186,7 @@ public static partial class LoginCommand
                     $"login failed: the new device login could not be completed ({ex.Message}). "
                     + (restored
                         ? "Nothing was changed; "
-                        : "the saved secrets could not be put back as they were and may be damaged: check them, re-add the SMTP password if it is missing, and run login again; ")
+                        : "the saved secrets may not have been put back as they were: check them, re-add the SMTP password if it is missing, and run login again; ")
                     + (removed
                         ? "the tool removed the device again."
                         : $"the tool could not remove the device, so remove \"{AmazonDeviceAuth.DeviceDisplayName}\" under Manage Your Content and Devices."));

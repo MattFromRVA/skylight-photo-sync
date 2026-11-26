@@ -41,7 +41,7 @@ public sealed class SecretStore
     /// <summary>Why the last <see cref="LoadAsync"/> fell back to secrets.toml, or null when it did not.</summary>
     public string? KeychainProblem { get; private set; }
 
-    /// <summary>True once a <see cref="SaveAsync"/> has changed anything stored (a Keychain item or secrets.toml).</summary>
+    /// <summary>True once a <see cref="SaveAsync"/> may have changed anything stored: a Keychain write was started, or secrets.toml was written or deleted.</summary>
     public bool HasWritten { get; private set; }
 
     /// <summary>The Keychain service name of one secret, e.g. <c>skylight-photo-sync.smtp.password</c>.</summary>
@@ -113,6 +113,7 @@ public sealed class SecretStore
         {
             foreach (var key in Enum.GetValues<SecretKey>())
             {
+                HasWritten = true;
                 if (Get(secrets, key) is { } value)
                 {
                     await _keychain.SetAsync(ServiceFor(key), value, ct);
@@ -121,8 +122,6 @@ public sealed class SecretStore
                 {
                     await _keychain.DeleteAsync(ServiceFor(key), ct);
                 }
-
-                HasWritten = true;
             }
         }
         catch (KeychainException ex)

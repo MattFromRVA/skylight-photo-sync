@@ -99,7 +99,7 @@ public sealed class KeychainCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Device_login_says_nothing_changed_when_the_keychain_refuses_every_write()
+    public async Task Device_login_warns_and_keeps_the_file_when_the_keychain_refuses_every_write()
     {
         ConfigLoader.WriteSecrets(SecretsFile, new Secrets(null, null, null, "app-password"));
         var before = File.ReadAllBytes(SecretsFile);
@@ -109,8 +109,8 @@ public sealed class KeychainCommandTests : IDisposable
         var (code, out_, err) = await Run("login");
 
         Assert.Equal(1, code);
-        Assert.Contains("Nothing was changed", err);
-        Assert.DoesNotContain("may be damaged", err);
+        Assert.Contains("may not have been put back", err);
+        Assert.Contains("removed the device again", err);
         Assert.Equal(before, File.ReadAllBytes(SecretsFile));
         Assert.DoesNotContain(_refresh, out_ + err);
     }
