@@ -99,7 +99,10 @@ public sealed class SecretStore
         return With(file, key => fromKeychain.TryGetValue(key, out var value) ? value : Get(file, key));
     }
 
-    /// <summary>Stores exactly <paramref name="secrets"/>: null values are removed.</summary>
+    /// <summary>
+    /// Stores exactly <paramref name="secrets"/>: null values are removed. Refuses, changing nothing,
+    /// when the last <see cref="LoadAsync"/> could not read the Keychain, since those secrets lack its values.
+    /// </summary>
     public async Task SaveAsync(Secrets secrets, CancellationToken ct)
     {
         if (_keychain is null)
@@ -107,6 +110,12 @@ public sealed class SecretStore
             ConfigLoader.WriteSecrets(_secretsFile, secrets);
             HasWritten = true;
             return;
+        }
+
+        if (KeychainProblem is not null)
+        {
+            throw new ConfigException(
+                $"Could not save secrets to the macOS Keychain: it could not be read ({KeychainProblem}), so saving could lose values only it holds. Unlock the login keychain and try again.");
         }
 
         try
@@ -161,11 +170,6 @@ public sealed class SecretStore
         }
 
         var current = await LoadAsync(ct);
-        if (KeychainProblem is not null)
-        {
-            throw new ConfigException($"Could not read the macOS Keychain: {KeychainProblem}");
-        }
-
         await SaveAsync(With(current, key => Get(file, key) ?? Get(current, key)), ct);
         return count;
     }

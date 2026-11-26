@@ -124,6 +124,25 @@ public sealed class SecretStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Saving_after_a_fallback_load_refuses_and_keeps_keychain_only_values()
+    {
+        ConfigLoader.WriteSecrets(SecretsFile, new Secrets("sid", "ubid", "at", null));
+        var before = File.ReadAllBytes(SecretsFile);
+        _keychain.Items[SecretStore.ServiceFor(SecretKey.SmtpPassword)] = "smtp";
+        var store = new SecretStore(SecretsFile, _keychain);
+        _keychain.FailWith = "The user interaction is not allowed.";
+        var loaded = await store.LoadAsync(CancellationToken.None);
+        _keychain.FailWith = null;
+
+        var ex = await Assert.ThrowsAsync<ConfigException>(() => store.SaveAsync(loaded, CancellationToken.None));
+
+        Assert.Contains("The user interaction is not allowed.", ex.Message);
+        Assert.False(store.HasWritten);
+        Assert.Equal("smtp", _keychain.Items[SecretStore.ServiceFor(SecretKey.SmtpPassword)]);
+        Assert.Equal(before, File.ReadAllBytes(SecretsFile));
+    }
+
+    [Fact]
     public async Task Import_moves_file_values_over_keychain_values()
     {
         ConfigLoader.WriteSecrets(SecretsFile, new Secrets(null, null, null, "new-smtp"));
