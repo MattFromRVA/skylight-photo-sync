@@ -4,6 +4,7 @@ using Serilog;
 using Serilog.Core;
 using SkylightPhotoSync.Alerts;
 using SkylightPhotoSync.Config;
+using SkylightPhotoSync.Delivery;
 using SkylightPhotoSync.Imaging;
 using SkylightPhotoSync.Infrastructure;
 using SkylightPhotoSync.Models;
@@ -207,30 +208,44 @@ public static class RunCommand
         }
 
         using var disposableSource = source as IDisposable;
-        if (cfg.Rotation.Enabled && !CommandSupport.HasSkylightLogin(secrets))
+        var apiDelivery = cfg.Delivery.Method == DeliveryMethod.Api;
+        if ((apiDelivery || cfg.Rotation.Enabled) && !CommandSupport.HasSkylightLogin(secrets))
         {
-            stderr.WriteLine($"run failed: {CommandSupport.SkylightLoginMissingMessage}");
+            var missing = apiDelivery
+                ? CommandSupport.SkylightLoginMissingForDeliveryMessage
+                : CommandSupport.SkylightLoginMissingMessage;
+            stderr.WriteLine($"run failed: {missing}");
             return ExitError;
         }
 
-        using var skylight = cfg.Rotation.Enabled ? CommandSupport.CreateSkylightClient(secrets, paths) : null;
+        using var skylight = apiDelivery || cfg.Rotation.Enabled ? CommandSupport.CreateSkylightClient(secrets, paths) : null;
         var runner = new ProcessRunner();
         var now = () => DateTimeOffset.UtcNow;
 
         using var store = new StateStore(paths.StateDb);
         var normalizer = new ImageNormalizer(new SipsHeicConverter(runner), cfg.Image);
-        var mailer = CommandSupport.CreateMailer(cfg.Smtp, secrets);
-        var alerter = new Alerter(store, mailer, cfg.Alerts.Email, cfg.Email.From, CommandSupport.CreateNotifier(runner), now);
-        var rotator = skylight is null
+
+        // Under API delivery [email] and [smtp] are optional: without them alerts are notifications only.
+        var mailer = cfg.Smtp is null ? null : CommandSupport.CreateMailer(cfg.Smtp, secrets);
+        var alerter = new Alerter(
+            store, mailer, cfg.Alerts.Email ?? "", cfg.Email?.From ?? cfg.Smtp?.Username ?? "", CommandSupport.CreateNotifier(runner), now);
+        IPhotoDelivery delivery = apiDelivery
+            ? new SkylightApiDelivery(cfg.Delivery, cfg.Rotation, skylight!, store, now)
+            : new EmailDelivery(cfg.Email!, cfg.Source, mailer!, store, now);
+
+        // Pruning picks uploaded photos by the ids recorded at upload and emailed ones by [email] from,
+        // which API delivery may leave out; then only the uploads are pruned.
+        var rotator = skylight is null || !cfg.Rotation.Enabled
             ? null
-            : new FrameRotator(cfg.Rotation, cfg.Email.From, skylight, store, now, CommandSupport.RotationDelay);
+            : new FrameRotator(cfg.Rotation, cfg.Email?.From, skylight, store, now, CommandSupport.RotationDelay);
         var signInGate = skylight is null ? null : CommandSupport.CreateSkylightSignInGate(secrets, store);
-        var pipeline = new SyncPipeline(cfg, source, store, normalizer, mailer, alerter, now, paths.LockFile, rotator, signInGate,
-            new RunReporter(options.DryRun, stdout, log));
+        var pipeline = new SyncPipeline(cfg, source, store, normalizer, delivery, alerter, now, paths.LockFile, rotator, signInGate,
+            new RunReporter(options.DryRun, apiDelivery, stdout, log));
 
         log.Information(
-            "run started: mode={Mode} album={Album} lookbackDays={LookbackDays} limit={Limit} dryRun={DryRun} source={Source} rotation={Rotation}",
+            "run started: mode={Mode} album={Album} lookbackDays={LookbackDays} limit={Limit} dryRun={DryRun} source={Source} delivery={Delivery} rotation={Rotation}",
             cfg.Source.Mode, cfg.Source.AlbumName, cfg.Source.LookbackDays, options.Limit, options.DryRun, sourceLabel,
+            apiDelivery ? "api" : "email",
             cfg.Rotation.Enabled ? $"keep {cfg.Rotation.Keep}" : "off");
 
         var result = await pipeline.RunAsync(options.DryRun, options.Limit, ct);
@@ -257,9 +272,13 @@ public static class RunCommand
 
         log.Error("run failed: {Error} ({Summary})", result.Error, summary);
         stderr.WriteLine($"run failed: {result.Error}");
-        if (result.Error.StartsWith(SyncPipeline.SkylightSignInFailedErrorPrefix, StringComparison.Ordinal))
+        if (result.Error == SyncPipeline.SkylightSignInNeededError)
         {
-            stderr.WriteLine(CommandSupport.SkylightPausedHint);
+            stderr.WriteLine(CommandSupport.SkylightDeliveryPausedHint);
+        }
+        else if (result.Error.StartsWith(SyncPipeline.SkylightSignInFailedErrorPrefix, StringComparison.Ordinal))
+        {
+            stderr.WriteLine(apiDelivery ? CommandSupport.SkylightDeliveryPausedHint : CommandSupport.SkylightPausedHint);
         }
 
         return result.Error is SyncPipeline.NeedsLoginError or SyncPipeline.AuthExpiredError
@@ -305,23 +324,36 @@ public static class RunCommand
     private static string ItemCount(int count) => count == 1 ? "1 item" : $"{count} items";
 
     /// <summary>
-    /// A dry run lists every email, its items and every skip on stdout. A real run keeps stdout to the
-    /// summary line and writes one log line per email and per skip instead.
+    /// A dry run lists every delivery (an email, or one photo uploaded to one frame), its items and every
+    /// skip on stdout. A real run keeps stdout to the summary line and writes one log line per delivery
+    /// and per skip instead.
     /// </summary>
-    private sealed class RunReporter(bool dryRun, TextWriter stdout, ILogger log) : IRunReporter
+    private sealed class RunReporter(bool dryRun, bool apiDelivery, TextWriter stdout, ILogger log) : IRunReporter
     {
-        public void Email(EmailReport email)
+        public void Delivered(DeliveryReport delivery)
         {
+            var items = ItemCount(delivery.Items.Count);
+            var size = FormatSize(delivery.TotalBytes);
             if (!dryRun)
             {
-                log.Information(
-                    "sent email {Number} to {Recipient}: {Items}, {Size}",
-                    email.Number, email.Recipient, ItemCount(email.Items.Count), FormatSize(email.TotalBytes));
+                if (apiDelivery)
+                {
+                    log.Information(
+                        "uploaded {Number} to frame {Frame}: {Items}, {Size}", delivery.Number, delivery.Destination, items, size);
+                }
+                else
+                {
+                    log.Information(
+                        "sent email {Number} to {Recipient}: {Items}, {Size}", delivery.Number, delivery.Destination, items, size);
+                }
+
                 return;
             }
 
-            stdout.WriteLine($"email {email.Number} to {email.Recipient}: {ItemCount(email.Items.Count)}, {FormatSize(email.TotalBytes)}");
-            foreach (var entry in email.Items)
+            stdout.WriteLine(apiDelivery
+                ? $"upload {delivery.Number} to frame \"{delivery.Destination}\": {items}, {size}"
+                : $"email {delivery.Number} to {delivery.Destination}: {items}, {size}");
+            foreach (var entry in delivery.Items)
             {
                 stdout.WriteLine(
                     $"  {Date(entry.Item)}  {entry.Item.Name}  {FormatSize(entry.Bytes)}" + (entry.Recycled ? "  (resend)" : ""));

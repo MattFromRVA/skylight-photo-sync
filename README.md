@@ -25,6 +25,13 @@ Every hour (configurable) it:
    older ones, and resends old favourites once the album runs dry. Deleting uses Skylight's
    unofficial app API; see [setup step 13](docs/setup.md#13-optional-rotate-photos-on-the-frame).
 
+**Direction (2026-11-16):** the next phase adds photos through Skylight's app API too, so one
+signed-in connection both adds and removes them, with email kept as a fallback. The settings and
+commands for it exist (`[delivery] method = "api"`, `skylight-sync test-upload`), but the upload
+call itself is not built, so it does not work yet and email is still the way to send photos: see
+[setup step 14](docs/setup.md#14-not-usable-yet-add-photos-through-skylights-app-api), [Phase 2 of the plan](docs/superpowers/plans/2026-11-02-skylight-photo-sync-v1.md#phase-2-skylight-api-delivery-decided-2026-11-16)
+and spec §6.11.
+
 ## Quick start
 
 The tool is a .NET global tool called `skylight-sync`. You need macOS and the
@@ -65,6 +72,9 @@ skylight-sync install-launchd   # 7. runs hourly from now on
 skylight-sync status
 ```
 
+`skylight-sync test-upload` is the same check for the API path (one test image uploaded to each
+frame). Until the upload is built it signs in, then stops with "not built yet (issue #16)".
+
 ## Documentation
 
 - [docs/setup.md](docs/setup.md): prerequisites, install, every `config.toml` key,
@@ -98,6 +108,14 @@ host = "smtp.gmail.com"
 port = 587
 username = "you@gmail.com"
 ```
+
+Photos are sent by email. An optional `[delivery] method = "api"` setting (upload through
+Skylight's app API instead) exists but is **not usable yet**: the upload itself is not built
+([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)), so leave it out.
+`skylight-sync status` shows which one is configured (`delivery: email`, or
+`delivery: api (Kitchen, Hallway)`), and
+[setup step 14](docs/setup.md#14-not-usable-yet-add-photos-through-skylights-app-api) describes
+the API path as it will work.
 
 Secrets (the Amazon device login's refresh token, SMTP password) live in a separate
 `secrets.toml` with `0600` permissions and are never committed. The full list of keys and defaults is in
@@ -135,6 +153,16 @@ tested against a redacted recording made by `skylight-sync record-fixtures --aut
 (`tests/SkylightPhotoSync.Tests/Fixtures/AmazonAuth/exchange_cookies.json`). `login --cookies`
 remains as the fallback.
 
+In progress: adding photos through Skylight's app API (plan Phase 2). The delivery setting,
+rotation by recorded photo id, `skylight-sync test-upload` and the `status` delivery line are
+built and tested against an in-memory account
+([#57](https://github.com/MattFromRVA/skylight-photo-sync/issues/57)–[#59](https://github.com/MattFromRVA/skylight-photo-sync/issues/59)).
+The upload call itself ([#16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)) is
+not, because it waits on a live check with a real account
+([#44](https://github.com/MattFromRVA/skylight-photo-sync/issues/44)); nothing on the API path has
+been verified against live Skylight, and email stays the default until
+[#60](https://github.com/MattFromRVA/skylight-photo-sync/issues/60).
+
 Publishing to NuGet: pushing a `v*` tag runs the
 [publish workflow](.github/workflows/publish.yml), which packs the tool and pushes it to nuget.org
 ([docs/releasing.md](docs/releasing.md)). No release has been tagged yet. A Homebrew tap is a
@@ -159,7 +187,9 @@ Microsoft.Data.Sqlite, Tomlyn, SkiaSharp, and macOS's own `sips` for HEIC decodi
 ## Why email, and why a browser sign-in?
 
 - **Skylight** has no public API. Emailing photos to the household address is the
-  supported path and works for both Calendar (Plus plan) and Frame.
+  supported path and works for both Calendar (Plus plan) and Frame. Email can only add photos,
+  though, so rotation uses the unofficial API the Skylight apps use, and from Phase 2 that API
+  adds photos too (spec §6.11). Email stays as the fallback if Skylight changes the API.
 - **Amazon Photos** has no public API and discontinued desktop sync in 2024. The only
   automated way to read your library is the web app's private endpoints, which need a
   logged-in Amazon session. Rather than store your password (and fight 2FA and CAPTCHAs

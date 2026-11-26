@@ -61,6 +61,7 @@ public static class App
         root.Subcommands.Add(PruneCommand.Create());
         root.Subcommands.Add(StatusCommand.Create());
         root.Subcommands.Add(TestEmailCommand.Create());
+        root.Subcommands.Add(TestUploadCommand.Create());
         root.Subcommands.Add(InstallLaunchdCommand.Create());
         root.Subcommands.Add(UninstallLaunchdCommand.Create());
         root.Subcommands.Add(ResetCommand.Create());
