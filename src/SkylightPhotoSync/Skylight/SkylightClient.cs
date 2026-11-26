@@ -14,7 +14,9 @@ namespace SkylightPhotoSync.Skylight;
 /// Signs in with the account email and password through the same OAuth 2 + PKCE flow the apps use,
 /// caches the tokens in <c>tokenFile</c> (mode 0600) so most runs never sign in again, refreshes an
 /// expired access token, and retries a request once after a 401/403. Token and password values never
-/// appear in exceptions or output.
+/// appear in exceptions or output. Uploads follow jakewilkins/skylight-frame (see
+/// <see cref="UploadPhotoAsync"/>); like the rest of this client they are unverified against a live
+/// account until the live check (#44).
 /// </summary>
 public sealed partial class SkylightClient : ISkylightClient, IDisposable
 {
@@ -32,6 +34,12 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
     internal const string RateLimitedMessage =
         "Skylight is rate-limiting sign-in attempts (HTTP 429). Wait a while before trying again.";
 
+    /// <summary>How many times an upload lists each frame, after the bytes are in, looking for the new photo.</summary>
+    internal const int UploadListAttempts = 10;
+
+    /// <summary>The pause before each of those listings, so Skylight has time to take the photo in.</summary>
+    internal static readonly TimeSpan UploadListInterval = TimeSpan.FromSeconds(3);
+
     private const int _maxRedirects = 10;
     private static readonly TimeSpan _expiryMargin = TimeSpan.FromMinutes(5);
 
@@ -41,6 +49,7 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
     private readonly string _password;
     private readonly string _tokenFile;
     private readonly Func<DateTimeOffset> _now;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly HttpClient _http;
     private readonly CookieContainer _cookies = new();
     private Tokens? _tokens;
@@ -51,7 +60,8 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         string password,
         string tokenFile,
         HttpMessageHandler? handler = null,
-        Func<DateTimeOffset>? now = null)
+        Func<DateTimeOffset>? now = null,
+        Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(email);
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
@@ -60,6 +70,7 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         _password = password;
         _tokenFile = tokenFile;
         _now = now ?? (() => DateTimeOffset.UtcNow);
+        _delay = delay ?? Task.Delay;
 
         // Redirects are walked by hand (the authorization code arrives in a redirect that must not be
         // followed) and cookies are attached by hand so an injected test handler sees them too.
@@ -72,11 +83,6 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         _http = new HttpClient(ownHandler, disposeHandler: handler is null) { Timeout = TimeSpan.FromMinutes(2) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
     }
-
-    /// <summary>What <see cref="UploadPhotoAsync"/> says while it is a stub.</summary>
-    internal const string UploadNotBuiltMessage =
-        "Uploading photos through the Skylight API is not built yet (issue #16). "
-        + "Set [delivery] method = \"email\" in config.toml (or remove the [delivery] section) to keep sending photos by email.";
 
     public async Task<IReadOnlyList<SkylightFrame>> ListFramesAsync(CancellationToken ct)
     {
@@ -148,12 +154,156 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
     }
 
     /// <summary>
-    /// NOT BUILT YET — a stub. The real upload (issue #16) needs the upload calls recorded from a live
-    /// Skylight account first. Until then this fails before touching the network, so nothing is ever
-    /// reported as uploaded.
+    /// The upload flow of jakewilkins/skylight-frame (docs/research-notes.md, "Skylight upload API";
+    /// UNVERIFIED against a live account until #44): note the photo ids already on each frame, ask
+    /// <c>POST /api/message_upload_urls</c> for a presigned URL, <c>PUT</c> the bytes there, then list
+    /// each frame until exactly one photo appears that was not there before. That flow returns no
+    /// message id, so listing is the only way to learn it (spec §6.11). A frame where the new photo does
+    /// not show up within <see cref="UploadListAttempts"/> listings, or where more than one new photo
+    /// shows up (so it cannot tell which is this one), is left out of the result: the caller treats the
+    /// photo as not sent there, and no id is guessed that rotation might later delete.
     /// </summary>
-    public Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct) =>
-        Task.FromException<IReadOnlyList<SkylightUpload>>(new SkylightApiException(UploadNotBuiltMessage));
+    public async Task<IReadOnlyList<SkylightUpload>> UploadPhotoAsync(
+        IReadOnlyList<string> frameIds, string path, string mime, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(frameIds);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var frames = frameIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList();
+        if (frames.Count == 0)
+        {
+            return [];
+        }
+
+        var bytes = await File.ReadAllBytesAsync(path, ct);
+        var before = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var frameId in frames)
+        {
+            before[frameId] = (await ListMessagesAsync(frameId, ct)).Select(message => message.Id).ToHashSet(StringComparer.Ordinal);
+        }
+
+        var uploadUrl = await RequestUploadUrlAsync(frames, UploadExtension(path, mime), Convert.ToHexStringLower(SHA256.HashData(bytes)), ct);
+        await PutBytesAsync(uploadUrl, bytes, ct);
+        return await FindNewPhotosAsync(frames, before, ct);
+    }
+
+    /// <summary>The <c>ext</c> Skylight is told: from the MIME type when it is a known one, else the file name's extension.</summary>
+    internal static string UploadExtension(string path, string mime)
+    {
+        var fromMime = mime?.Trim().ToLowerInvariant() switch
+        {
+            "image/jpeg" => "jpg",
+            "image/png" => "png",
+            "image/heic" => "heic",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "video/mp4" => "mp4",
+            "video/quicktime" => "mov",
+            _ => null,
+        };
+        if (fromMime is not null)
+        {
+            return fromMime;
+        }
+
+        var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+        return ext == "jpeg" ? "jpg" : ext;
+    }
+
+    private async Task<Uri> RequestUploadUrlAsync(IReadOnlyList<string> frameIds, string ext, string sha256, CancellationToken ct)
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            frame_ids = frameIds,
+            messages = new[] { new { ext, caption = "", local_file_id = sha256 } },
+        });
+        using var response = await SendApiAsync(
+            HttpMethod.Post, "/api/message_upload_urls", ct, () => new StringContent(body, Encoding.UTF8, "application/json"));
+        EnsureSuccess(response, "start a photo upload");
+        var text = await response.Content.ReadAsStringAsync(ct);
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object
+                && data.TryGetProperty("upload_urls", out var urls) && urls.ValueKind == JsonValueKind.Array
+                && urls.GetArrayLength() > 0 && urls[0] is { ValueKind: JsonValueKind.Object } first)
+            {
+                if (first.TryGetProperty("error", out var error) && error.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                {
+                    var reason = error.ValueKind == JsonValueKind.String ? error.GetString() : error.GetRawText();
+                    throw new SkylightApiException($"Skylight refused the photo upload: {Shorten(reason)}");
+                }
+
+                if (first.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String
+                    && Uri.TryCreate(url.GetString(), UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+                {
+                    return uri;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Reported below like any other answer without an upload URL.
+        }
+
+        throw new SkylightApiException("Skylight answered the photo upload without an upload URL; the unofficial API may have changed.");
+    }
+
+    /// <summary>
+    /// Sends the bytes to the presigned storage URL. No Skylight token goes with them, and the URL (which
+    /// carries a signature) is never put in an exception.
+    /// </summary>
+    private async Task PutBytesAsync(Uri url, byte[] bytes, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = new ByteArrayContent(bytes) };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        using var response = await _http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new SkylightApiException(
+                $"Skylight's photo storage answered HTTP {(int)response.StatusCode} when trying to upload the photo.");
+        }
+    }
+
+    private async Task<IReadOnlyList<SkylightUpload>> FindNewPhotosAsync(
+        IReadOnlyList<string> frameIds, Dictionary<string, HashSet<string>> before, CancellationToken ct)
+    {
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pending = frameIds.ToList();
+        for (var attempt = 0; attempt < UploadListAttempts && pending.Count > 0; attempt++)
+        {
+            await _delay(UploadListInterval, ct);
+            foreach (var frameId in pending.ToList())
+            {
+                var fresh = (await ListMessagesAsync(frameId, ct))
+                    .Where(message => !message.Destroyed && !before[frameId].Contains(message.Id))
+                    .Select(message => message.Id)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                if (fresh.Count == 0)
+                {
+                    continue;
+                }
+
+                // More than one new photo means someone else's arrived too; a guess could later delete theirs.
+                if (fresh.Count == 1)
+                {
+                    found[frameId] = fresh[0];
+                }
+
+                pending.Remove(frameId);
+            }
+        }
+
+        return frameIds.Where(found.ContainsKey).Select(frameId => new SkylightUpload(frameId, found[frameId])).ToList();
+    }
+
+    private static string Shorten(string? text)
+    {
+        var trimmed = (text ?? "").Trim();
+        return trimmed.Length <= 200 ? trimmed : trimmed[..200] + "…";
+    }
 
     public void Dispose() => _http.Dispose();
 
@@ -238,13 +388,14 @@ public sealed partial class SkylightClient : ISkylightClient, IDisposable
         }
     }
 
-    /// <summary>An authenticated API call; one retry with fresh tokens after a 401/403.</summary>
-    private async Task<HttpResponseMessage> SendApiAsync(HttpMethod method, string pathAndQuery, CancellationToken ct)
+    /// <summary>An authenticated API call; one retry with fresh tokens (and a fresh <paramref name="content"/>) after a 401/403.</summary>
+    private async Task<HttpResponseMessage> SendApiAsync(
+        HttpMethod method, string pathAndQuery, CancellationToken ct, Func<HttpContent>? content = null)
     {
         var accessToken = await AccessTokenAsync(ct);
         for (var attempt = 0; ; attempt++)
         {
-            using var request = new HttpRequestMessage(method, BaseUrl + pathAndQuery);
+            using var request = new HttpRequestMessage(method, BaseUrl + pathAndQuery) { Content = content?.Invoke() };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             var response = await _http.SendAsync(request, ct);

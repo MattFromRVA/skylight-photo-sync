@@ -12,11 +12,11 @@ album and one Skylight address, prove the email path works, send one photo, then
 >
 > **Coming next (decided 2026-11-16).** Photos will be added through Skylight's app API instead of
 > by email, with email kept as the alternative; rotation (step 13) already uses that API to delete.
-> [Step 14](#14-not-usable-yet-add-photos-through-skylights-app-api) describes that path, but
-> **it does not work yet**: the upload call is not built
-> ([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)) and nothing on it has
-> been checked against a live Skylight account. Until then, set up email as described in steps
-> 1 to 12.
+> [Step 14](#14-unverified-add-photos-through-skylights-app-api) describes that path. The upload
+> call is built ([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)), but
+> **nothing on it has been checked against a live Skylight account yet**
+> ([issue #44](https://github.com/MattFromRVA/skylight-photo-sync/issues/44)). Until that check
+> passes, set up email as described in steps 1 to 12.
 
 ## 1. Prerequisites
 
@@ -116,9 +116,8 @@ jpeg_quality = 88              # default 88
 
 [delivery]
 # Optional. How photos reach the frame. "email" (the default) sends them to the addresses in
-# [email]. "api" will upload them through Skylight's app API instead, but that upload is NOT
-# BUILT YET (issue #16): with method = "api" every run fails with "upload_failed: Uploading
-# photos through the Skylight API is not built yet" and sends nothing. Keep "email" for now;
+# [email]. "api" uploads them through Skylight's app API instead; that upload is built but
+# UNVERIFIED against a live Skylight account until issue #44. Keep "email" for now;
 # step 14 describes the "api" path.
 method = "email"               # default "email"
 frames = []                    # "api" only: frame names as the Skylight app shows them;
@@ -438,7 +437,7 @@ skylight-sync status             # last run, totals, delivery, both needs_login 
 skylight-sync run                # one run now, same as the schedule
 skylight-sync run --dry-run      # preview
 skylight-sync prune --dry-run    # [rotation]: what would be deleted from the frame
-skylight-sync test-upload        # step 14: one test image to each frame through the API (upload not built yet)
+skylight-sync test-upload        # step 14: one test image to each frame through the API (unverified)
 skylight-sync login              # sign in again (device login); login --cookies for pasted cookies
 skylight-sync logout             # remove the device from your Amazon account and forget the login
 skylight-sync reset --yes        # forget everything sent and skipped; next run resends the whole window
@@ -520,21 +519,28 @@ and open an issue with the "left alone" lines. The first real run with rotation 
 `max_deletes_per_run` per frame, so a large backlog is cleared over a few runs. Run
 `skylight-sync prune` (without `--dry-run`) to clear it right away.
 
-## 14. Not usable yet: add photos through Skylight's app API
+## 14. Unverified: add photos through Skylight's app API
 
-> **This path does not work today.** The plan (decided 2026-11-16) is to upload photos through the
-> private API the Skylight apps use, instead of emailing them, so one signed-in connection both
-> adds and removes photos. The settings and commands below exist and are tested against an
-> in-memory stand-in for Skylight, but the upload call itself is not built
-> ([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16); it waits on a check
-> against a real account, [issue #44](https://github.com/MattFromRVA/skylight-photo-sync/issues/44)),
-> and **nothing here has been verified against live Skylight**. Email (steps 3 to 8) is the default
-> and the only way that sends photos today. This section describes how the API path is meant to
-> work so it can be tried the day the upload lands; expect details to change.
+> **This path is built but unverified.** The plan (decided 2026-11-16) is to upload photos through
+> the private API the Skylight apps use, instead of emailing them, so one signed-in connection both
+> adds and removes photos. The settings, the commands and the upload call
+> ([issue #16](https://github.com/MattFromRVA/skylight-photo-sync/issues/16)) exist, but they are
+> tested only against hand-written stand-ins for Skylight: **nothing here has been verified against
+> live Skylight** yet; that is [issue #44](https://github.com/MattFromRVA/skylight-photo-sync/issues/44).
+> Email (steps 3 to 8) is the default and the proven way to send photos. Expect details to change
+> once the live check has been done.
+
+How an upload works (the flow of the community client jakewilkins/skylight-frame): the tool lists
+each target frame, asks Skylight for an upload URL, sends the photo's bytes there, then lists the
+frame again (every 3 seconds, for up to about 30 seconds) until exactly one new photo appears.
+That photo's id is what it records, because this flow does not return one. A photo that does not
+show up in time, or that arrives together with someone else's so the tool cannot tell which is
+its own, is not marked sent; see
+[troubleshooting](troubleshooting.md#upload_failed--under-delivery-method--api).
 
 What differs from the email path:
 
-| | Email (default, works today) | API (not usable yet) |
+| | Email (default, works today) | API (unverified) |
 |---|---|---|
 | Skylight side | Household address `<name>@ourskylight.com`; approve the sender once | Your Skylight account's email and password |
 | `config.toml` | `[email]` and `[smtp]` required | `[delivery] method = "api"`; `[email]` and `[smtp]` optional |
@@ -567,16 +573,13 @@ skylight-sync test-upload
 
 It uploads one generated 800x600 JPEG (the same image `test-email` sends) to every frame
 `[delivery] frames` names, or to every frame on the account when that list is empty, and prints
-one line per frame. **Until issue #16 lands it cannot get that far**: it signs in, lists the
-frames, then stops with exit code 1 and
-
-```text
-test-upload failed: Uploading photos through the Skylight API is not built yet (issue #16). ...
-```
+one line per frame. This is the first command to try for the live check (#44): afterwards,
+confirm in the Skylight app that the test image shows on each frame and is not stuck in
+"processing".
 
 What else it does:
 
-- It records the photo id Skylight returns for each frame, so `[rotation]` can delete the test
+- It records the photo id it finds for each frame, so `[rotation]` can delete the test
   image later. The test image counts as the oldest of the tool's photos: it is the first to go
   once a frame holds more than `keep`, and it never pushes a real photo off the frame. It is not a
   "sent" photo: it does not count in `total sent` and cannot make a real photo look already sent.
@@ -609,9 +612,9 @@ names are the ones in `config.toml`, not checked against the account:
 delivery: api (Kitchen, Hallway)     # or: delivery: api (every frame)
 ```
 
-After that, `run --dry-run`, `run --limit 1` and the schedule are used as in steps 7 to 9. Today
-a real run under `method = "api"` fails with
-`upload_failed: Uploading photos through the Skylight API is not built yet` and sends nothing.
+After that, `run --dry-run`, `run --limit 1` and the schedule are used as in steps 7 to 9. Each
+photo is uploaded on its own, so a run under `method = "api"` takes a few seconds per photo while
+the tool waits for it to show up on the frame.
 
 **Going back to email.** Set `method = "email"` (or delete `[delivery]`) and make sure `[email]`
 and `[smtp]` are present. Email remains fully supported; it is also the fallback if Skylight

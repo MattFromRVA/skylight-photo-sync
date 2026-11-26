@@ -225,7 +225,7 @@ max_long_edge = 2048
 jpeg_quality = 88
 
 [delivery]                # optional (§6.11)
-method = "email"          # "email" (default) | "api"; "api" cannot send until the upload task (#16) lands
+method = "email"          # "email" (default) | "api"; "api" is built (#16) but unverified live until #44
 frames = []               # "api" only: frame names as the app shows them; empty = every frame
 
 [email]                   # [email] and [smtp] are required for method = "email", optional for "api"
@@ -308,6 +308,16 @@ skylight-sync reset --skipped  # only the skipped items; no --yes needed (issue 
   finds it by listing the frame after the upload. Rotation then deletes API-delivered photos
   **by recorded message id**, which is stricter than matching `from_email`; email-delivered
   photos keep the `from_email` match.
+- **(as built, #16; unverified until #44)** The client uses jakewilkins/skylight-frame's flow:
+  `POST /api/message_upload_urls`, then a `PUT` of the bytes to the presigned URL it returns. That
+  flow returns no message id, so the client lists each target frame before the upload and again
+  afterwards (up to 10 times, 3 s apart) and records the id only when exactly one photo appears
+  that was not there before. None new in time, or more than one (someone else's arrived too), means
+  no id for that frame: the photo is not marked sent there and nothing is recorded that rotation
+  could later delete by mistake. The finalize call `POST /api/messages/uploads` is not used: the
+  only client that calls it (skylight-mcp) sends it an S3 `bucket`/`key`/`etag` from the separate
+  STS-credentials flow, which this flow does not have. If the live check shows the photo sticks in
+  "processing" (skylight-mcp's warning about single PUTs), the client switches to that flow.
 - **(call, #58)** The recorded ids live in their own table, `uploaded_messages`, one row per
   uploaded photo per frame until rotation deletes it. The sent row cannot do this job: it holds
   one id per item and frame, a resend overwrites it and `reset` removes it, and either would

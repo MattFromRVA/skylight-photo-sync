@@ -291,6 +291,214 @@ public sealed class SkylightClientTests : IDisposable
         Assert.All(handler.Requests, r => Assert.Equal(HttpMethod.Delete, r.Method));
     }
 
+    // ---- Upload (issue #16). The flow is jakewilkins/skylight-frame's (research notes, "Skylight upload
+    // API"): POST /api/message_upload_urls, PUT the bytes to the presigned URL, then find the new photo's
+    // id by listing the frame. Every response below is a HAND-WRITTEN PLACEHOLDER shaped after that
+    // client's code; none was recorded from a live account (that is #44).
+
+    [Fact]
+    public async Task Upload_requests_a_url_puts_the_bytes_and_finds_the_new_id_by_listing()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var file = Fixtures.Image("tiny.jpg");
+        var bytes = File.ReadAllBytes(file);
+        var handler = UploadRoutes(Listings("5455113", ["901", "900"], ["902", "901", "900"]));
+        using var client = Client(handler);
+
+        var uploads = await client.UploadPhotoAsync(["5455113"], file, "image/jpeg", CancellationToken.None);
+
+        Assert.Equal([new SkylightUpload("5455113", "902")], uploads);
+        var post = Assert.Single(handler.RequestsTo("/api/message_upload_urls"));
+        Assert.Equal(HttpMethod.Post, post.Method);
+        Assert.Equal("Bearer cached-access", post.Headers.Authorization!.ToString());
+        using var body = JsonDocument.Parse(handler.BodyOf(post)!);
+        Assert.Equal(["5455113"], body.RootElement.GetProperty("frame_ids").EnumerateArray().Select(e => e.GetString()));
+        var message = Assert.Single(body.RootElement.GetProperty("messages").EnumerateArray());
+        Assert.Equal("jpg", message.GetProperty("ext").GetString());
+        Assert.Equal("", message.GetProperty("caption").GetString());
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)), message.GetProperty("local_file_id").GetString());
+
+        var put = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Put);
+        Assert.Equal(_presignedUrl, put.RequestUri!.ToString());
+        Assert.Null(put.Headers.Authorization);   // the Skylight token never goes to the storage host
+        Assert.Equal("application/octet-stream", put.Content!.Headers.ContentType!.MediaType);
+        Assert.Equal(bytes.Length, put.Content.Headers.ContentLength);
+
+        // Listed once before the upload (to know what was already there) and once after.
+        Assert.Equal(2, handler.RequestsTo("/api/frames/5455113/messages").Count());
+        Assert.True(handler.Requests.IndexOf(post) > handler.Requests.IndexOf(handler.RequestsTo("/messages").First()));
+    }
+
+    [Fact]
+    public async Task Upload_to_two_frames_is_one_upload_with_an_id_found_on_each()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("100", ["1"], ["5", "1"]), Listings("200", [], ["6"]));
+        using var client = Client(handler);
+
+        var uploads = await client.UploadPhotoAsync(["100", "200"], Fixtures.Image("tiny.png"), "image/png", CancellationToken.None);
+
+        Assert.Equal([new SkylightUpload("100", "5"), new SkylightUpload("200", "6")], uploads);
+        Assert.Single(handler.RequestsTo("/api/message_upload_urls"));
+        Assert.Single(handler.Requests, r => r.Method == HttpMethod.Put);
+        using var body = JsonDocument.Parse(handler.BodyOf(handler.RequestsTo("/api/message_upload_urls").Single())!);
+        Assert.Equal(["100", "200"], body.RootElement.GetProperty("frame_ids").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal("png", body.RootElement.GetProperty("messages")[0].GetProperty("ext").GetString());
+    }
+
+    [Fact]
+    public async Task Upload_keeps_listing_until_the_new_photo_shows_up()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["10"], ["10"], ["11", "10"]));
+        using var client = Client(handler);
+
+        var uploads = await client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None);
+
+        Assert.Equal([new SkylightUpload("1", "11")], uploads);
+        Assert.Equal(4, handler.RequestsTo("/api/frames/1/messages").Count());
+        Assert.Equal(3, _delays.Count);
+        Assert.All(_delays, d => Assert.Equal(SkylightClient.UploadListInterval, d));
+    }
+
+    [Fact]
+    public async Task Upload_returns_no_id_for_a_frame_the_photo_never_shows_up_on()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["10"]));
+        using var client = Client(handler);
+
+        var uploads = await client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None);
+
+        Assert.Empty(uploads);
+        Assert.Equal(SkylightClient.UploadListAttempts, _delays.Count);
+        Assert.Equal(1 + SkylightClient.UploadListAttempts, handler.RequestsTo("/api/frames/1/messages").Count());
+    }
+
+    [Fact]
+    public async Task Upload_never_guesses_when_two_new_photos_appear()
+    {
+        // Someone else's photo arrived at the same time; recording the wrong id could later delete it.
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["12", "11", "10"]));
+        using var client = Client(handler);
+
+        var uploads = await client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None);
+
+        Assert.Empty(uploads);
+        Assert.Equal(2, handler.RequestsTo("/api/frames/1/messages").Count());
+    }
+
+    [Fact]
+    public async Task Upload_ignores_a_new_photo_that_is_already_deleted()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["12", "11-destroyed", "10"]));
+        using var client = Client(handler);
+
+        var uploads = await client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None);
+
+        Assert.Equal([new SkylightUpload("1", "12")], uploads);
+    }
+
+    [Fact]
+    public async Task Refused_upload_url_request_throws_and_sends_no_bytes()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["11", "10"]))
+            .On("/api/message_upload_urls", _ => ScriptedHandler.Status(HttpStatusCode.UnprocessableEntity));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightApiException>(
+            () => client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None));
+
+        Assert.Contains("422", ex.Message);
+        Assert.DoesNotContain(handler.Requests, r => r.Method == HttpMethod.Put);
+    }
+
+    [Fact]
+    public async Task Upload_url_entry_with_an_error_throws_and_sends_no_bytes()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["11", "10"]))
+            .On("/api/message_upload_urls", _ => ScriptedHandler.JsonBody("""{"data":{"upload_urls":[{"error":"unsupported file type"}]}}"""));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightApiException>(
+            () => client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None));
+
+        Assert.Contains("unsupported file type", ex.Message);
+        Assert.DoesNotContain(handler.Requests, r => r.Method == HttpMethod.Put);
+    }
+
+    [Theory]
+    [InlineData("""{"data":{}}""")]
+    [InlineData("""{"data":{"upload_urls":[]}}""")]
+    [InlineData("""{"data":{"upload_urls":[{"url":"http://insecure.example.com/x"}]}}""")]
+    [InlineData("not json")]
+    public async Task Unreadable_upload_url_answer_throws_and_sends_no_bytes(string answer)
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["11", "10"]))
+            .On("/api/message_upload_urls", _ => ScriptedHandler.JsonBody(answer));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightApiException>(
+            () => client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None));
+
+        Assert.Contains("may have changed", ex.Message);
+        Assert.DoesNotContain(handler.Requests, r => r.Method == HttpMethod.Put);
+    }
+
+    [Fact]
+    public async Task Refused_bytes_throw_without_renewing_the_token_or_naming_the_url()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var handler = UploadRoutes(Listings("1", ["10"], ["11", "10"]))
+            .On(r => r.Method == HttpMethod.Put, _ => ScriptedHandler.Status(HttpStatusCode.Forbidden));
+        using var client = Client(handler);
+
+        var ex = await Assert.ThrowsAsync<SkylightApiException>(
+            () => client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None));
+
+        Assert.Contains("403", ex.Message);
+        Assert.DoesNotContain("placeholder-signature", ex.Message);
+        Assert.Single(handler.Requests, r => r.Method == HttpMethod.Put);
+        Assert.Empty(handler.RequestsTo("/oauth/token"));
+        Assert.Single(handler.RequestsTo("/api/frames/1/messages"));   // not listed again: nothing was uploaded
+    }
+
+    [Fact]
+    public async Task Unauthorized_upload_url_request_renews_the_token_once_and_resends_the_body()
+    {
+        WriteTokenFile(expiresAt: _t0.AddHours(1));
+        var calls = 0;
+        var handler = UploadRoutes(Listings("1", ["10"], ["11", "10"]))
+            .On("/oauth/token", _ => ScriptedHandler.JsonBody(TokenJson("renewed-access")))
+            .On("/api/message_upload_urls", _ => ++calls == 1 ? ScriptedHandler.Status(HttpStatusCode.Unauthorized) : UploadUrlsAnswer());
+        using var client = Client(handler);
+
+        var uploads = await client.UploadPhotoAsync(["1"], Fixtures.Image("tiny.jpg"), "image/jpeg", CancellationToken.None);
+
+        Assert.Equal([new SkylightUpload("1", "11")], uploads);
+        var posts = handler.RequestsTo("/api/message_upload_urls").ToList();
+        Assert.Equal(2, posts.Count);
+        Assert.Equal("Bearer renewed-access", posts[1].Headers.Authorization!.ToString());
+        Assert.Equal(handler.BodyOf(posts[0]), handler.BodyOf(posts[1]));
+        Assert.Contains("grant_type=refresh_token", handler.BodyOf(Assert.Single(handler.RequestsTo("/oauth/token"))));
+    }
+
+    [Theory]
+    [InlineData("image/jpeg", "a.jpeg", "jpg")]
+    [InlineData("image/png", "a.png", "png")]
+    [InlineData("image/heic", "a.heic", "heic")]
+    [InlineData("video/mp4", "a.mp4", "mp4")]
+    [InlineData("video/quicktime", "a.mov", "mov")]
+    [InlineData("application/octet-stream", "a.JPEG", "jpg")]
+    [InlineData("application/octet-stream", "a.gif", "gif")]
+    public void Upload_extension_follows_the_mime_type_then_the_file_name(string mime, string path, string expected) =>
+        Assert.Equal(expected, SkylightClient.UploadExtension(path, mime));
+
     [Theory]
     [InlineData("<meta name=\"csrf-token\" content=\"abc+/=\" />", "abc+/=")]
     [InlineData("<input type=\"hidden\" name=\"authenticity_token\" value=\"xyz&amp;1\">", "xyz&1")]
@@ -321,7 +529,57 @@ public sealed class SkylightClientTests : IDisposable
     private static string TokenJson(string access) =>
         JsonSerializer.Serialize(new { access_token = access, token_type = "Bearer", expires_in = 7200, refresh_token = _refresh, scope = "everything" });
 
-    private SkylightClient Client(ScriptedHandler handler) => new(_email, _password, _tokenFile, handler, () => _now);
+    private const string _presignedUrl =
+        "https://placeholder-bucket.s3.amazonaws.com/uploads/placeholder-key.jpg?X-Amz-Signature=placeholder-signature";
+
+    private readonly List<TimeSpan> _delays = [];
+
+    private SkylightClient Client(ScriptedHandler handler) =>
+        new(_email, _password, _tokenFile, handler, () => _now, (delay, _) =>
+        {
+            _delays.Add(delay);
+            return Task.CompletedTask;
+        });
+
+    /// <summary>HAND-WRITTEN PLACEHOLDER of the <c>message_upload_urls</c> answer jakewilkins/skylight-frame reads.</summary>
+    private static HttpResponseMessage UploadUrlsAnswer() =>
+        ScriptedHandler.JsonBody(JsonSerializer.Serialize(new { data = new { upload_urls = new[] { new { url = _presignedUrl } } } }));
+
+    /// <summary>
+    /// HAND-WRITTEN PLACEHOLDER upload routes. Each frame lists its message ids per call: the first list
+    /// is the frame before the upload, the next ones what each later listing returns (the last repeats).
+    /// An id ending in <c>-destroyed</c> is listed as deleted.
+    /// </summary>
+    private static (string FrameId, string[][] Listings) Listings(string frameId, params string[][] listings) => (frameId, listings);
+
+    private static ScriptedHandler UploadRoutes(params (string FrameId, string[][] Listings)[] frames)
+    {
+        var handler = new ScriptedHandler()
+            .On("/api/message_upload_urls", _ => UploadUrlsAnswer())
+            .On(r => r.Method == HttpMethod.Put && r.RequestUri!.Host == "placeholder-bucket.s3.amazonaws.com",
+                _ => new HttpResponseMessage(HttpStatusCode.OK));
+        foreach (var (frameId, listings) in frames)
+        {
+            var calls = 0;
+            handler.On($"/api/frames/{frameId}/messages", _ =>
+            {
+                var ids = listings[Math.Min(calls++, listings.Length - 1)];
+                var data = ids.Select(id => new
+                {
+                    id = id.Replace("-destroyed", "", StringComparison.Ordinal),
+                    attributes = new
+                    {
+                        created_at = "2026-11-11T14:00:00Z",
+                        from_email = (string?)null,
+                        destroyed_at = id.EndsWith("-destroyed", StringComparison.Ordinal) ? "2026-11-11T14:05:00Z" : null,
+                    },
+                });
+                return ScriptedHandler.JsonBody(JsonSerializer.Serialize(new { data, meta = new { current_page = 1, num_pages = 1 } }));
+            });
+        }
+
+        return handler;
+    }
 
     private void WriteTokenFile(DateTimeOffset expiresAt, string? account = _email) =>
         File.WriteAllText(_tokenFile, JsonSerializer.Serialize(new Dictionary<string, string?>

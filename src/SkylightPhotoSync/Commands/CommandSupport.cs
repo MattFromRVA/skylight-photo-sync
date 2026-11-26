@@ -21,11 +21,11 @@ internal static class CommandSupport
     /// <summary>Test hook: the handler every <see cref="SkylightClient"/> a command builds uses instead of the network.</summary>
     internal static Func<HttpMessageHandler>? SkylightHandlerFactory { get; set; }
 
-    /// <summary>
-    /// Test hook: the Skylight account <c>test-upload</c> talks to instead of a <see cref="SkylightClient"/>,
-    /// whose upload is not built yet (issue #16).
-    /// </summary>
+    /// <summary>Test hook: the Skylight account <c>test-upload</c> talks to instead of a <see cref="SkylightClient"/>.</summary>
     internal static Func<ISkylightClient>? SkylightClientFactory { get; set; }
+
+    /// <summary>Test hook: replaces the pause between "has the uploaded photo shown up on the frame?" listings.</summary>
+    internal static Func<TimeSpan, CancellationToken, Task>? UploadDelay { get; set; }
 
     /// <summary>Test hook: replaces the pause between "have the new photos arrived?" checks.</summary>
     internal static Func<TimeSpan, CancellationToken, Task>? RotationDelay { get; set; }
@@ -47,7 +47,7 @@ internal static class CommandSupport
 
     /// <summary>A <see cref="SkylightClient"/> for the saved sign-in (see <see cref="HasSkylightLogin"/>).</summary>
     public static SkylightClient CreateSkylightClient(Secrets secrets, AppPaths paths) =>
-        new(secrets.SkylightEmail!, secrets.SkylightPassword!, paths.SkylightTokenFile, SkylightHandlerFactory?.Invoke());
+        new(secrets.SkylightEmail!, secrets.SkylightPassword!, paths.SkylightTokenFile, SkylightHandlerFactory?.Invoke(), delay: UploadDelay);
 
     /// <summary>The account <c>test-upload</c> uploads to: <see cref="CreateSkylightClient"/> unless a test replaced it.</summary>
     public static ISkylightClient CreateSkylightApi(Secrets secrets, AppPaths paths) =>
