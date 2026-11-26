@@ -137,7 +137,7 @@ public static partial class LoginCommand
         {
             var paths = AppPaths.Resolve();
             var secretStore = CommandSupport.CreateSecretStore(paths);
-            var existing = await secretStore.LoadAsync(ct);
+            var existing = await secretStore.LoadForUpdateAsync(ct);
             var previousSecretsFile = File.Exists(paths.SecretsFile) ? File.ReadAllBytes(paths.SecretsFile) : null;
             using var auth = CommandSupport.CreateDeviceAuth();
 
@@ -322,7 +322,7 @@ public static partial class LoginCommand
         {
             var paths = AppPaths.Resolve();
             var secretStore = CommandSupport.CreateSecretStore(paths);
-            var existing = await secretStore.LoadAsync(ct);
+            var existing = await secretStore.LoadForUpdateAsync(ct);
 
             // Pasted cookies replace a device login, whose device is removed from the account.
             var secrets = new Secrets(

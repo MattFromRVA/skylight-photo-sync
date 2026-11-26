@@ -100,6 +100,17 @@ public sealed class SecretStore
     }
 
     /// <summary>
+    /// <see cref="LoadAsync"/> for a command that will save: fails when the Keychain could not be read,
+    /// before the command acts on secrets that lack its values.
+    /// </summary>
+    public async Task<Secrets> LoadForUpdateAsync(CancellationToken ct)
+    {
+        var secrets = await LoadAsync(ct);
+        ThrowIfKeychainUnread();
+        return secrets;
+    }
+
+    /// <summary>
     /// Stores exactly <paramref name="secrets"/>: null values are removed. Refuses, changing nothing,
     /// when the last <see cref="LoadAsync"/> could not read the Keychain, since those secrets lack its values.
     /// </summary>
@@ -112,12 +123,7 @@ public sealed class SecretStore
             return;
         }
 
-        if (KeychainProblem is not null)
-        {
-            throw new ConfigException(
-                $"Could not save secrets to the macOS Keychain: it could not be read ({KeychainProblem}), so saving could lose values only it holds. Unlock the login keychain and try again.");
-        }
-
+        ThrowIfKeychainUnread();
         try
         {
             foreach (var key in Enum.GetValues<SecretKey>())
@@ -169,9 +175,18 @@ public sealed class SecretStore
             return 0;
         }
 
-        var current = await LoadAsync(ct);
+        var current = await LoadForUpdateAsync(ct);
         await SaveAsync(With(current, key => Get(file, key) ?? Get(current, key)), ct);
         return count;
+    }
+
+    private void ThrowIfKeychainUnread()
+    {
+        if (KeychainProblem is not null)
+        {
+            throw new ConfigException(
+                $"Could not read secrets from the macOS Keychain ({KeychainProblem}), so saving could lose values only it holds. Unlock the login keychain and try again.");
+        }
     }
 
     private static Secrets Empty => new(null, null, null, null);

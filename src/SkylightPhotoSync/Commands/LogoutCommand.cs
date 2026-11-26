@@ -30,7 +30,7 @@ public static class LogoutCommand
             {
                 var paths = AppPaths.Resolve();
                 var secretStore = CommandSupport.CreateSecretStore(paths);
-                var secrets = await secretStore.LoadAsync(ct);
+                var secrets = await secretStore.LoadForUpdateAsync(ct);
                 if (!CommandSupport.HasAmazonAuth(secrets))
                 {
                     stdout.WriteLine(NotLoggedInMessage);

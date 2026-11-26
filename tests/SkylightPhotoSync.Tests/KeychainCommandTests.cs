@@ -116,6 +116,24 @@ public sealed class KeychainCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Logout_stops_before_deregistering_when_the_keychain_cannot_be_read()
+    {
+        ConfigLoader.WriteSecrets(SecretsFile, new Secrets(null, null, null, null, AmazonRefreshToken: _refresh, AmazonDeviceSerial: _serial));
+        var before = File.ReadAllBytes(SecretsFile);
+        Seed(SecretKey.SmtpPassword, "app-password");
+        _keychain.FailWith = "The user interaction is not allowed.";
+
+        var (code, out_, err) = await Run("logout");
+
+        Assert.Equal(1, code);
+        Assert.Contains("The user interaction is not allowed.", err);
+        Assert.Empty(_amazon.RequestsTo("/auth/deregister"));
+        Assert.Equal(before, File.ReadAllBytes(SecretsFile));
+        Assert.Equal("app-password", Item(SecretKey.SmtpPassword));
+        Assert.DoesNotContain(_refresh, out_ + err);
+    }
+
+    [Fact]
     public async Task Logout_removes_the_amazon_items_from_the_keychain()
     {
         Seed(SecretKey.AmazonRefreshToken, _refresh);
